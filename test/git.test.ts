@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, rmSync, mkdirSync, unlinkSync } from "node:fs";
 import path from "node:path";
-import { gitSnapshot, gitChanges } from "../src/git.ts";
+import { gitSnapshot, gitChanges, pathsSinceBaseline } from "../src/git.ts";
 test("gitChanges reports only paths whose porcelain line changed", () => {
   const cwd = mkdtempSync(path.join(import.meta.dirname, "tmp-"));
   const git = (args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8" });
@@ -80,6 +80,91 @@ test("gitChanges detects dirty tracked edits and changes in nested untracked dir
   assert.match(changes.diff_stat, /services\/sandbox-gateway\/frpc\/frpc\.toml \| untracked \+1/);
   assert.match(changes.diff_stat, /services\/sandbox-gateway\/nginx\/template\.txt \| untracked \+1/);
   assert.match(changes.diff_stat, /services\/sandbox-gateway\/nginx\/conf\.txt \| untracked deleted/);
+  rmSync(cwd, { recursive: true, force: true });
+});
+
+test("gitSnapshot includes HEAD", () => {
+  const cwd = mkdtempSync(path.join(import.meta.dirname, "tmp-"));
+  const git = (args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8" });
+  git(["init"]);
+  writeFileSync(path.join(cwd, "a.txt"), "one\n");
+  git(["add", "a.txt"]);
+  git(["-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-m", "init"]);
+  const snap = gitSnapshot(cwd);
+  assert.ok(snap?.head);
+  assert.match(snap!.head!, /^[0-9a-f]{40}$/);
+  rmSync(cwd, { recursive: true, force: true });
+});
+
+test("pathsSinceBaseline includes committed files after clean worktree", () => {
+  const cwd = mkdtempSync(path.join(import.meta.dirname, "tmp-"));
+  const git = (args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8" });
+  git(["init"]);
+  writeFileSync(path.join(cwd, "ok.txt"), "ok\n");
+  git(["add", "ok.txt"]);
+  git(["-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-m", "init"]);
+  const baseline = gitSnapshot(cwd)!;
+  writeFileSync(path.join(cwd, "leak.txt"), "leak\n");
+  git(["add", "leak.txt"]);
+  git(["-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-m", "leak"]);
+  const current = gitSnapshot(cwd)!;
+  assert.equal(current.porcelain.size, 0);
+  const paths = pathsSinceBaseline(cwd, baseline, current);
+  assert.ok(paths.includes("leak.txt"));
+  rmSync(cwd, { recursive: true, force: true });
+});
+
+test("pathsSinceBaseline: pre-dirty unchanged excluded; content change included", () => {
+  const cwd = mkdtempSync(path.join(import.meta.dirname, "tmp-"));
+  const git = (args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8" });
+  git(["init"]);
+  writeFileSync(path.join(cwd, "a.txt"), "one\n");
+  writeFileSync(path.join(cwd, "b.txt"), "b\n");
+  git(["add", "."]);
+  git(["-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-m", "init"]);
+  writeFileSync(path.join(cwd, "a.txt"), "one\ndirty\n");
+  writeFileSync(path.join(cwd, "b.txt"), "b\ndirty\n");
+  const baseline = gitSnapshot(cwd)!;
+  writeFileSync(path.join(cwd, "b.txt"), "b\ndirty\nchanged\n");
+  const current = gitSnapshot(cwd)!;
+  const paths = pathsSinceBaseline(cwd, baseline, current);
+  assert.equal(paths.includes("a.txt"), false);
+  assert.equal(paths.includes("b.txt"), true);
+  rmSync(cwd, { recursive: true, force: true });
+});
+
+test("gitSnapshot digests resolve against repo root when cwd is subdirectory", () => {
+  const cwd = mkdtempSync(path.join(import.meta.dirname, "tmp-"));
+  const git = (args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8" });
+  git(["init"]);
+  mkdirSync(path.join(cwd, "pkg"));
+  writeFileSync(path.join(cwd, "pkg", "a.ts"), "one\n");
+  git(["add", "pkg/a.ts"]);
+  git(["-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-m", "init"]);
+  writeFileSync(path.join(cwd, "pkg", "a.ts"), "one\ndirty\n");
+  const sub = path.join(cwd, "pkg");
+  const snap = gitSnapshot(sub)!;
+  assert.ok(snap.digests.get("pkg/a.ts"), "digest must be keyed by repo-root-relative path");
+  rmSync(cwd, { recursive: true, force: true });
+});
+
+test("pathsSinceBaseline: rename lists both paths; delete listed", () => {
+  const cwd = mkdtempSync(path.join(import.meta.dirname, "tmp-"));
+  const git = (args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8" });
+  git(["init"]);
+  writeFileSync(path.join(cwd, "old.txt"), "x\n");
+  writeFileSync(path.join(cwd, "gone.txt"), "g\n");
+  git(["add", "."]);
+  git(["-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-m", "init"]);
+  const baseline = gitSnapshot(cwd)!;
+  git(["mv", "old.txt", "new.txt"]);
+  git(["rm", "gone.txt"]);
+  git(["-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-m", "move"]);
+  const current = gitSnapshot(cwd)!;
+  const paths = pathsSinceBaseline(cwd, baseline, current);
+  assert.ok(paths.includes("old.txt"));
+  assert.ok(paths.includes("new.txt"));
+  assert.ok(paths.includes("gone.txt"));
   rmSync(cwd, { recursive: true, force: true });
 });
 

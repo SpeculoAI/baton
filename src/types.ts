@@ -1,7 +1,15 @@
 export type Target = "codex" | "claude" | "agy" | "cursor";
 export type Effort = "low" | "medium" | "high" | "ultra";
-export type TaskStatus = "running" | "needs_input" | "success" | "failed" | "timed_out" | "cancelled" | "not_installed" | "not_authenticated" | "quota_exceeded";
+export type TaskStatus = "running" | "needs_input" | "success" | "failed" | "timed_out" | "cancelled" | "not_installed" | "not_authenticated" | "quota_exceeded" | "scope_violation";
 export type Author = "host" | "human";
+export type ScopeOnViolation = "warn" | "fail";
+export type ScopeBaseline = {
+  head: string;
+  /** Porcelain lines: path → full porcelain line */
+  porcelain: Record<string, string>;
+  /** Content digests for dirty paths */
+  digests: Record<string, string>;
+};
 export type TaskMeta = {
   task_id: string;
   target: Target;
@@ -21,6 +29,10 @@ export type TaskMeta = {
   decision?: { question: string; options: string[] };
   summary?: string;
   warning?: string;
+  scope?: string[];
+  scope_on_violation?: ScopeOnViolation;
+  scope_violations?: string[];
+  scope_baseline?: ScopeBaseline;
 };
 export type EventData =
   | { type: "turn_started"; author: Author; prompt_preview: string }

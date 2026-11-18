@@ -3,7 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { agents, cancel, ls, reply, start, status, wait } from "./tasks.ts";
 import { redact } from "./redact.ts";
-import type { Author, Effort } from "./types.ts";
+import type { Author, Effort, ScopeOnViolation } from "./types.ts";
 
 const MAX_WAIT_SECONDS = 55;
 const PROGRESS_MS = 15_000;
@@ -30,11 +30,14 @@ export function createServer(): McpServer {
       idle_timeout_seconds: z.number().optional().describe("连续这么久没有任何输出就停掉，默认 600。"),
       max_duration_seconds: z.number().optional().describe("单轮总时长上限，默认不限。"),
       cwd: z.string().optional(),
+      scope: z.array(z.string()).optional().describe("允许修改的路径 glob，可多条；任务结束后对照净变更检查。"),
+      scope_on_violation: z.enum(["warn", "fail"]).optional().describe("越界策略，默认 warn。"),
     },
   }, (args) => respond(() => start({
     target: args.target_agent, prompt: args.prompt, files: args.files, cwd: args.cwd,
     reasoningEffort: args.reasoning_effort as Effort | undefined,
     idleTimeout: args.idle_timeout_seconds, maxDuration: args.max_duration_seconds,
+    scope: args.scope, scopeOnViolation: args.scope_on_violation as ScopeOnViolation | undefined,
   })));
   server.registerTool("task_status", {
     description: "看一单当前状态。running 时带 liveness（active/quiet/orphaned）和 quiet_for_s。",
@@ -55,7 +58,7 @@ export function createServer(): McpServer {
     try { return await wait(args.task_ids, seconds); } finally { if (timer) clearInterval(timer); }
   }));
   server.registerTool("task_reply", {
-    description: "任务停在 needs_input 或 success 后，在同一会话开下一轮。as=human 表示这是人说的话，默认 host。running 时返回 busy。",
+    description: "任务停在 needs_input、success 或 scope_violation 后，在同一会话开下一轮。as=human 表示这是人说的话，默认 host。running 时返回 busy。",
     inputSchema: { task_id: z.string(), prompt: z.string(), as: z.enum(["host", "human"]).optional() },
   }, (args) => respond(() => reply(args.task_id, args.prompt, (args.as ?? "host") as Author)));
   server.registerTool("task_cancel", {

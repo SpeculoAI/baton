@@ -105,13 +105,14 @@ type TaskMeta = {
 ```
 start ──> running ──┬──> needs_input ──reply──> running
                     ├──> success ──────reply──> running   （允许追问）
+                    ├──> scope_violation ──reply──> running  （--scope fail）
                     ├──> failed | timed_out | cancelled
                     │    | not_authenticated | quota_exceeded（终态，不可 reply）
 not_installed（start 时即返回，不建守护进程）
 ```
 
 - `running` 时 `reply` 被拒绝，返回 `status: "busy"`。
-- 一轮结束时：输出里有 `BATON_DECISION` 记 `needs_input` 并填 `decision`；有 `BATON_RESULT` 或正常退出记 `success`；其余按现有失败判定（鉴权、额度、退出码）。沿用现有的 `OUTPUT_CONTRACT` 标记协议。
+- 一轮结束时：输出里有 `BATON_DECISION` 记 `needs_input` 并填 `decision`；有 `BATON_RESULT` 或正常退出记 `success`；若任务带 `--scope`，再按任务起点净变更对照 glob（详见 `SPEC-task-scope.md`）；其余按现有失败判定（鉴权、额度、退出码）。沿用现有的 `OUTPUT_CONTRACT` 标记协议。
 
 ### 存活判定（回答"在跑还是卡住"）
 

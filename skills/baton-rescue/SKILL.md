@@ -48,13 +48,14 @@ If not named, use `codex`. If the current session is already Codex, use `claude`
 ## Start
 
 ```
-baton start --target <t> --prompt "<self-contained task>" [--file <path>...] [--effort low|medium|high|ultra] [--idle-timeout <s>] [--max-duration <s>] [--cwd <dir>]
+baton start --target <t> --prompt "<self-contained task>" [--file <path>...] [--effort low|medium|high|ultra] [--idle-timeout <s>] [--max-duration <s>] [--cwd <dir>] [--scope <glob>...] [--scope-on-violation warn|fail]
 ```
 
 - The prompt states done criteria and which files to look at. Long prompts can come on stdin instead of `--prompt`.
 - `--effort low` suits mechanical subtasks; it maps to each CLI's native flag.
 - `--idle-timeout` (default 600) stops the job only after that many seconds with no output at all. There is no total time cap unless you pass `--max-duration`. Raise `--idle-timeout` for models that think silently for a long time.
 - Optional isolation: `baton worktree add` first, then pass that path as `--cwd`. Opening a worktree is not tied to the task; clean up later with `baton worktree rm`.
+- Optional `--scope`: post-check mistake fence (not a sandbox); prefer with worktree. `scope_violation` / non-empty `scope_violations` → `reply` to fix, not vendor failover.
 - It returns at once with `task_id` and `status: "running"`. Keep the `task_id`. Tell the user they can watch live with `baton tail -f <task_id>`.
 
 ## Wait

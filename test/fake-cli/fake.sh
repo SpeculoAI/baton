@@ -15,6 +15,7 @@ if [ -n "$FAKE_TICKS" ]; then
   printf '\n'
 fi
 if [ -n "$FAKE_SLEEP" ]; then /bin/sleep "$FAKE_SLEEP"; fi
+if [ -n "$FAKE_WRITE" ]; then printf '%s' "${FAKE_WRITE_CONTENT:-x}" > "$FAKE_WRITE"; fi
 if [ -n "$FAKE_FIXTURE" ]; then /bin/cat "$FAKE_FIXTURE"; fi
 if [ "$FAKE_HANG" = "1" ]; then
   while :; do /bin/sleep 1; done

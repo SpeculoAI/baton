@@ -288,10 +288,11 @@ node src/cli.ts agents
 baton agents
 baton start --target <codex|claude|cursor|agy> [--prompt <text> | stdin] [--file <p>...] [--effort low|medium|high|ultra]
             [--idle-timeout <秒>] [--max-duration <秒>] [--cwd <dir>]
+            [--scope <glob> ...] [--scope-on-violation warn|fail]
 baton status <id>
 baton wait <id>... [--for <秒>]       # 默认 50；任一任务离开 running 就返回它，到点仍在跑就返回 running 视图
 baton tail <id> [-f] [--raw]          # 人读格式的事件；-f 跟到任务停下；--raw 输出 events.jsonl 原行
-baton reply <id> [--prompt <text> | stdin] [--as host|human]
+baton reply <id> [--prompt <text> | stdin] [--as host|human]   # scope_violation 后也可续轮
 baton cancel <id>
 baton ls [--all]                      # 默认只列当前目录的任务，按更新时间倒序
 baton prune --older <天数>            # 删除早于 N 天的非 running 任务目录（不级联删 worktree）
@@ -304,6 +305,7 @@ baton mcp                             # 启动 MCP 服务（stdio）
 - `--effort` 映射到各家原生参数：Codex `-c model_reasoning_effort=...`；Claude/Agy `--effort`（`ultra` 映射为 `max`）；Cursor `--model auto[effort=...]`。
 - `--idle-timeout` 默认 600：连续这么久没有任何输出字节才停掉。`--max-duration` 默认不限。两者都按单轮计时，`reply` 开新一轮时重新计时。
 - **Worktree 与任务解耦：** 先 `baton worktree add`，再 `baton start --cwd <path>`。默认目录 `.worktrees/`（会写入 `.gitignore`）；可选 `.baton.json` 配置 `copy` / `symlink` / `post_create`。软链 `node_modules` 在分支依赖不一致时可能互相污染，必要时改用 `post_create` 独立安装。
+- **`--scope`（可选）：** 可重复，glob 相对任务 `cwd`。每轮结束后对照**任务起点净变更**（自 baseline HEAD 起的提交 ∪ 工作区 digest 差分）。`--scope-on-violation warn`（默认）保留原终态并写 `scope_violations` + `warning`；`fail` 会把干净的 `success` 升为 `scope_violation`。这是**防失误**，不是沙箱：忽略文件、仓外写入、共享 cwd 并发改动是已知盲区——建议与 worktree 叠用。带 `--scope` 时 cwd 必须是 git 仓库。**兼容性：** 新增终态 `scope_violation` 及可选 `scope_*` 字段。
 
 ### 状态与存活判定
 
@@ -311,7 +313,8 @@ baton mcp                             # 启动 MCP 服务（stdio）
 |---|---|
 | `running` | 还在跑，额外带 `liveness` 和 `quiet_for_s` |
 | `needs_input` | 子 CLI 停下来提问，`decision` 里有 `question` 和 `options` |
-| `success` | 本轮完成，带 `summary` 和本轮的 `git_changes` |
+| `success` | 本轮完成，带 `summary` 和本轮的 `git_changes`（warn 策略下仍可能有 `scope_violations`） |
+| `scope_violation` | `--scope-on-violation fail` 下越界；可 `reply` |
 | `failed` / `timed_out` / `cancelled` | 终态，不能再 `reply` |
 | `not_authenticated` / `quota_exceeded` | 对方 CLI 没登录 / 额度用尽 |
 | `not_installed` | `start` 时就返回，目标不在 `PATH` 里 |
@@ -388,6 +391,7 @@ MCP 是同一套逻辑的薄壳，进程里不存任何任务状态，重启 MCP
 2. **进程组隔离**：子 CLI 独立成进程组，超时和 `cancel` 会杀掉整组，包括它拉起的孙进程。
 3. **凭据脱敏**：写进事件和摘要的文本先脱敏再截断；原始日志完整保留在受 `0600` 保护的 `raw/` 下。
 4. **id 校验**：所有传入的 task id 先校验是 UUID，再拼路径。
+5. **`--scope` 不是安全边界**：只事后检查 git 可见的净变更。被 ignore 的路径、仓外写入、共享 cwd 并发、orphaned（检查未跑）是已知盲区。
 
 ---
 
