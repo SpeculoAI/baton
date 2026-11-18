@@ -159,6 +159,12 @@ export function addWorktree(
 
   const meta: WorktreeMeta = { name, branch, base, created_at: new Date().toISOString() };
   writeMeta(worktreePath, meta);
+  try {
+    prepareWorktree(repo, worktreePath, cfg);
+  } catch (error) {
+    cleanupWorktree(repo, worktreePath, branch);
+    throw error;
+  }
   return { status: "ok", path: worktreePath, branch, base, name, gitignore_updated };
 }
 
@@ -176,4 +182,108 @@ export function listWorktrees(cwd: string): WorktreeListItem[] {
     items.push({ name: meta.name, path: worktreePath, branch: meta.branch, base: meta.base });
   }
   return items.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Minimal gitignore-style match for basename patterns (`*` / `?`). */
+export function matchBasename(name: string, pattern: string): boolean {
+  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".");
+  return new RegExp(`^${escaped}$`).test(name);
+}
+
+function prepareWorktree(repo: string, worktreePath: string, cfg: WorktreeConfig): void {
+  const names = fs.readdirSync(repo);
+  for (const pattern of cfg.copy) {
+    for (const name of names) {
+      if (!matchBasename(name, pattern)) continue;
+      const src = path.join(repo, name);
+      const dest = path.join(worktreePath, name);
+      const stat = fs.lstatSync(src);
+      if (stat.isDirectory()) fs.cpSync(src, dest, { recursive: true });
+      else fs.copyFileSync(src, dest);
+    }
+  }
+  for (const pattern of cfg.symlink) {
+    for (const name of names) {
+      if (!matchBasename(name, pattern)) continue;
+      const src = path.join(repo, name);
+      const dest = path.join(worktreePath, name);
+      if (!fs.existsSync(src)) continue;
+      if (fs.existsSync(dest)) fs.rmSync(dest, { recursive: true, force: true });
+      fs.symlinkSync(src, dest);
+    }
+  }
+  for (const command of cfg.post_create) {
+    const ran = spawnSync(command, {
+      cwd: worktreePath,
+      shell: true,
+      encoding: "utf8",
+      env: { ...process.env, BATON_MAIN_REPO: repo, BATON_WORKTREE: worktreePath },
+      timeout: 600_000,
+    });
+    if (ran.status !== 0) {
+      const detail = (ran.stderr || ran.stdout || "").trim() || `exit ${ran.status}`;
+      throw new Error(`post_create 失败（${command}）：${detail}`);
+    }
+  }
+}
+
+function cleanupWorktree(repo: string, worktreePath: string, branch: string): void {
+  git(repo, ["worktree", "remove", "--force", worktreePath]);
+  git(repo, ["branch", "-D", branch]);
+  git(repo, ["worktree", "prune"]);
+}
+
+function resolveManagedPath(cwd: string, nameOrPath: string): { repo: string; root: string; worktreePath: string; meta: WorktreeMeta } {
+  const repo = resolveRepoRoot(cwd);
+  const cfg = loadWorktreeConfig(repo);
+  const root = resolveWorktreeRoot(repo, cfg);
+  const candidate = path.isAbsolute(nameOrPath) ? path.resolve(nameOrPath) : path.resolve(cwd, nameOrPath);
+  const byName = path.join(root, nameOrPath);
+  const worktreePath = fs.existsSync(path.join(candidate, META_NAME))
+    ? candidate
+    : fs.existsSync(path.join(byName, META_NAME))
+      ? byName
+      : candidate;
+  const rel = path.relative(root, worktreePath);
+  if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) {
+    throw new Error("只能删除 worktree 根目录下由 baton 管理的树。");
+  }
+  const meta = readMeta(worktreePath);
+  if (!meta) throw new Error(`不是 baton 管理的 worktree：${worktreePath}`);
+  return { repo, root, worktreePath, meta };
+}
+
+function isDirty(worktreePath: string): boolean {
+  // Ignore untracked (copy/.baton-worktree.json); only block on tracked edits.
+  const status = git(worktreePath, ["status", "--porcelain", "--untracked-files=no"]);
+  return status.status === 0 && status.stdout.trim().length > 0;
+}
+
+function hasUnmergedCommits(repo: string, branch: string, base: string): boolean {
+  const ran = git(repo, ["rev-list", "--count", `${base}..${branch}`]);
+  if (ran.status !== 0) return true;
+  return Number(ran.stdout.trim()) > 0;
+}
+
+export type WorktreeRemoveResult = { status: "ok"; path: string; branch: string; name: string };
+
+export function removeWorktree(cwd: string, nameOrPath: string): WorktreeRemoveResult {
+  const { repo, worktreePath, meta } = resolveManagedPath(cwd, nameOrPath);
+  if (isDirty(worktreePath)) {
+    throw new Error(`worktree 有未提交改动，拒绝删除：${worktreePath}`);
+  }
+  if (hasUnmergedCommits(repo, meta.branch, meta.base)) {
+    throw new Error(`分支 ${meta.branch} 相对 ${meta.base} 仍有未合并提交，拒绝删除。`);
+  }
+  // ponytail: --force after our tracked-dirty + unmerged checks; untracked copy/meta are expected
+  const removed = git(repo, ["worktree", "remove", "--force", worktreePath]);
+  if (removed.status !== 0) {
+    throw new Error(`git worktree remove 失败：${(removed.stderr || removed.stdout).trim()}`);
+  }
+  const deleted = git(repo, ["branch", "-d", meta.branch]);
+  if (deleted.status !== 0) {
+    throw new Error(`删除分支失败：${(deleted.stderr || deleted.stdout).trim()}`);
+  }
+  git(repo, ["worktree", "prune"]);
+  return { status: "ok", path: worktreePath, branch: meta.branch, name: meta.name };
 }

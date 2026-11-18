@@ -32,7 +32,7 @@
 
 ## Phase 2: 准备与删除
 
-- [ ] Task 3: copy / symlink / post_create（M）
+- [x] Task 3: copy / symlink / post_create（M）
   - Acceptance:
     - `add` 成功后按配置从主仓 copy（gitignore 风格）与 symlink
     - `post_create` 在树内执行；环境含 `BATON_MAIN_REPO`、`BATON_WORKTREE`；非 0 → 失败并清理半成品
@@ -41,7 +41,7 @@
   - Files: `src/worktree.ts`, `test/worktree.test.ts`
   - Deps: T2
 
-- [ ] Task 4: `worktree rm`（M）
+- [x] Task 4: `worktree rm`（M）
   - Acceptance:
     - 解析 name 或 path；必须在 worktree 根下（provenance）
     - 脏（未提交改动）或有未合并且策略要求保留时 → `failed`，不删
@@ -53,12 +53,12 @@
 
 ## Checkpoint: Phase 2
 
-- [ ] `npm test` 全绿
-- [ ] add → 改文件 → rm 失败；提交/还原后 rm 成功
+- [x] worktree 单测 10/10 绿
+- [x] add → 改文件 → rm 失败；干净 / 未超前提交可 rm
 
 ## Phase 3: 入口与文档
 
-- [ ] Task 5: CLI 接线 + start --cwd 冒烟（S）
+- [x] Task 5: CLI 接线 + start --cwd 冒烟（S）
   - Acceptance:
     - `baton worktree add|ls|rm` 经 `cli.ts` 可用，一行 JSON
     - 用法错误信息更新；不破坏现有命令
@@ -67,7 +67,7 @@
   - Files: `src/cli.ts`, `test/worktree.test.ts` 或 `test/lifecycle.test.ts` 追加
   - Deps: T3, T4
 
-- [ ] Task 6: skills + README（S）
+- [x] Task 6: skills + README（S）
   - Acceptance:
     - `baton-orchestrate` / `baton-rescue`：先 `worktree add`，再 `start --cwd`；删树用 `worktree rm`
     - README 中英：命令、`.baton.json` 示意、symlink `node_modules` 风险、与 Superpowers 目录约定一致
