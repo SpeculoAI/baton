@@ -4,7 +4,7 @@
 
 ## Phase 1: 基元 + add/ls
 
-- [ ] Task 1: 配置加载与 Safety 基元（S）
+- [x] Task 1: 配置加载与 Safety 基元（S）
   - Acceptance:
     - 读仓库根 `.baton.json` → `worktree` 段；缺省安全默认值
     - `resolveWorktreeRoot(repo)`：配置 `dir` > `.worktrees` > `worktrees` > 默认 `.worktrees`
