@@ -1,8 +1,9 @@
-import type { Adapter, BatonEvent, EventData } from "../types.ts";
+import type { Adapter, BatonEvent, Effort, EventData } from "../types.ts";
 import { redact } from "../redact.ts";
 import { authHit, which } from "./common.ts";
 
 const AUTH = ["not authenticated", "please log in", "agent login"];
+const EMBEDDED_EFFORT = /-(low|medium|high|xhigh|ultra|max)(-fast)?$/i;
 
 function event(data: EventData): BatonEvent[] {
   return [{ ts: new Date().toISOString(), turn: 0, ...data }];
@@ -12,18 +13,36 @@ function parse(line: string): any {
   try { return JSON.parse(line); } catch { return null; }
 }
 
+/** Build the Cursor `--model` value. Never emits two competing model args. */
+export function resolveCursorModelArg(
+  model: string | null | undefined,
+  effort: Effort | null | undefined,
+): string | null {
+  const id = typeof model === "string" ? model.trim() : "";
+  const e = effort || null;
+  if (id && e) {
+    if (id.includes("[")) throw new Error("模型已含参数括号，不要再传 --effort。");
+    if (EMBEDDED_EFFORT.test(id)) throw new Error(`模型 ${id} 已含档位，不要再传 --effort。`);
+    return `${id}[effort=${e}]`;
+  }
+  if (id) return id;
+  if (e) return `auto[effort=${e}]`;
+  return null;
+}
+
 export const cursor: Adapter = {
   id: "cursor",
   resolve(env) {
     // cursor-agent 名字不会撞上 IDE 的 `cursor`，也比 PATH 里别的 `agent` 先命中。
     return which(["cursor-agent", "agent"], env);
   },
-  build({ bin, cwd, prompt, sessionId, reasoningEffort }) {
+  build({ bin, cwd, prompt, sessionId, reasoningEffort, model }) {
     const args = ["--print", "--force", "--trust", "--output-format", "stream-json", "--workspace", cwd];
-    if (reasoningEffort) args.push("--model", `auto[effort=${reasoningEffort}]`);
+    const modelArg = resolveCursorModelArg(model, reasoningEffort);
+    if (modelArg) args.push("--model", modelArg);
     if (sessionId) args.push("--resume", sessionId);
     args.push(prompt);
-    return { command: bin, args, stdin: null };
+    return { command: bin, args, stdin: null, modelArg: modelArg ?? undefined };
   },
   sessionIdFrom(line) {
     const obj = parse(line);

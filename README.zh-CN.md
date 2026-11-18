@@ -287,7 +287,7 @@ node src/cli.ts agents
 ```bash
 baton agents
 baton start --target <codex|claude|cursor|agy> [--prompt <text> | stdin] [--file <p>...] [--effort low|medium|high|ultra]
-            [--idle-timeout <秒>] [--max-duration <秒>] [--cwd <dir>]
+            [--model <id>] [--idle-timeout <秒>] [--max-duration <秒>] [--cwd <dir>]
             [--scope <glob> ...] [--scope-on-violation warn|fail]
 baton status <id>
 baton wait <id>... [--for <秒>]       # 默认 50；任一任务离开 running 就返回它，到点仍在跑就返回 running 视图
@@ -302,7 +302,8 @@ baton worktree rm <name-or-path>      # 脏或未合并则拒绝；干净则 rem
 baton mcp                             # 启动 MCP 服务（stdio）
 ```
 
-- `--effort` 映射到各家原生参数：Codex `-c model_reasoning_effort=...`；Claude/Agy `--effort`（`ultra` 映射为 `max`）；Cursor `--model auto[effort=...]`。
+- `--effort` 映射到各家原生参数：Codex `-c model_reasoning_effort=...`；Claude/Agy `--effort`（`ultra` 映射为 `max`）；Cursor 仅 effort 时 → `--model auto[effort=...]`。
+- `--model <id>`（目前仅 Cursor）：按任务指定模型，写入 meta，`reply` 延续。Cursor 规则：仅 model → `--model <id>`；model+effort → `--model '<id>[effort=...]'`；若 id 已含档位（如 `grok-4.7-xhigh`）或已有括号再带 `--effort` 则报错。不会出现两个 `--model`。`status` 含 `model`（请求）与 `model_argv`（传给 CLI 的参数）；这不是 provider 确认的“实际模型”。
 - `--idle-timeout` 默认 600：连续这么久没有任何输出字节才停掉。`--max-duration` 默认不限。两者都按单轮计时，`reply` 开新一轮时重新计时。
 - **Worktree 与任务解耦：** 先 `baton worktree add`，再 `baton start --cwd <path>`。默认目录 `.worktrees/`（会写入 `.gitignore`）；可选 `.baton.json` 配置 `copy` / `symlink` / `post_create`。软链 `node_modules` 在分支依赖不一致时可能互相污染，必要时改用 `post_create` 独立安装。
 - **`--scope`（可选）：** 可重复，glob 相对任务 `cwd`。每轮结束后对照**任务起点净变更**（自 baseline HEAD 起的提交 ∪ 工作区 digest 差分）。`--scope-on-violation warn`（默认）保留原终态并写 `scope_violations` + `warning`；`fail` 会把干净的 `success` 升为 `scope_violation`。这是**防失误**，不是沙箱：忽略文件、仓外写入、共享 cwd 并发改动是已知盲区——建议与 worktree 叠用。带 `--scope` 时 cwd 必须是 git 仓库。**兼容性：** 新增终态 `scope_violation` 及可选 `scope_*` 字段。

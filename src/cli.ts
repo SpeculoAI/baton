@@ -23,13 +23,13 @@ async function main(): Promise<void> {
   } else if (command === "start") {
     const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
       target: { type: "string" }, prompt: { type: "string" }, cwd: { type: "string" },
-      file: { type: "string", multiple: true }, effort: { type: "string" },
+      file: { type: "string", multiple: true }, effort: { type: "string" }, model: { type: "string" },
       "idle-timeout": { type: "string" }, "max-duration": { type: "string" },
       scope: { type: "string", multiple: true }, "scope-on-violation": { type: "string" },
     } });
     if (positionals.length) throw new Error("start 不接受位置参数。");
     result = await start({ target: values.target || "", prompt: values.prompt ?? fs.readFileSync(0, "utf8"), cwd: values.cwd, files: values.file,
-      reasoningEffort: values.effort as Effort | undefined,
+      reasoningEffort: values.effort as Effort | undefined, model: values.model,
       idleTimeout: values["idle-timeout"] === undefined ? undefined : Number(values["idle-timeout"]), maxDuration: values["max-duration"] === undefined ? undefined : Number(values["max-duration"]),
       scope: values.scope, scopeOnViolation: values["scope-on-violation"] as ScopeOnViolation | undefined,
     });

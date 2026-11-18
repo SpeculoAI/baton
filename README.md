@@ -287,7 +287,7 @@ Every command prints exactly one JSON object (except `tail`) and exits non-zero 
 ```bash
 baton agents
 baton start --target <codex|claude|cursor|agy> [--prompt <text> | stdin] [--file <p>...] [--effort low|medium|high|ultra]
-            [--idle-timeout <s>] [--max-duration <s>] [--cwd <dir>]
+            [--model <id>] [--idle-timeout <s>] [--max-duration <s>] [--cwd <dir>]
             [--scope <glob> ...] [--scope-on-violation warn|fail]
 baton status <id>
 baton wait <id>... [--for <s>]       # default 50; returns the first job that leaves running, or the running view on timeout
@@ -302,7 +302,8 @@ baton worktree rm <name-or-path>     # refuses dirty/unmerged trees; remove + de
 baton mcp                            # start the MCP server (stdio)
 ```
 
-- `--effort` maps to each CLI's native flag: Codex `-c model_reasoning_effort=...`; Claude/Agy `--effort` (`ultra` becomes `max`); Cursor `--model auto[effort=...]`.
+- `--effort` maps to each CLI's native flag: Codex `-c model_reasoning_effort=...`; Claude/Agy `--effort` (`ultra` becomes `max`); Cursor alone → `--model auto[effort=...]`.
+- `--model <id>` (Cursor only for now): sets the requested model, stored on the task and kept across `reply`. Cursor rules: model only → `--model <id>`; model+effort → `--model '<id>[effort=...]'`; if the id already embeds a tier (e.g. `grok-4.7-xhigh`) or brackets, combining `--effort` errors. Never emits two `--model` flags. `status` shows `model` (requested) and `model_argv` (passed to the CLI). That is not a provider-confirmed “actual model”.
 - `--idle-timeout` defaults to 600: the job stops only after that many seconds without a single output byte. `--max-duration` is unlimited by default. Both apply per turn and restart on `reply`.
 - **Worktrees are separate from tasks:** `baton worktree add`, then `baton start --cwd <path>`. Default root is `.worktrees/` (appended to `.gitignore` if needed). Optional `.baton.json` configures `copy` / `symlink` / `post_create`. Symlinking `node_modules` can cross-contaminate when branches diverge — prefer `post_create` installs when unsure.
 - **`--scope` (optional):** repeatable globs relative to the task `cwd`. After each turn, Baton checks **task-baseline net changes** (commits since start HEAD ∪ working-tree digest diff) against those globs. `--scope-on-violation warn` (default) keeps the transport status and sets `scope_violations` + `warning`; `fail` upgrades a clean `success` to `scope_violation`. This is a **mistake fence**, not a sandbox: ignored paths, non-git writes, and concurrent edits on a shared cwd are blind spots — prefer combining with worktree. Requires a git repo when `--scope` is set. **Breaking note for clients:** new terminal status `scope_violation` (and optional `scope_*` meta fields).
