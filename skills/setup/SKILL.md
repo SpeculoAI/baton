@@ -10,6 +10,8 @@ description: >-
 
 Plugin install clones the repo and does not run npm install. The MCP process then crashes before `delegate_task` exists. This skill installs dependencies in the plugin directory only.
 
+Baton needs **Node.js >= 24** (`package.json` `engines`). If Node is older, stop and tell the user to upgrade before installing.
+
 ## Find the plugin root
 
 Do not run npm in the user's project. Use the first directory that contains `scripts/setup.mjs`:
@@ -47,3 +49,12 @@ node "<plugin-root>/scripts/setup.mjs" --install --json
 Show `next`. Tell them to reload the plugin so MCP can start. Do not start MCP yourself.
 
 If already ready, or npm is missing, do not ask. Show `next`.
+
+## After ready
+
+Reload the plugin (new session) so MCP picks up tools. Then:
+
+- One bounded handoff → `baton-rescue` (supports `--scope`, `worktree add` then `start --cwd`, Cursor `--model`)
+- Several jobs / dependencies / review → `baton-orchestrate`
+
+After a plugin update, run `/baton:setup` again if MCP still fails with missing deps; reload so the host loads the latest skills.

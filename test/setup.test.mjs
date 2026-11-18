@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { depsInstalled, installDeps, main, scriptPluginRoot } from "../scripts/setup.mjs";
+import { depsInstalled, installDeps, inspect, main, nodeMajor, scriptPluginRoot } from "../scripts/setup.mjs";
 
 function batonRoot(name = "baton") {
   const root = mkdtempSync(path.join(os.tmpdir(), "baton-setup-"));
@@ -83,4 +83,23 @@ test("setup skill is /baton:setup", () => {
   assert.match(skill, /^name:\s*setup\s*$/m);
   assert.match(skill, /安装依赖 \(Recommended\)/);
   assert.match(skill, /暂时跳过/);
+});
+
+test("setup rejects Node below 24 even when deps exist", () => {
+  assert.equal(nodeMajor("v24.0.0"), 24);
+  assert.equal(nodeMajor("v22.11.0"), 22);
+  const root = batonRoot();
+  const npmOk = () => ({ status: 0, stdout: "", stderr: "" });
+  try {
+    markInstalled(root);
+    const old = inspect(root, npmOk, "v22.11.0");
+    assert.equal(old.node_ok, false);
+    assert.equal(old.ready, false);
+    assert.match(old.next, /Node\.js 24/);
+    const ok = inspect(root, npmOk, "v24.22.2");
+    assert.equal(ok.node_ok, true);
+    assert.equal(ok.ready, true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

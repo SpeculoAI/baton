@@ -1,7 +1,7 @@
 # Baton 调度代理（轻编排）
 
 日期：2026-11-10  
-状态：skill 已按 #22 升级为「编排 agent 持状态 + 逐单审查 + 异步通知」；worktree 引擎 / 写入锁仍延后（skill 里只给隔离建议）
+状态：skill 已按 #22 升级；worktree（#36）与 `--scope`（#37）已落地；写入锁 / 确定性调度（#23）仍延后
 
 ## Problem Statement
 
@@ -22,7 +22,7 @@ How Might We：本机主控只下目标，由一层调度代理选 CLI、拆派�
 
 - [ ] 主控把「选哪家」交给代理后，本机自用仍可接受
 - [ ] 调度代理在**宿主侧**调 baton，不被 `BATON_DELEGATION` 误伤
-- [ ] 多单并行时，靠代理 prompt 里的路径边界暂时够用（暂不加写入锁）
+- [x] 多单并行：`--scope` 事后围栏 + skill 路径不重叠串行；写入锁仍不做
 - [ ] 「方法信封可空」不会让工人比现在更差（现在本也就很少强制方法）
 
 ## MVP Scope
@@ -39,7 +39,7 @@ How Might We：本机主控只下目标，由一层调度代理选 CLI、拆派�
 - dsh 式 Source / Eval / Mandate / 面板 — 自控过高，本机不需要
 - 新中央编排服务 — 违背 In-Situ
 - worker CLI 内再挂 baton 深递归 — 已有防死锁；MVP 调度只发生在宿主侧
-- 写入范围锁 / 排队策略 — 以后再加；先靠代理 prompt
+- 写入范围锁 / 排队策略 — 以后再加；现有 `--scope` 是事后围栏，不是锁
 - 把「调度」做成必装核心路径 — 单跳 `baton-rescue` 仍是合法默认用法
 
 ## Open Questions（MVP 默认）
@@ -47,7 +47,7 @@ How Might We：本机主控只下目标，由一层调度代理选 CLI、拆派�
 - 调度代理模型：跟主控同模型
 - 再派第二家：默认失败换家，不无故双跑
 - 最大并发：默认 3；要更多问主控
-- worktree 隔离：引擎延后；skill 建议默认独立 worktree，无隔离时主会话勿改共享树
+- worktree 隔离：`baton worktree` 已可用；skill 建议与 `--scope` 叠用
 
 ## 和现状的关系
 
