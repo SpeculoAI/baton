@@ -4,7 +4,7 @@ import { parseArgs } from "node:util";
 import { agents, start, status, cancel, wait, reply, ls, prune } from "./tasks.ts";
 import { addWorktree, listWorktrees, removeWorktree } from "./worktree.ts";
 import { redact } from "./redact.ts";
-import type { Author, Effort } from "./types.ts";
+import type { Author, Effort, ScopeOnViolation } from "./types.ts";
 
 async function main(): Promise<void> {
   const [command, ...args] = process.argv.slice(2);
@@ -25,11 +25,13 @@ async function main(): Promise<void> {
       target: { type: "string" }, prompt: { type: "string" }, cwd: { type: "string" },
       file: { type: "string", multiple: true }, effort: { type: "string" },
       "idle-timeout": { type: "string" }, "max-duration": { type: "string" },
+      scope: { type: "string", multiple: true }, "scope-on-violation": { type: "string" },
     } });
     if (positionals.length) throw new Error("start 不接受位置参数。");
     result = await start({ target: values.target || "", prompt: values.prompt ?? fs.readFileSync(0, "utf8"), cwd: values.cwd, files: values.file,
       reasoningEffort: values.effort as Effort | undefined,
       idleTimeout: values["idle-timeout"] === undefined ? undefined : Number(values["idle-timeout"]), maxDuration: values["max-duration"] === undefined ? undefined : Number(values["max-duration"]),
+      scope: values.scope, scopeOnViolation: values["scope-on-violation"] as ScopeOnViolation | undefined,
     });
     if ((result as { status: string }).status !== "running") process.exitCode = 1;
   } else if (command === "status") {

@@ -8,9 +8,21 @@ import { readMeta, writeMeta, writeTurn, readTurn, appendEvent, taskDir, lockTas
 import { setTimeout as sleep } from "node:timers/promises";
 import { redact } from "./redact.ts";
 import { isAlive, killGroup } from "./process.ts";
-import type { Author, Effort, GitChanges, TaskMeta } from "./types.ts";
+import { gitSnapshot, snapshotToBaseline } from "./git.ts";
+import { normalizeScopeInput, scopePromptPrefix } from "./scope.ts";
+import type { Author, Effort, GitChanges, ScopeOnViolation, TaskMeta } from "./types.ts";
 
-export type StartInput = { target: string; prompt: string; cwd?: string; files?: string[]; reasoningEffort?: Effort; idleTimeout?: number; maxDuration?: number };
+export type StartInput = {
+  target: string;
+  prompt: string;
+  cwd?: string;
+  files?: string[];
+  reasoningEffort?: Effort;
+  idleTimeout?: number;
+  maxDuration?: number;
+  scope?: string[];
+  scopeOnViolation?: ScopeOnViolation;
+};
 export type StartResult = TaskMeta | { status: "failed" | "not_installed"; summary: string };
 
 function positive(value: number, name: string): number {
@@ -43,15 +55,26 @@ export async function start(input: StartInput): Promise<StartResult> {
   const cwd = path.resolve(input.cwd || process.env.BATON_CWD || process.cwd());
   if (!fs.statSync(cwd).isDirectory()) throw new Error("cwd 必须是目录。");
   if (!adapter.resolve(process.env)) return { status: "not_installed", summary: `${input.target} 不在 PATH 里。` };
+  const scopeFields = normalizeScopeInput(input.scope, input.scopeOnViolation);
+  let scope_baseline: TaskMeta["scope_baseline"];
+  let prompt = input.prompt;
+  if (scopeFields.scope?.length) {
+    const snap = gitSnapshot(cwd);
+    if (!snap?.head) throw new Error("带 --scope 时 cwd 必须是 git 仓库（需要 HEAD baseline）。");
+    scope_baseline = snapshotToBaseline(snap);
+    prompt = `${scopePromptPrefix(scopeFields.scope)}${prompt}`;
+  }
   const now = new Date().toISOString();
   const meta: TaskMeta = {
     task_id: randomUUID(), target: adapter.id, cwd, created_at: now, updated_at: now,
     status: "running", turn: 1, session_id: null, reasoning_effort: input.reasoningEffort,
     idle_timeout_s: idle, max_duration_s: max, supervisor_pid: null, child_pid: null,
     heartbeat_at: null, last_event_at: null,
+    ...scopeFields,
+    scope_baseline,
   };
   writeMeta(meta);
-  writeTurn(meta.task_id, { turn: 1, author: "host", prompt: input.prompt, files: input.files, status: "running" });
+  writeTurn(meta.task_id, { turn: 1, author: "host", prompt, files: input.files, status: "running" });
   return launchTurn(meta);
 }
 
@@ -154,12 +177,14 @@ export async function reply(id: string, prompt: string, author: Author = "host")
   try {
     const meta = readMeta(id)!;
     if (meta.status === "running") return busy;
-    if (!["success", "needs_input"].includes(meta.status)) throw new Error(`不能继续 ${meta.status} 的任务。`);
+    if (!["success", "needs_input", "scope_violation"].includes(meta.status)) throw new Error(`不能继续 ${meta.status} 的任务。`);
     if (!meta.session_id) throw new Error("没有 session_id，无法续会话。");
     if (!getAdapter(meta.target)?.resolve(process.env)) throw new Error(`${meta.target} 不在 PATH 里。`);
     next = { ...meta, status: "running", turn: meta.turn + 1, updated_at: new Date().toISOString(), supervisor_pid: null, child_pid: null, heartbeat_at: null, last_event_at: null };
     delete next.decision;
     delete next.summary;
+    delete next.warning;
+    delete next.scope_violations;
     writeTurn(id, { turn: next.turn, author, prompt, status: "running" });
     writeMeta(next);
   } finally { release(); }

@@ -49,3 +49,12 @@ test("orchestrate: transport success 不等于验收通过 (#35)", () => {
   assert.match(orchestrate, /dependents that need acceptance wait/i);
   assert.match(orchestrate, /## Review \(project-owned gate \+ minimal default\)/);
 });
+
+test("orchestrate: scope_violation 可 reply，warn 下非空 violations 不算通过 (#37)", () => {
+  const orchestrate = read("baton-orchestrate");
+  assert.match(orchestrate, /--scope/);
+  assert.match(orchestrate, /scope_violation/);
+  assert.match(orchestrate, /scope_violations/);
+  assert.match(orchestrate, /mistake fence/i);
+  assert.doesNotMatch(orchestrate, /scope_violation[\s\S]{0,80}next vendor/i);
+});

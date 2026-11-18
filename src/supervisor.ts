@@ -4,7 +4,8 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { getAdapter } from "./adapters/index.ts";
 import { buildPrompt, interpret } from "./contract.ts";
-import { gitSnapshot, gitChanges } from "./git.ts";
+import { baselineToSnapshot, gitChanges, gitRepoRoot, gitSnapshot, pathsSinceBaseline } from "./git.ts";
+import { applyScopePolicy, findScopeViolations, isDirUnderCwd, relativizeToTaskCwd } from "./scope.ts";
 import { appendEvent, readMeta, writeMeta, readTurn, writeTurn, taskDir, lockTask } from "./store.ts";
 import { redact } from "./redact.ts";
 import { killGroup } from "./process.ts";
@@ -171,9 +172,55 @@ export async function supervise(id: string): Promise<void> {
   else if (code === 0) { final = "success"; summary = marker?.kind === "result" ? marker.summary : message || stdout; }
   meta.summary = redact(summary).slice(-8192);
   meta.status = final;
+  const after = gitSnapshot(meta.cwd);
+  turn.git_changes = gitChanges(meta.cwd, before, after);
+  if (meta.scope?.length && meta.scope_baseline) {
+    if (!after) {
+      const note = "scope_violation: git snapshot 失败，无法校验范围";
+      meta.warning = meta.warning ? `${meta.warning}; ${note}` : note;
+      meta.scope_violations = ["<snapshot-unavailable>"];
+      if ((meta.scope_on_violation ?? "warn") === "fail" && final === "success") {
+        final = "scope_violation";
+        meta.status = final;
+        meta.summary = `scope_violation: 见 scope_violations\n${meta.summary ?? ""}`;
+      }
+    } else {
+      try {
+        const repoRoot = gitRepoRoot(meta.cwd) ?? meta.cwd;
+        const relPaths = relativizeToTaskCwd(
+          pathsSinceBaseline(meta.cwd, baselineToSnapshot(meta.scope_baseline), after),
+          repoRoot,
+          meta.cwd,
+        );
+        const violations = findScopeViolations(relPaths, meta.scope, {
+          isDir: (pattern) => isDirUnderCwd(meta.cwd, pattern),
+        });
+        const applied = applyScopePolicy({
+          final,
+          policy: meta.scope_on_violation ?? "warn",
+          violations,
+          summary: meta.summary,
+          warning: meta.warning,
+        });
+        final = applied.status;
+        meta.status = final;
+        meta.summary = applied.summary;
+        meta.warning = applied.warning;
+        meta.scope_violations = applied.scope_violations;
+      } catch (error) {
+        const note = `scope_violation: ${(error as Error).message}`;
+        meta.warning = meta.warning ? `${meta.warning}; ${note}` : note;
+        meta.scope_violations = ["<diff-unavailable>"];
+        if ((meta.scope_on_violation ?? "warn") === "fail" && final === "success") {
+          final = "scope_violation";
+          meta.status = final;
+          meta.summary = `scope_violation: 见 scope_violations\n${meta.summary ?? ""}`;
+        }
+      }
+    }
+  }
   turn.status = final;
   turn.summary = meta.summary;
-  turn.git_changes = gitChanges(meta.cwd, before, gitSnapshot(meta.cwd));
   writeTurn(id, turn);
   emit({ type: "turn_ended", status: final, exit_code: code });
   process.off("SIGTERM", cancel);
