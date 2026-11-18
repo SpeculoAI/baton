@@ -2,6 +2,7 @@
 import fs from "node:fs";
 import { parseArgs } from "node:util";
 import { agents, start, status, cancel, wait, reply, ls, prune } from "./tasks.ts";
+import { addWorktree, listWorktrees, removeWorktree } from "./worktree.ts";
 import { redact } from "./redact.ts";
 import type { Author, Effort } from "./types.ts";
 
@@ -58,7 +59,26 @@ async function main(): Promise<void> {
   } else if (command === "cancel") {
     if (args.length !== 1) throw new Error("cancel 需要一个 task_id。");
     result = await cancel(args[0]);
-  } else throw new Error("用法：baton agents | start | status | cancel | wait | tail | reply | ls | prune | mcp");
+  } else if (command === "worktree") {
+    const [action, ...rest] = args;
+    if (action === "add") {
+      const { values, positionals } = parseArgs({
+        args: rest,
+        allowPositionals: true,
+        options: { name: { type: "string" }, branch: { type: "string" }, base: { type: "string" } },
+      });
+      if (positionals.length) throw new Error("worktree add 不接受位置参数。");
+      result = addWorktree(process.cwd(), { name: values.name, branch: values.branch, base: values.base });
+    } else if (action === "ls") {
+      if (rest.length) throw new Error("worktree ls 不接受额外参数。");
+      result = { worktrees: listWorktrees(process.cwd()) };
+    } else if (action === "rm") {
+      if (rest.length !== 1) throw new Error("worktree rm 需要一个 name 或 path。");
+      result = removeWorktree(process.cwd(), rest[0]!);
+    } else {
+      throw new Error("用法：baton worktree add|ls|rm");
+    }
+  } else throw new Error("用法：baton agents | start | status | cancel | wait | tail | reply | ls | prune | worktree | mcp");
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }
 

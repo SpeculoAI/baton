@@ -294,12 +294,16 @@ baton tail <id> [-f] [--raw]         # readable events; -f follows until the job
 baton reply <id> [--prompt <text> | stdin] [--as host|human]
 baton cancel <id>
 baton ls [--all]                     # jobs for the current directory by default, newest first
-baton prune --older <days>           # delete non-running task directories older than N days
+baton prune --older <days>           # delete non-running task dirs older than N days (does not remove worktrees)
+baton worktree add [--name <id>] [--branch <name>] [--base <ref>]
+baton worktree ls
+baton worktree rm <name-or-path>     # refuses dirty/unmerged trees; remove + delete local branch when clean
 baton mcp                            # start the MCP server (stdio)
 ```
 
 - `--effort` maps to each CLI's native flag: Codex `-c model_reasoning_effort=...`; Claude/Agy `--effort` (`ultra` becomes `max`); Cursor `--model auto[effort=...]`.
 - `--idle-timeout` defaults to 600: the job stops only after that many seconds without a single output byte. `--max-duration` is unlimited by default. Both apply per turn and restart on `reply`.
+- **Worktrees are separate from tasks:** `baton worktree add`, then `baton start --cwd <path>`. Default root is `.worktrees/` (appended to `.gitignore` if needed). Optional `.baton.json` configures `copy` / `symlink` / `post_create`. Symlinking `node_modules` can cross-contaminate when branches diverge — prefer `post_create` installs when unsure.
 
 ### Statuses and liveness
 

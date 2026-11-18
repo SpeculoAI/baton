@@ -89,7 +89,15 @@ Everything else: notify and keep going.
 
 ## Workspace isolation
 
-Prefer an isolated `git worktree` (and branch) so the main session can keep editing elsewhere; pass it to workers with `baton start --cwd <worktree>`. The host creates it before starting, or the orchestrator runs `git worktree add` for isolation only. If isolation is unavailable, say so up front: the main session must not modify the shared tree until the run ends or is cancelled.
+Prefer an isolated git worktree so the main session can keep editing elsewhere. **Opening a tree is separate from running a task:**
+
+```
+baton worktree add [--name <id>] [--branch <name>] [--base <ref>]
+baton start --cwd <path> ...
+baton worktree rm <name-or-path>   # only when clean / merged; does not cascade from task prune
+```
+
+Prefer `baton worktree` over raw `git worktree add` (handles `.worktrees` ignore, copy/symlink/post_create from `.baton.json`). If isolation is unavailable, say so up front: the main session must not modify the shared tree until the run ends or is cancelled. Symlinking `node_modules` can cross-contaminate when branches diverge — prefer `post_create` install when unsure.
 
 ## Review (project-owned gate + minimal default)
 
