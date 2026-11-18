@@ -9,6 +9,8 @@ import {
   resolveWorktreeRoot,
   ensureIgnored,
   assertNotNestedWorktree,
+  addWorktree,
+  listWorktrees,
 } from "../src/worktree.ts";
 
 function tempRepo(): { cwd: string; git: (args: string[]) => string; cleanup: () => void } {
@@ -103,6 +105,42 @@ test("assertNotNestedWorktree：主仓通过，linked worktree 拒绝", () => {
     git(["worktree", "add", "-b", "feat-branch", linked]);
 
     assert.throws(() => assertNotNestedWorktree(linked), /linked worktree|嵌套|main repo/i);
+  } finally {
+    cleanup();
+  }
+});
+
+test("addWorktree 默认命名并写登记文件；ls 可见", () => {
+  const { cwd, cleanup } = tempRepo();
+  try {
+    const added = addWorktree(cwd);
+    assert.equal(added.status, "ok");
+    assert.match(added.name, /^[0-9a-f]{8}$/);
+    assert.equal(added.branch, `baton/${added.name}`);
+    assert.equal(added.gitignore_updated, true);
+    assert.ok(existsSync(added.path));
+    const meta = JSON.parse(readFileSync(path.join(added.path, ".baton-worktree.json"), "utf8"));
+    assert.equal(meta.name, added.name);
+    assert.equal(meta.branch, added.branch);
+
+    const listed = listWorktrees(cwd);
+    assert.equal(listed.length, 1);
+    assert.equal(listed[0]?.name, added.name);
+    assert.equal(listed[0]?.path, added.path);
+  } finally {
+    cleanup();
+  }
+});
+
+test("addWorktree 接受自定义 name/branch/base", () => {
+  const { cwd, git, cleanup } = tempRepo();
+  try {
+    git(["branch", "develop"]);
+    const added = addWorktree(cwd, { name: "job1", branch: "feature/job1", base: "develop" });
+    assert.equal(added.name, "job1");
+    assert.equal(added.branch, "feature/job1");
+    assert.equal(added.base, "develop");
+    assert.ok(added.path.endsWith(`${path.sep}.worktrees${path.sep}job1`));
   } finally {
     cleanup();
   }

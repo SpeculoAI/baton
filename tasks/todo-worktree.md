@@ -15,7 +15,7 @@
   - Files: `src/worktree.ts`, `test/worktree.test.ts`
   - Deps: 无
 
-- [ ] Task 2: `worktree add` + `ls`（M）
+- [x] Task 2: `worktree add` + `ls`（M）
   - Acceptance:
     - `add`：跑 Safety → `git worktree add -b baton/<name> <root>/<name> <base>`（name 默认 8 hex；branch/base 可覆写）
     - 树内写 `.baton-worktree.json`
@@ -27,8 +27,8 @@
 
 ## Checkpoint: Phase 1
 
-- [ ] `npm test` 全绿
-- [ ] 临时仓可 `add` 出目录且 `git worktree list` 可见
+- [x] `npm test` 全绿（worktree 单测 6/6；全套稍后 Phase 2 前再跑）
+- [x] 临时仓可 `add` 出目录且 `git worktree list` 可见
 
 ## Phase 2: 准备与删除
 
