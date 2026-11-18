@@ -58,3 +58,25 @@ test("orchestrate: scope_violation 可 reply，warn 下非空 violations 不算�
   assert.match(orchestrate, /mistake fence/i);
   assert.doesNotMatch(orchestrate, /scope_violation[\s\S]{0,80}next vendor/i);
 });
+
+test("rescue: --model + scope_violation 终态；orchestrate brief 含 worktree/model", () => {
+  const rescue = read("baton-rescue");
+  const orchestrate = read("baton-orchestrate");
+  assert.match(rescue, /--model <id>/);
+  assert.match(rescue, /Cursor only/i);
+  assert.match(rescue, /scope_violation/);
+  assert.match(rescue, /scope_violations/);
+  assert.match(rescue, /success`, `needs_input`, or `scope_violation/);
+  assert.match(orchestrate, /--model <id>/);
+  assert.match(orchestrate, /worktree/);
+  assert.match(orchestrate, /agents, start, wait, status, tail, reply, cancel, ls, worktree/);
+});
+
+test("setup: Node >= 24 与就绪后指向 rescue/orchestrate", () => {
+  const setup = read("setup");
+  assert.match(setup, /Node\.js >= 24/);
+  assert.match(setup, /baton-rescue/);
+  assert.match(setup, /baton-orchestrate/);
+  assert.match(setup, /--model/);
+  assert.match(setup, /--scope/);
+});

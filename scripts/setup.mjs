@@ -37,22 +37,30 @@ export function depsInstalled(root) {
   );
 }
 
-export function inspect(root, spawnImpl = spawnSync) {
+export function nodeMajor(version = process.version) {
+  const m = /^v(\d+)/.exec(String(version));
+  return m ? Number(m[1]) : 0;
+}
+
+export function inspect(root, spawnImpl = spawnSync, version = process.version) {
   const name = packageName(root);
   const baton = name === "baton";
   const installed = baton && depsInstalled(root);
   const npm = npmAvailable(spawnImpl);
+  const node_ok = nodeMajor(version) >= 24;
   let next;
   if (!baton) next = "这个目录不是 baton 插件（package.json name 不是 baton）。";
+  else if (!node_ok) next = "Node.js 版本过低。需要 Node.js 24 或更新，再跑 /baton:setup。";
   else if (installed) next = "依赖已在。工具列表里还没有 delegate_task 的话，重载插件后再开一次会话。";
-  else if (!npm) next = "没有 npm。先装 Node.js 18 或更新，再跑 /baton:setup。";
+  else if (!npm) next = "没有 npm。先装 Node.js 24 或更新，再跑 /baton:setup。";
   else next = "依赖未安装。确认后只在这个插件目录执行 npm ci，不要装到用户项目里。";
   return {
     plugin_root: root,
     package: name,
     npm,
+    node_ok,
     deps_installed: installed,
-    ready: installed,
+    ready: installed && node_ok,
     next,
   };
 }
@@ -85,7 +93,8 @@ export function main(argv = process.argv.slice(2), spawnImpl = spawnSync) {
   const root = path.resolve(args.root || scriptPluginRoot());
   if (!args.install) return inspect(root, spawnImpl);
   const before = inspect(root, spawnImpl);
-  if (!before.ready && before.package === "baton") {
+  if (!before.node_ok) return { ...before, installed: false };
+  if (!before.deps_installed && before.package === "baton") {
     const ran = installDeps(root, spawnImpl);
     const after = inspect(root, spawnImpl);
     const tail = `${ran.stderr || ran.stdout || ""}`.trim().slice(-2000);
