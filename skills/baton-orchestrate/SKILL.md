@@ -13,7 +13,7 @@ description: >-
 
 One orchestrator holds the plan: dependency graph, `task_id` per job, results, and rework counts. Workers are the local CLIs. Every job runs in its own detached process with state on disk under `~/.baton`, so jobs survive the orchestrator, this session, or an MCP restart.
 
-Baton is the transport layer. It does **not** bind any engineering methodology. If the workspace already has `.agents/`, OpenSpec, Speckit, or custom rules, fold them into worker prompts and into the per-job review step; if not, send empty-handed and skip review.
+Baton is the transport layer. It does **not** bind any engineering methodology. If the workspace already has `.agents/`, OpenSpec, Speckit, or custom rules, fold them into worker prompts and into the per-job review step; if not, still do a **minimal task-matched verification** (see Review) — never treat transport `success` as acceptance.
 
 For a single one-shot handoff, use `baton-rescue`. Its sections "The command", "Wait", and "After it stops" define the commands and statuses used here.
 
@@ -57,9 +57,10 @@ Do not use (prefer `baton-rescue` or stay in the host):
    It returns the first job that left `running`, or `{status: "running", tasks: [...]}` after 50 seconds. Repeat. Never wait on jobs one after another.
 5. When a job stops:
    - **`needs_input`:** pause dependents of that job; ask the user (through the host) `decision.question` and `decision.options` unchanged; then `baton reply <id> --as human --prompt "<answer>"`. Answer with the default `--as host` only when earlier user instructions already decide it.
-   - Run the project-defined review if any. No project review: a clean `success` is a pass.
-   - **Pass:** notify the host; mark the node done; start newly unblocked dependents.
-   - **Review fails after `success`:** rework in the same conversation with `baton reply <id> --prompt "<focused fix>"`, up to the rework cap (default 1); then wait again.
+   - Transport `success` means **execution complete** (turn finished), not acceptance. Run Review (see below) before any pass/fail conclusion.
+   - **Verified pass:** notify the host; mark the node done; start newly unblocked dependents.
+   - **Acceptance failed after `success`:** rework in the same conversation with `baton reply <id> --prompt "<focused fix>"`, up to the rework cap (default 1); then wait again.
+   - **Cannot verify:** report what remains unverified; do **not** claim accepted; do not unblock dependents that need a verified pass (ask the host if the graph is stuck).
    - **`failed` / `timed_out`:** the task is closed. Start a new task for the same job, either the same vendor with a larger `--idle-timeout` (for `timed_out`) or the next vendor once (for `failed`). Do not dual-run the same edit without cause.
    - **`not_installed` / `not_authenticated`:** try the next vendor.
    - **`quota_exceeded`:** stop and ask the host before switching vendor.
@@ -70,7 +71,7 @@ Tell the user they can watch any job with `baton tail -f <id>` and list them wit
 
 ## Notify the host
 
-After each job conclusion (pass, fail at cap, cancelled), push a short note to the main session without waiting for a reply, if the host has a channel for that (for example `SendMessage(to: "main", ...)` in Claude Code or Cursor). Otherwise keep the notes for the final summary. Each note: job, conclusion, changed files, check results, leftover risks.
+After each job reaches a review conclusion (`verified pass`, `acceptance failed` including fail-at-cap, `unverified`, or `cancelled`), push a short note to the main session without waiting for a reply, if the host has a channel for that (for example `SendMessage(to: "main", ...)` in Claude Code or Cursor). Otherwise keep the notes for the final summary. Transport `success` alone is only **execution complete** — not a note conclusion. Each note: job, conclusion (`verified pass` / `acceptance failed` / `unverified` / `cancelled`), changed files, check results, leftover risks. Never upgrade a worker self-report or transport `success` into `verified pass` without an independent check.
 
 ## Stop and ask the host
 
@@ -78,7 +79,8 @@ Do **not** decide alone when:
 
 - A job is in `needs_input` and earlier instructions do not decide it
 - A worker blocker needs a plan change
-- Rework hits the cap and still fails review
+- Rework hits the cap and still fails review (`acceptance failed`)
+- A job is `unverified` and dependents need a verified pass
 - New dependencies appear that were not in the graph
 - `quota_exceeded`
 - Push / open PR / any other irreversible publish step is required
@@ -89,9 +91,15 @@ Everything else: notify and keep going.
 
 Prefer an isolated `git worktree` (and branch) so the main session can keep editing elsewhere; pass it to workers with `baton start --cwd <worktree>`. The host creates it before starting, or the orchestrator runs `git worktree add` for isolation only. If isolation is unavailable, say so up front: the main session must not modify the shared tree until the run ends or is cancelled.
 
-## Review (project-owned)
+## Review (project-owned gate + minimal default)
 
-Baton only reserves the slot after each job ends. What to check comes from workspace rules (diff read, typecheck, unit tests, …). The orchestrator may run those read-only check commands, but does not implement the worker's coding task. Large batches: one short-lived reviewer per finished job; keep only its pass/fail conclusion.
+Baton only reserves the slot after each job ends. Transport `success` stays “turn finished”; acceptance is a separate orchestrator conclusion.
+
+- **Project rules present** (`.agents/`, OpenSpec, Speckit, custom checks): follow them strictly. Do not replace them with a lighter default.
+- **No project rules:** still run a **minimal task-matched verification** — check the job’s stated deliverables and key behavior with the smallest sufficient existing checks (read the diff, spot-check expected files/behavior). Do **not** invent a full CI suite or spawn a reviewer agent by default.
+- If you cannot verify an item: list it as unverified; do not claim accepted; dependents that need acceptance wait.
+- The orchestrator may run read-only check commands (project-defined, or the minimal task-matched ones above), but does not implement the worker’s coding task.
+- Large batches: optionally one short-lived reviewer per finished job; keep only its pass/fail / unverified conclusion.
 
 ## Orchestrator brief (give to the sub-agent, or follow it yourself)
 
@@ -105,14 +113,14 @@ Rules:
 - Command: node <plugin-root>/src/cli.ts (agents, start, wait, status, tail, reply, cancel, ls)
 - Hold: dependency graph, task_id per job, results, rework counts
 - Do not implement worker coding tasks yourself
-- Do not require Speckit / OpenSpec / agent-skills; if the workspace has rules, copy them into worker prompts and use them for review; otherwise skip review
+- Do not require Speckit / OpenSpec / agent-skills; if the workspace has rules, copy them into worker prompts and use them for review; if not, still do minimal task-matched verification — never treat transport success as verified pass
 - Do not delegate to the CLI vendor this host session already is
 - Max 3 jobs running at once unless the host approves more
 - Use --effort low for mechanical subtasks; raise --idle-timeout for slow, silent models
 - Path-disjoint ready jobs may run in parallel; overlapping paths stay serialized
 - Wait on all live jobs together with `wait <ids...> --for 50`, repeating; never wait one job after another
 - needs_input: ask the host unless earlier instructions decide it; relay the answer with `reply --as human`
-- Review failed after success: `reply` with a focused fix, up to cap (default 1)
+- Advance per job: wait → Review → verified pass: notify and start newly ready dependents; acceptance failed: `reply` with a focused fix up to cap (default 1); cannot verify: report unverified items, do not claim accepted, do not unblock acceptance-gated dependents
 - failed / timed_out: start a new task (larger --idle-timeout, or next vendor once)
 - Notify the host after each job conclusion; ask only for the stop-and-ask cases
 - When all jobs are terminal, return one summary: vendors, statuses, summaries, git_changes, reworks, fail-overs, worktree path/branch

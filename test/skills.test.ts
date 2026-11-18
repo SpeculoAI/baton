@@ -32,3 +32,20 @@ test("skills 不再出现 0.2.x 的旧用法", () => {
     }
   }
 });
+
+test("orchestrate: transport success 不等于验收通过 (#35)", () => {
+  const orchestrate = read("baton-orchestrate");
+  assert.doesNotMatch(orchestrate, /skip review/i);
+  assert.doesNotMatch(
+    orchestrate,
+    /clean `success` is a pass|success[`'"]?\s+as\s+pass|success[`'"]?\s+status\s+is\s+enough/i,
+  );
+  assert.match(orchestrate, /minimal task-matched verification/i);
+  assert.match(orchestrate, /execution complete/i);
+  assert.match(orchestrate, /verified pass/i);
+  assert.match(orchestrate, /acceptance failed/i);
+  assert.match(orchestrate, /never treat transport/i);
+  assert.match(orchestrate, /do not unblock dependents that need a verified pass/i);
+  assert.match(orchestrate, /dependents that need acceptance wait/i);
+  assert.match(orchestrate, /## Review \(project-owned gate \+ minimal default\)/);
+});
