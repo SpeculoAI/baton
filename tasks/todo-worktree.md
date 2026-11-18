@@ -78,6 +78,6 @@
 
 ## Checkpoint: Complete
 
-- [ ] `npm test` 全绿
-- [ ] SPEC Success Criteria 1–8 逐条核对
+- [x] `npm test` 全绿（56/56）
+- [x] SPEC Success Criteria 1–8 逐条核对（引擎 + CLI + 文档已齐）
 - [ ] 开 PR，关联 #36

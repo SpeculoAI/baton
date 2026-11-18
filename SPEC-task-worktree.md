@@ -1,7 +1,7 @@
 # Spec: Worktree 管理与任务 cwd 解耦 (#36 v1)
 
 日期：2026-11-17  
-状态：实现中（T1–T5 完成，待 T6 收尾核对）  
+状态：实现完成（待 PR）  
 关联：[#36](https://github.com/wei292224644/agent-plugin-agent/issues/36)
 
 ## Objective
