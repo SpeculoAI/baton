@@ -294,12 +294,16 @@ baton tail <id> [-f] [--raw]          # 人读格式的事件；-f 跟到任务�
 baton reply <id> [--prompt <text> | stdin] [--as host|human]
 baton cancel <id>
 baton ls [--all]                      # 默认只列当前目录的任务，按更新时间倒序
-baton prune --older <天数>            # 删除早于 N 天的非 running 任务目录
+baton prune --older <天数>            # 删除早于 N 天的非 running 任务目录（不级联删 worktree）
+baton worktree add [--name <id>] [--branch <name>] [--base <ref>]
+baton worktree ls
+baton worktree rm <name-or-path>      # 脏或未合并则拒绝；干净则 remove + 删本地分支
 baton mcp                             # 启动 MCP 服务（stdio）
 ```
 
 - `--effort` 映射到各家原生参数：Codex `-c model_reasoning_effort=...`；Claude/Agy `--effort`（`ultra` 映射为 `max`）；Cursor `--model auto[effort=...]`。
 - `--idle-timeout` 默认 600：连续这么久没有任何输出字节才停掉。`--max-duration` 默认不限。两者都按单轮计时，`reply` 开新一轮时重新计时。
+- **Worktree 与任务解耦：** 先 `baton worktree add`，再 `baton start --cwd <path>`。默认目录 `.worktrees/`（会写入 `.gitignore`）；可选 `.baton.json` 配置 `copy` / `symlink` / `post_create`。软链 `node_modules` 在分支依赖不一致时可能互相污染，必要时改用 `post_create` 独立安装。
 
 ### 状态与存活判定
 
