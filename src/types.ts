@@ -20,6 +20,10 @@ export type TaskMeta = {
   turn: number;
   session_id: string | null;
   reasoning_effort?: Effort;
+  /** Requested model id (Cursor `--model`); reply keeps this. */
+  model?: string;
+  /** Last argv value passed as `--model` (requested, not provider-confirmed). */
+  model_argv?: string;
   idle_timeout_s: number;
   max_duration_s: number | null;
   supervisor_pid: number | null;
@@ -49,11 +53,20 @@ export type SpawnSpec = {
   stdin: string | null;
   lastMessagePath?: string;
   warning?: string;
+  /** Value passed to the CLI as `--model` when applicable. */
+  modelArg?: string;
 };
 export type Adapter = {
   id: Target;
   resolve(env: NodeJS.ProcessEnv): string | null;
-  build(input: { bin: string; cwd: string; prompt: string; sessionId: string | null; reasoningEffort: Effort | null }): SpawnSpec;
+  build(input: {
+    bin: string;
+    cwd: string;
+    prompt: string;
+    sessionId: string | null;
+    reasoningEffort: Effort | null;
+    model?: string | null;
+  }): SpawnSpec;
   parseLine(line: string): BatonEvent[] | null;
   sessionIdFrom(line: string): string | null;
   isAuthFailure(text: string): boolean;

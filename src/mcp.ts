@@ -27,6 +27,7 @@ export function createServer(): McpServer {
       prompt: z.string(),
       files: z.array(z.string()).optional(),
       reasoning_effort: z.enum(["low", "medium", "high", "ultra"]).optional(),
+      model: z.string().optional().describe("按任务指定模型（当前仅 cursor；写入 meta，reply 延续）。"),
       idle_timeout_seconds: z.number().optional().describe("连续这么久没有任何输出就停掉，默认 600。"),
       max_duration_seconds: z.number().optional().describe("单轮总时长上限，默认不限。"),
       cwd: z.string().optional(),
@@ -35,7 +36,7 @@ export function createServer(): McpServer {
     },
   }, (args) => respond(() => start({
     target: args.target_agent, prompt: args.prompt, files: args.files, cwd: args.cwd,
-    reasoningEffort: args.reasoning_effort as Effort | undefined,
+    reasoningEffort: args.reasoning_effort as Effort | undefined, model: args.model,
     idleTimeout: args.idle_timeout_seconds, maxDuration: args.max_duration_seconds,
     scope: args.scope, scopeOnViolation: args.scope_on_violation as ScopeOnViolation | undefined,
   })));

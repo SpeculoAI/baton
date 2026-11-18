@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { adapters, getAdapter } from "./adapters/index.ts";
+import { resolveCursorModelArg } from "./adapters/cursor.ts";
 import { readMeta, writeMeta, writeTurn, readTurn, appendEvent, taskDir, lockTask, listTasks } from "./store.ts";
 import { setTimeout as sleep } from "node:timers/promises";
 import { redact } from "./redact.ts";
@@ -18,6 +19,7 @@ export type StartInput = {
   cwd?: string;
   files?: string[];
   reasoningEffort?: Effort;
+  model?: string;
   idleTimeout?: number;
   maxDuration?: number;
   scope?: string[];
@@ -52,6 +54,13 @@ export async function start(input: StartInput): Promise<StartResult> {
   const idle = positive(input.idleTimeout ?? 600, "idle_timeout");
   const max = input.maxDuration == null ? null : positive(input.maxDuration, "max_duration");
   if (input.reasoningEffort && !["low", "medium", "high", "ultra"].includes(input.reasoningEffort)) throw new Error("未知 effort。");
+  const model = input.model?.trim() || undefined;
+  if (model && adapter.id !== "cursor") throw new Error(`${adapter.id} 暂不支持 --model（当前仅 cursor）。`);
+  let model_argv: string | undefined;
+  if (adapter.id === "cursor") {
+    const resolved = resolveCursorModelArg(model, input.reasoningEffort ?? null);
+    if (resolved) model_argv = resolved;
+  }
   const cwd = path.resolve(input.cwd || process.env.BATON_CWD || process.cwd());
   if (!fs.statSync(cwd).isDirectory()) throw new Error("cwd 必须是目录。");
   if (!adapter.resolve(process.env)) return { status: "not_installed", summary: `${input.target} 不在 PATH 里。` };
@@ -68,6 +77,7 @@ export async function start(input: StartInput): Promise<StartResult> {
   const meta: TaskMeta = {
     task_id: randomUUID(), target: adapter.id, cwd, created_at: now, updated_at: now,
     status: "running", turn: 1, session_id: null, reasoning_effort: input.reasoningEffort,
+    model, model_argv,
     idle_timeout_s: idle, max_duration_s: max, supervisor_pid: null, child_pid: null,
     heartbeat_at: null, last_event_at: null,
     ...scopeFields,
