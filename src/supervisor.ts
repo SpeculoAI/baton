@@ -111,6 +111,7 @@ export async function supervise(id: string): Promise<void> {
       sessionId: meta.session_id,
       reasoningEffort: meta.reasoning_effort ?? null,
       model: meta.model ?? null,
+      mode: meta.mode ?? null,
     });
     meta.warning = spec.warning;
     if (spec.modelArg !== undefined) meta.model_argv = spec.modelArg;
@@ -183,7 +184,24 @@ export async function supervise(id: string): Promise<void> {
   meta.status = final;
   const after = gitSnapshot(meta.cwd);
   turn.git_changes = gitChanges(meta.cwd, before, after);
-  if (meta.scope?.length && meta.scope_baseline) {
+  if (meta.mode === "readonly" && final === "success") {
+    if (!meta.readonly_baseline) {
+      const note = "readonly: 非 git 目录，跳过事后检查";
+      meta.warning = meta.warning ? `${meta.warning}; ${note}` : note;
+    } else if (!after) {
+      final = "readonly_violation";
+      meta.status = final;
+      meta.summary = `readonly_violation: git snapshot 失败\n${meta.summary ?? ""}`;
+    } else {
+      const dirty = pathsSinceBaseline(meta.cwd, baselineToSnapshot(meta.readonly_baseline), after);
+      if (dirty.length) {
+        final = "readonly_violation";
+        meta.status = final;
+        meta.summary = `readonly_violation: ${dirty.length} file(s)\n${meta.summary ?? ""}`;
+      }
+    }
+  }
+  if (meta.scope?.length && meta.scope_baseline && final !== "readonly_violation") {
     if (!after) {
       const note = "scope_violation: git snapshot 失败，无法校验范围";
       meta.warning = meta.warning ? `${meta.warning}; ${note}` : note;

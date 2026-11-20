@@ -49,8 +49,12 @@ Do not use (prefer `baton-rescue` or stay in the host):
 
 1. `baton agents`; use only installed targets.
 2. Build the graph of bounded jobs (prompt, files, edges). Pick a target per job and say why in one sentence.
-3. `baton start` every job whose dependencies are satisfied and whose paths do not overlap another live job. Pass the job’s declared paths as repeated `--scope <glob>` (same data as the plan). Optional `--scope-on-violation warn|fail` (default `warn`). For Cursor, pass `--model <id>` when the user names a model or the job needs a specific one. Default max 3 running at once; ask before going higher.
-4. Wait on all live jobs at once:
+3. `baton start` every job whose dependencies are satisfied and whose paths do not overlap another live job. Pass the job’s declared paths as repeated `--scope <glob>` (same data as the plan). Optional `--scope-on-violation warn|fail` (default `warn`). Review-only jobs: `--mode readonly`. For Cursor, pass `--model <id>` when the user names a model or the job needs a specific one. Default max 3 running at once; ask before going higher.
+4. Wait on all live jobs at once. If the host can run a background shell and wake this session when it exits, start once and end the current turn:
+   ```
+   baton wait <id1> <id2> <id3> --until-done
+   ```
+   Otherwise (sync shell only, or MCP `task_wait`):
    ```
    baton wait <id1> <id2> <id3> --for 50
    ```
@@ -59,7 +63,7 @@ Do not use (prefer `baton-rescue` or stay in the host):
    - **`needs_input`:** pause dependents of that job; ask the user (through the host) `decision.question` and `decision.options` unchanged; then `baton reply <id> --as human --prompt "<answer>"`. Answer with the default `--as host` only when earlier user instructions already decide it.
    - Transport `success` means **execution complete** (turn finished), not acceptance. Run Review (see below) before any pass/fail conclusion.
    - **`success` with non-empty `scope_violations`:** treat as **not** verified pass (warn policy). `baton reply` to revert/move out-of-scope files; counts toward the rework cap.
-   - **`scope_violation`:** same class as acceptance failure — **do not** failover to another vendor. `baton reply` asking to restore out-of-scope paths; counts as rework.
+   - **`scope_violation` / `readonly_violation`:** same class as acceptance failure — **do not** failover to another vendor. `baton reply` asking to restore paths; counts as rework.
    - **Verified pass:** notify the host; mark the node done; start newly unblocked dependents.
    - **Acceptance failed after `success`:** rework in the same conversation with `baton reply <id> --prompt "<focused fix>"`, up to the rework cap (default 1); then wait again.
    - **Cannot verify:** report what remains unverified; do **not** claim accepted; do not unblock dependents that need a verified pass (ask the host if the graph is stuck).
@@ -132,10 +136,11 @@ Rules:
 - For Cursor, pass --model <id> when the user names a model or the job needs a specific one; if the id already embeds a tier or brackets, do not also pass --effort
 - Prefer `baton worktree add` then `start --cwd <path>`; clean up with `worktree rm` when done
 - Path-disjoint ready jobs may run in parallel; overlapping paths stay serialized; pass declared paths as `--scope`
-- Wait on all live jobs together with `wait <ids...> --for 50`, repeating; never wait one job after another
+- Review-only jobs: `--mode readonly`
+- Prefer background `wait <ids...> --until-done` when the host wakes on shell exit; else `wait <ids...> --for 50` repeating; never wait one job after another
 - needs_input: ask the host unless earlier instructions decide it; relay the answer with `reply --as human`
-- Advance per job: wait → Review → verified pass: notify and start newly ready dependents; acceptance failed or scope_violation or success+scope_violations: `reply` with a focused fix up to cap (default 1); cannot verify: report unverified items, do not claim accepted, do not unblock acceptance-gated dependents
-- failed / timed_out: start a new task (larger --idle-timeout, or next vendor once); do not treat scope_violation as vendor failover
+- Advance per job: wait → Review → verified pass: notify and start newly ready dependents; acceptance failed or scope_violation or readonly_violation or success+scope_violations: `reply` with a focused fix up to cap (default 1); cannot verify: report unverified items, do not claim accepted, do not unblock acceptance-gated dependents
+- failed / timed_out: start a new task (larger --idle-timeout, or next vendor once); do not treat scope_violation or readonly_violation as vendor failover
 - Notify the host after each job conclusion; ask only for the stop-and-ask cases
 - When all jobs are terminal, return one summary: vendors, statuses, summaries, git_changes, reworks, fail-overs, worktree path/branch
 ```

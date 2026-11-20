@@ -11,7 +11,7 @@ import { redact } from "./redact.ts";
 import { isAlive, killGroup } from "./process.ts";
 import { gitSnapshot, snapshotToBaseline } from "./git.ts";
 import { normalizeScopeInput, scopePromptPrefix } from "./scope.ts";
-import type { Author, Effort, GitChanges, ScopeOnViolation, TaskMeta } from "./types.ts";
+import type { Author, Effort, Enforcement, GitChanges, ScopeOnViolation, TaskMeta, TaskMode } from "./types.ts";
 
 export type StartInput = {
   target: string;
@@ -24,7 +24,27 @@ export type StartInput = {
   maxDuration?: number;
   scope?: string[];
   scopeOnViolation?: ScopeOnViolation;
+  mode?: TaskMode;
+  allowWeak?: boolean;
 };
+
+/** Resolve readonly enforcement; throws unless allowWeak when strength is none. */
+export function resolveReadonlyEnforcement(
+  adapter: { id: string; readonlyEnforcement?: Enforcement },
+  mode: TaskMode | undefined,
+  allowWeak: boolean | undefined,
+): { mode?: TaskMode; enforcement?: Enforcement } {
+  if (allowWeak && mode !== "readonly") throw new Error("--allow-weak 仅用于 --mode readonly。");
+  if (!mode || mode === "write") return {};
+  // Runtime guard — CLI casts via `as TaskMode`.
+  if (mode !== "readonly") throw new Error("mode 必须为 readonly 或 write。");
+  const enforcement = adapter.readonlyEnforcement ?? "none";
+  if (enforcement === "none" && !allowWeak) {
+    throw new Error(`${adapter.id} 无法强制只读；加 --allow-weak 才放行。`);
+  }
+  if (allowWeak && enforcement !== "none") throw new Error(`${adapter.id} 已有只读映射，无需 --allow-weak。`);
+  return { mode: "readonly", enforcement };
+}
 export type StartResult = TaskMeta | { status: "failed" | "not_installed"; summary: string };
 
 function positive(value: number, name: string): number {
@@ -61,23 +81,29 @@ export async function start(input: StartInput): Promise<StartResult> {
     const resolved = resolveCursorModelArg(model, input.reasoningEffort ?? null);
     if (resolved) model_argv = resolved;
   }
+  const modeFields = resolveReadonlyEnforcement(adapter, input.mode, input.allowWeak);
   const cwd = path.resolve(input.cwd || process.env.BATON_CWD || process.cwd());
   if (!fs.statSync(cwd).isDirectory()) throw new Error("cwd 必须是目录。");
   if (!adapter.resolve(process.env)) return { status: "not_installed", summary: `${input.target} 不在 PATH 里。` };
   const scopeFields = normalizeScopeInput(input.scope, input.scopeOnViolation);
   let scope_baseline: TaskMeta["scope_baseline"];
+  let readonly_baseline: TaskMeta["readonly_baseline"];
   let prompt = input.prompt;
+  const needSnap = Boolean(scopeFields.scope?.length) || modeFields.mode === "readonly";
+  const snap = needSnap ? gitSnapshot(cwd) : null;
   if (scopeFields.scope?.length) {
-    const snap = gitSnapshot(cwd);
     if (!snap?.head) throw new Error("带 --scope 时 cwd 必须是 git 仓库（需要 HEAD baseline）。");
     scope_baseline = snapshotToBaseline(snap);
     prompt = `${scopePromptPrefix(scopeFields.scope)}${prompt}`;
   }
+  if (modeFields.mode === "readonly" && snap?.head) readonly_baseline = snapshotToBaseline(snap);
   const now = new Date().toISOString();
   const meta: TaskMeta = {
     task_id: randomUUID(), target: adapter.id, cwd, created_at: now, updated_at: now,
     status: "running", turn: 1, session_id: null, reasoning_effort: input.reasoningEffort,
     model, model_argv,
+    ...modeFields,
+    readonly_baseline,
     idle_timeout_s: idle, max_duration_s: max, supervisor_pid: null, child_pid: null,
     heartbeat_at: null, last_event_at: null,
     ...scopeFields,
@@ -162,8 +188,8 @@ export async function cancel(id: string): Promise<TaskView> {
 export async function wait(ids: string[], seconds = 50): Promise<TaskView | { status: "running"; tasks: TaskView[] }> {
   if (!ids.length) throw new Error("缺少 task_ids。");
   ids.forEach(taskDir);
-  if (!Number.isFinite(seconds) || seconds < 0) throw new Error("for 必须为非负秒数。");
-  const deadline = Date.now() + seconds * 1000;
+  if (seconds !== Infinity && (!Number.isFinite(seconds) || seconds < 0)) throw new Error("for 必须为非负秒数。");
+  const deadline = seconds === Infinity ? Infinity : Date.now() + seconds * 1000;
   for (;;) {
     const views = ids.map(status);
     const done = views.find((view) => view.status !== "running");
@@ -187,7 +213,7 @@ export async function reply(id: string, prompt: string, author: Author = "host")
   try {
     const meta = readMeta(id)!;
     if (meta.status === "running") return busy;
-    if (!["success", "needs_input", "scope_violation"].includes(meta.status)) throw new Error(`不能继续 ${meta.status} 的任务。`);
+    if (!["success", "needs_input", "scope_violation", "readonly_violation"].includes(meta.status)) throw new Error(`不能继续 ${meta.status} 的任务。`);
     if (!meta.session_id) throw new Error("没有 session_id，无法续会话。");
     if (!getAdapter(meta.target)?.resolve(process.env)) throw new Error(`${meta.target} 不在 PATH 里。`);
     next = { ...meta, status: "running", turn: meta.turn + 1, updated_at: new Date().toISOString(), supervisor_pid: null, child_pid: null, heartbeat_at: null, last_event_at: null };

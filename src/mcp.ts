@@ -3,7 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { agents, cancel, ls, reply, start, status, wait } from "./tasks.ts";
 import { redact } from "./redact.ts";
-import type { Author, Effort, ScopeOnViolation } from "./types.ts";
+import type { Author, Effort, ScopeOnViolation, TaskMode } from "./types.ts";
 
 const MAX_WAIT_SECONDS = 55;
 const PROGRESS_MS = 15_000;
@@ -33,12 +33,15 @@ export function createServer(): McpServer {
       cwd: z.string().optional(),
       scope: z.array(z.string()).optional().describe("允许修改的路径 glob，可多条；任务结束后对照净变更检查。"),
       scope_on_violation: z.enum(["warn", "fail"]).optional().describe("越界策略，默认 warn。"),
+      mode: z.enum(["readonly", "write"]).optional().describe("权限模式，默认 write；readonly 映射到各 CLI 只读参数。"),
+      allow_weak: z.boolean().optional().describe("仅当目标无法强制只读时，显式放行 --mode readonly。"),
     },
   }, (args) => respond(() => start({
     target: args.target_agent, prompt: args.prompt, files: args.files, cwd: args.cwd,
     reasoningEffort: args.reasoning_effort as Effort | undefined, model: args.model,
     idleTimeout: args.idle_timeout_seconds, maxDuration: args.max_duration_seconds,
     scope: args.scope, scopeOnViolation: args.scope_on_violation as ScopeOnViolation | undefined,
+    mode: args.mode as TaskMode | undefined, allowWeak: args.allow_weak,
   })));
   server.registerTool("task_status", {
     description: "看一单当前状态。running 时带 liveness（active/quiet/orphaned）和 quiet_for_s。",
@@ -59,7 +62,7 @@ export function createServer(): McpServer {
     try { return await wait(args.task_ids, seconds); } finally { if (timer) clearInterval(timer); }
   }));
   server.registerTool("task_reply", {
-    description: "任务停在 needs_input、success 或 scope_violation 后，在同一会话开下一轮。as=human 表示这是人说的话，默认 host。running 时返回 busy。",
+    description: "任务停在 needs_input、success、scope_violation 或 readonly_violation 后，在同一会话开下一轮。as=human 表示这是人说的话，默认 host。running 时返回 busy。",
     inputSchema: { task_id: z.string(), prompt: z.string(), as: z.enum(["host", "human"]).optional() },
   }, (args) => respond(() => reply(args.task_id, args.prompt, (args.as ?? "host") as Author)));
   server.registerTool("task_cancel", {

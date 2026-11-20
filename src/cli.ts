@@ -4,7 +4,7 @@ import { parseArgs } from "node:util";
 import { agents, start, status, cancel, wait, reply, ls, prune } from "./tasks.ts";
 import { addWorktree, listWorktrees, removeWorktree } from "./worktree.ts";
 import { redact } from "./redact.ts";
-import type { Author, Effort, ScopeOnViolation } from "./types.ts";
+import type { Author, Effort, ScopeOnViolation, TaskMode } from "./types.ts";
 
 async function main(): Promise<void> {
   const [command, ...args] = process.argv.slice(2);
@@ -26,12 +26,14 @@ async function main(): Promise<void> {
       file: { type: "string", multiple: true }, effort: { type: "string" }, model: { type: "string" },
       "idle-timeout": { type: "string" }, "max-duration": { type: "string" },
       scope: { type: "string", multiple: true }, "scope-on-violation": { type: "string" },
+      mode: { type: "string" }, "allow-weak": { type: "boolean" },
     } });
     if (positionals.length) throw new Error("start 不接受位置参数。");
     result = await start({ target: values.target || "", prompt: values.prompt ?? fs.readFileSync(0, "utf8"), cwd: values.cwd, files: values.file,
       reasoningEffort: values.effort as Effort | undefined, model: values.model,
       idleTimeout: values["idle-timeout"] === undefined ? undefined : Number(values["idle-timeout"]), maxDuration: values["max-duration"] === undefined ? undefined : Number(values["max-duration"]),
       scope: values.scope, scopeOnViolation: values["scope-on-violation"] as ScopeOnViolation | undefined,
+      mode: values.mode as TaskMode | undefined, allowWeak: values["allow-weak"],
     });
     if ((result as { status: string }).status !== "running") process.exitCode = 1;
   } else if (command === "status") {
@@ -43,8 +45,12 @@ async function main(): Promise<void> {
     result = await reply(positionals[0], values.prompt ?? fs.readFileSync(0, "utf8"), (values.as ?? "host") as Author);
     if ((result as { status: string }).status !== "running") process.exitCode = 1;
   } else if (command === "wait") {
-    const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { for: { type: "string" } } });
-    result = await wait(positionals, values.for === undefined ? 50 : Number(values.for));
+    const { values, positionals } = parseArgs({
+      args, allowPositionals: true,
+      options: { for: { type: "string" }, "until-done": { type: "boolean" } },
+    });
+    if (values["until-done"] && values.for !== undefined) throw new Error("--until-done 与 --for 不能同时使用。");
+    result = await wait(positionals, values["until-done"] ? Infinity : values.for === undefined ? 50 : Number(values.for));
   } else if (command === "tail") {
     const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { follow: { type: "boolean", short: "f" }, raw: { type: "boolean" } } });
     if (positionals.length !== 1) throw new Error("tail 需要一个 task_id。");

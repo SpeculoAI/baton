@@ -20,12 +20,14 @@ function contentText(content: unknown): string {
 
 export const claude: Adapter = {
   id: "claude",
+  readonlyEnforcement: "agent-enforced",
   resolve(env) {
     return which(["claude"], env);
   },
-  build({ bin, prompt, sessionId, reasoningEffort }) {
+  build({ bin, prompt, sessionId, reasoningEffort, mode }) {
     // stream-json 在 -p 下必须配 --verbose。
-    const args = ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits", "--permission-prompts", "none"];
+    const permission = mode === "readonly" ? "plan" : "acceptEdits";
+    const args = ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode", permission, "--permission-prompts", "none"];
     if (reasoningEffort) args.push("--effort", reasoningEffort === "ultra" ? "max" : reasoningEffort);
     if (sessionId) args.push("--resume", sessionId);
     args.push(prompt);

@@ -8,13 +8,15 @@ const AUTH = ["not logged in", "please log in", "authentication required", "code
 
 export const codex: Adapter = {
   id: "codex",
+  readonlyEnforcement: "os-sandbox",
   resolve(env) {
     return which(["codex"], env);
   },
-  build({ bin, cwd, prompt, sessionId, reasoningEffort }) {
+  build({ bin, cwd, prompt, sessionId, reasoningEffort, mode }) {
     const lastMessagePath = path.join(os.tmpdir(), `baton-codex-${process.pid}-${Date.now()}.txt`);
     const effortArgs = reasoningEffort ? ["-c", `model_reasoning_effort="${reasoningEffort}"`] : [];
-    // `exec resume` 不接受 --cd/--color。--approve-for-me 已使用 workspace-write，不要再加 --sandbox。
+    const readonly = mode === "readonly";
+    // `exec resume` 不接受 --cd/--color/--sandbox。write 首轮用 --approve-for-me（workspace-write，勿再加 --sandbox）。
     if (sessionId) {
       return {
         command: bin,
@@ -40,7 +42,7 @@ export const codex: Adapter = {
         "--json",
         "--color",
         "never",
-        "--approve-for-me",
+        ...(readonly ? ["--sandbox", "read-only"] : ["--approve-for-me"]),
         "--skip-git-repo-check",
         "--cd",
         cwd,

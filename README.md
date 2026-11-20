@@ -289,10 +289,11 @@ baton agents
 baton start --target <codex|claude|cursor|agy> [--prompt <text> | stdin] [--file <p>...] [--effort low|medium|high|ultra]
             [--model <id>] [--idle-timeout <s>] [--max-duration <s>] [--cwd <dir>]
             [--scope <glob> ...] [--scope-on-violation warn|fail]
+            [--mode readonly|write] [--allow-weak]
 baton status <id>
-baton wait <id>... [--for <s>]       # default 50; returns the first job that leaves running, or the running view on timeout
+baton wait <id>... [--for <s> | --until-done]  # default --for 50; --until-done blocks until a job leaves running
 baton tail <id> [-f] [--raw]         # readable events; -f follows until the job stops; --raw prints events.jsonl lines
-baton reply <id> [--prompt <text> | stdin] [--as host|human]   # also after scope_violation
+baton reply <id> [--prompt <text> | stdin] [--as host|human]   # also after scope_violation / readonly_violation
 baton cancel <id>
 baton ls [--all]                     # jobs for the current directory by default, newest first
 baton prune --older <days>           # delete non-running task dirs older than N days (does not remove worktrees)
@@ -305,6 +306,7 @@ baton mcp                            # start the MCP server (stdio)
 - `--effort` maps to each CLI's native flag: Codex `-c model_reasoning_effort=...`; Claude/Agy `--effort` (`ultra` becomes `max`); Cursor alone → `--model auto[effort=...]`.
 - `--model <id>` (Cursor only for now): sets the requested model, stored on the task and kept across `reply`. Cursor rules: model only → `--model <id>`; model+effort → `--model '<id>[effort=...]'`; if the id already embeds a tier (e.g. `grok-4.7-xhigh`) or brackets, combining `--effort` errors. Never emits two `--model` flags. `status` shows `model` (requested) and `model_argv` (passed to the CLI). That is not a provider-confirmed “actual model”.
 - `--idle-timeout` defaults to 600: the job stops only after that many seconds without a single output byte. `--max-duration` is unlimited by default. Both apply per turn and restart on `reply`.
+- **`--mode readonly|write` (default `write`):** maps to each CLI's read-only path (Codex `--sandbox read-only`, Claude `--permission-mode plan`, Cursor `--mode ask`, Agy `--mode plan`). Stored on the task and kept across `reply`. After each turn, dirty net changes upgrade a clean `success` to `readonly_violation`. Targets with no mapping fail unless `--allow-weak` is set. **Breaking note:** new terminal status `readonly_violation`.
 - **Worktrees are separate from tasks:** `baton worktree add`, then `baton start --cwd <path>`. Default root is `.worktrees/` (appended to `.gitignore` if needed). Optional `.baton.json` configures `copy` / `symlink` / `post_create`. Symlinking `node_modules` can cross-contaminate when branches diverge — prefer `post_create` installs when unsure.
 - **`--scope` (optional):** repeatable globs relative to the task `cwd`. After each turn, Baton checks **task-baseline net changes** (commits since start HEAD ∪ working-tree digest diff) against those globs. `--scope-on-violation warn` (default) keeps the transport status and sets `scope_violations` + `warning`; `fail` upgrades a clean `success` to `scope_violation`. This is a **mistake fence**, not a sandbox: ignored paths, non-git writes, and concurrent edits on a shared cwd are blind spots — prefer combining with worktree. Requires a git repo when `--scope` is set. **Breaking note for clients:** new terminal status `scope_violation` (and optional `scope_*` meta fields).
 
@@ -316,6 +318,7 @@ baton mcp                            # start the MCP server (stdio)
 | `needs_input` | The worker asked a question; `decision` holds `question` and `options` |
 | `success` | Turn finished; includes `summary` and this turn's `git_changes` (still check `scope_violations` under warn) |
 | `scope_violation` | Out-of-scope edits under `--scope-on-violation fail`; `reply` allowed |
+| `readonly_violation` | `--mode readonly` but the tree changed; `reply` allowed |
 | `failed` / `timed_out` / `cancelled` | Terminal; cannot be replied to |
 | `not_authenticated` / `quota_exceeded` | The target CLI is not logged in / out of quota |
 | `not_installed` | Returned by `start`; the target is not on `PATH` |
@@ -377,10 +380,10 @@ Task directories are never deleted automatically; use `baton prune --older <days
 
 | Agent | First call | Resume | Notes |
 | :--- | :--- | :--- | :--- |
-| **Codex** | `codex exec --json --color never --approve-for-me --skip-git-repo-check --cd <cwd> -` | `codex exec resume --json <thread_id> -` | `--approve-for-me` already uses the workspace-write sandbox and conflicts with `--sandbox`; `exec resume` rejects `--cd` and `--color` |
-| **Claude Code** | `claude -p --output-format stream-json --verbose --permission-mode acceptEdits --permission-prompts none` | add `--resume <session_id>` | `stream-json` with `-p` requires `--verbose`; hook events stay out of the event stream |
-| **Cursor** | `cursor-agent --print --force --trust --output-format stream-json --workspace <cwd>` | add `--resume <session_id>` | Prefers `cursor-agent`, then `agent`; never the IDE's `cursor` |
-| **Antigravity (agy)** | `agy --print <prompt> --mode accept-edits --output-format stream-json` | add `--conversation <id>` | Replies stream as deltas; the full text comes from the final `result` |
+| **Codex** | `codex exec --json --color never --approve-for-me --skip-git-repo-check --cd <cwd> -` | `codex exec resume --json <thread_id> -` | write uses `--approve-for-me` (conflicts with `--sandbox`); readonly first turn uses `--sandbox read-only`; `exec resume` has no sandbox flag and rejects `--cd` / `--color` |
+| **Claude Code** | `claude -p --output-format stream-json --verbose --permission-mode acceptEdits --permission-prompts none` | add `--resume <session_id>` | readonly → `--permission-mode plan`; `stream-json` with `-p` requires `--verbose`; hook events stay out of the event stream |
+| **Cursor** | `cursor-agent --print --force --trust --output-format stream-json --workspace <cwd>` | add `--resume <session_id>` | readonly → `--mode ask` (drops `--force`, keeps `--trust`); prefers `cursor-agent`, then `agent`; never the IDE's `cursor` |
+| **Antigravity (agy)** | `agy --print <prompt> --mode accept-edits --output-format stream-json` | add `--conversation <id>` | readonly → `--mode plan`; replies stream as deltas; the full text comes from the final `result` |
 
 Any output line a parser does not recognize is kept as a `raw` event, never dropped. Real output samples for each CLI live in `test/fixtures/`.
 

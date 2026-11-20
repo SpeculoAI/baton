@@ -289,10 +289,11 @@ baton agents
 baton start --target <codex|claude|cursor|agy> [--prompt <text> | stdin] [--file <p>...] [--effort low|medium|high|ultra]
             [--model <id>] [--idle-timeout <秒>] [--max-duration <秒>] [--cwd <dir>]
             [--scope <glob> ...] [--scope-on-violation warn|fail]
+            [--mode readonly|write] [--allow-weak]
 baton status <id>
-baton wait <id>... [--for <秒>]       # 默认 50；任一任务离开 running 就返回它，到点仍在跑就返回 running 视图
+baton wait <id>... [--for <秒> | --until-done]  # 默认 --for 50；--until-done 阻塞到任一任务离开 running
 baton tail <id> [-f] [--raw]          # 人读格式的事件；-f 跟到任务停下；--raw 输出 events.jsonl 原行
-baton reply <id> [--prompt <text> | stdin] [--as host|human]   # scope_violation 后也可续轮
+baton reply <id> [--prompt <text> | stdin] [--as host|human]   # scope_violation / readonly_violation 后也可续轮
 baton cancel <id>
 baton ls [--all]                      # 默认只列当前目录的任务，按更新时间倒序
 baton prune --older <天数>            # 删除早于 N 天的非 running 任务目录（不级联删 worktree）
@@ -305,6 +306,7 @@ baton mcp                             # 启动 MCP 服务（stdio）
 - `--effort` 映射到各家原生参数：Codex `-c model_reasoning_effort=...`；Claude/Agy `--effort`（`ultra` 映射为 `max`）；Cursor 仅 effort 时 → `--model auto[effort=...]`。
 - `--model <id>`（目前仅 Cursor）：按任务指定模型，写入 meta，`reply` 延续。Cursor 规则：仅 model → `--model <id>`；model+effort → `--model '<id>[effort=...]'`；若 id 已含档位（如 `grok-4.7-xhigh`）或已有括号再带 `--effort` 则报错。不会出现两个 `--model`。`status` 含 `model`（请求）与 `model_argv`（传给 CLI 的参数）；这不是 provider 确认的“实际模型”。
 - `--idle-timeout` 默认 600：连续这么久没有任何输出字节才停掉。`--max-duration` 默认不限。两者都按单轮计时，`reply` 开新一轮时重新计时。
+- **`--mode readonly|write`（默认 `write`）：** 映射到各家只读参数（Codex `--sandbox read-only`、Claude `--permission-mode plan`、Cursor `--mode ask`、Agy `--mode plan`）。写入 meta，`reply` 延续。每轮结束后若有净变更，会把干净的 `success` 升为 `readonly_violation`。无映射的目标默认拒绝，需显式 `--allow-weak`。**兼容性：** 新增终态 `readonly_violation`。
 - **Worktree 与任务解耦：** 先 `baton worktree add`，再 `baton start --cwd <path>`。默认目录 `.worktrees/`（会写入 `.gitignore`）；可选 `.baton.json` 配置 `copy` / `symlink` / `post_create`。软链 `node_modules` 在分支依赖不一致时可能互相污染，必要时改用 `post_create` 独立安装。
 - **`--scope`（可选）：** 可重复，glob 相对任务 `cwd`。每轮结束后对照**任务起点净变更**（自 baseline HEAD 起的提交 ∪ 工作区 digest 差分）。`--scope-on-violation warn`（默认）保留原终态并写 `scope_violations` + `warning`；`fail` 会把干净的 `success` 升为 `scope_violation`。这是**防失误**，不是沙箱：忽略文件、仓外写入、共享 cwd 并发改动是已知盲区——建议与 worktree 叠用。带 `--scope` 时 cwd 必须是 git 仓库。**兼容性：** 新增终态 `scope_violation` 及可选 `scope_*` 字段。
 
@@ -316,6 +318,7 @@ baton mcp                             # 启动 MCP 服务（stdio）
 | `needs_input` | 子 CLI 停下来提问，`decision` 里有 `question` 和 `options` |
 | `success` | 本轮完成，带 `summary` 和本轮的 `git_changes`（warn 策略下仍可能有 `scope_violations`） |
 | `scope_violation` | `--scope-on-violation fail` 下越界；可 `reply` |
+| `readonly_violation` | `--mode readonly` 但工作区有净变更；可 `reply` |
 | `failed` / `timed_out` / `cancelled` | 终态，不能再 `reply` |
 | `not_authenticated` / `quota_exceeded` | 对方 CLI 没登录 / 额度用尽 |
 | `not_installed` | `start` 时就返回，目标不在 `PATH` 里 |
@@ -377,10 +380,10 @@ MCP 是同一套逻辑的薄壳，进程里不存任何任务状态，重启 MCP
 
 | Agent | 首次调用 | 续会话 | 说明 |
 | :--- | :--- | :--- | :--- |
-| **Codex** | `codex exec --json --color never --approve-for-me --skip-git-repo-check --cd <cwd> -` | `codex exec resume --json <thread_id> -` | `--approve-for-me` 已用 workspace-write 沙箱，与 `--sandbox` 互斥；`exec resume` 不接受 `--cd`、`--color` |
-| **Claude Code** | `claude -p --output-format stream-json --verbose --permission-mode acceptEdits --permission-prompts none` | 追加 `--resume <session_id>` | `stream-json` 在 `-p` 下必须配 `--verbose`；hook 事件不进事件流 |
-| **Cursor** | `cursor-agent --print --force --trust --output-format stream-json --workspace <cwd>` | 追加 `--resume <session_id>` | 优先找 `cursor-agent`，再找 `agent`，不调用 IDE 的 `cursor` |
-| **Antigravity (agy)** | `agy --print <prompt> --mode accept-edits --output-format stream-json` | 追加 `--conversation <id>` | 回复是逐字增量，完整文本取自最终 `result` |
+| **Codex** | `codex exec --json --color never --approve-for-me --skip-git-repo-check --cd <cwd> -` | `codex exec resume --json <thread_id> -` | write 用 `--approve-for-me`（与 `--sandbox` 互斥）；readonly 首轮用 `--sandbox read-only`；`exec resume` 无 sandbox 参数，也不接受 `--cd`、`--color` |
+| **Claude Code** | `claude -p --output-format stream-json --verbose --permission-mode acceptEdits --permission-prompts none` | 追加 `--resume <session_id>` | readonly → `--permission-mode plan`；`stream-json` 在 `-p` 下必须配 `--verbose`；hook 事件不进事件流 |
+| **Cursor** | `cursor-agent --print --force --trust --output-format stream-json --workspace <cwd>` | 追加 `--resume <session_id>` | readonly → `--mode ask`（去掉 `--force`，保留 `--trust`）；优先找 `cursor-agent`，再找 `agent`，不调用 IDE 的 `cursor` |
+| **Antigravity (agy)** | `agy --print <prompt> --mode accept-edits --output-format stream-json` | 追加 `--conversation <id>` | readonly → `--mode plan`；回复是逐字增量，完整文本取自最终 `result` |
 
 解析器认不出的输出行一律记为 `raw` 事件，不会丢。各家的真实输出样本在 `test/fixtures/`。
 

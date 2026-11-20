@@ -66,10 +66,18 @@ test("rescue: --model + scope_violation 终态；orchestrate brief 含 worktree/
   assert.match(rescue, /Cursor only/i);
   assert.match(rescue, /scope_violation/);
   assert.match(rescue, /scope_violations/);
-  assert.match(rescue, /success`, `needs_input`, or `scope_violation/);
+  assert.match(rescue, /success`, `needs_input`, `scope_violation`, or `readonly_violation/);
   assert.match(orchestrate, /--model <id>/);
   assert.match(orchestrate, /worktree/);
   assert.match(orchestrate, /agents, start, wait, status, tail, reply, cancel, ls, worktree/);
+});
+
+test("skills: --until-done 与 --mode readonly；仍保留 --for 50", () => {
+  for (const text of [read("baton-rescue"), read("baton-orchestrate")]) {
+    assert.match(text, /--until-done/);
+    assert.match(text, /--mode readonly/);
+    assert.ok(text.includes("--for 50"));
+  }
 });
 
 test("setup: Node >= 24 与就绪后指向 rescue/orchestrate", () => {

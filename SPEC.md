@@ -106,13 +106,14 @@ type TaskMeta = {
 start ──> running ──┬──> needs_input ──reply──> running
                     ├──> success ──────reply──> running   （允许追问）
                     ├──> scope_violation ──reply──> running  （--scope fail）
+                    ├──> readonly_violation ──reply──> running  （--mode readonly）
                     ├──> failed | timed_out | cancelled
                     │    | not_authenticated | quota_exceeded（终态，不可 reply）
 not_installed（start 时即返回，不建守护进程）
 ```
 
 - `running` 时 `reply` 被拒绝，返回 `status: "busy"`。
-- 一轮结束时：输出里有 `BATON_DECISION` 记 `needs_input` 并填 `decision`；有 `BATON_RESULT` 或正常退出记 `success`；若任务带 `--scope`，再按任务起点净变更对照 glob（实现见 `src/scope.ts` / `src/git.ts`，用户说明见 README）；其余按现有失败判定（鉴权、额度、退出码）。沿用现有的 `OUTPUT_CONTRACT` 标记协议。
+- 一轮结束时：输出里有 `BATON_DECISION` 记 `needs_input` 并填 `decision`；有 `BATON_RESULT` 或正常退出记 `success`；若任务带 `--mode readonly`，对照任务起点 `readonly_baseline` 的净变更，有变更则升为 `readonly_violation`；若任务带 `--scope`，再按任务起点净变更对照 glob（实现见 `src/scope.ts` / `src/git.ts`，用户说明见 README）；只读违规优先于 scope。其余按现有失败判定（鉴权、额度、退出码）。沿用现有的 `OUTPUT_CONTRACT` 标记协议。
 
 ### 存活判定（回答"在跑还是卡住"）
 
@@ -190,8 +191,9 @@ type Adapter = {
 baton agents
 baton start --target <t> [--prompt <text> | stdin] [--file <p>...] [--effort <e>]
             [--idle-timeout <s>] [--max-duration <s>] [--cwd <dir>]
+            [--mode readonly|write] [--allow-weak]
 baton status <id>
-baton wait <id>... [--for <s>]     # 默认 50s；任一任务离开 running 即返回该任务，到点仍在跑就返回 running 视图
+baton wait <id>... [--for <s> | --until-done]  # 默认 --for 50；--until-done 阻塞到任一任务离开 running
 baton tail <id> [-f] [--raw]       # 人读格式；--raw 输出 events.jsonl 原行
 baton reply <id> [--prompt <text> | stdin] [--as host|human]   # 默认 --as host
 baton cancel <id>
@@ -220,9 +222,7 @@ npm run typecheck # = tsc --noEmit
 
 ### Skills
 
-`baton-rescue`、`baton-orchestrate` 改写为 shell 优先：用 `baton start`，然后循环 `baton wait --for 50`；`needs_input` 时转问或代答，再 `baton reply`。
-
-只把宿主特有能力写成可选提示，例如"宿主能后台跑 shell 时，可以一次 `wait --for` 更久"，不作为前提。
+`baton-rescue`、`baton-orchestrate` 改写为 shell 优先：用 `baton start`；宿主能后台跑 shell 并在退出时唤醒会话时，一次 `baton wait --until-done`；否则循环 `baton wait --for 50` / MCP `task_wait`；`needs_input` 时转问或代答，再 `baton reply`。审查类任务可传 `--mode readonly`。
 
 ## Project Structure
 
