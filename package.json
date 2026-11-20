@@ -1,21 +1,33 @@
 {
-  "name": "baton",
-  "version": "0.3.0",
-  "private": true,
+  "name": "@speculoai/baton",
+  "version": "0.4.0",
+  "description": "把一块有边界的工作下放到另一家本地 Agent CLI，需要决定时用同一会话继续。",
   "type": "module",
-  "bin": {
-    "baton": "src/cli.ts"
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SpeculoAI/baton.git"
   },
+  "bin": {
+    "baton": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "start": "node src/cli.ts",
-    "test": "tsc --noEmit && node --test test/setup.test.mjs \"test/**/*.test.ts\"",
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build",
+    "test": "tsc --noEmit && node --test \"test/**/*.test.ts\"",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.20.2"
   },
   "engines": {
-    "node": ">=24"
+    "node": ">=20.17"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

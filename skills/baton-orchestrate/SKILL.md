@@ -19,11 +19,7 @@ For a single one-shot handoff, use `baton-rescue`. Its sections "The command", "
 
 ## The command
 
-```
-node <plugin-root>/src/cli.ts <command> ...
-```
-
-`<plugin-root>` is the directory that contains `src/cli.ts`. Below, `baton` means this command (or `baton` itself if it is on `PATH`). Every command prints one JSON object. The same operations exist as MCP tools; use MCP only when the host cannot run shell commands.
+Call it as `baton <command> ...`. If `baton` is not on PATH, run `/baton:setup` and stop. Every command prints one JSON object. The same operations exist as MCP tools; use MCP only when the host cannot run shell commands.
 
 ## Who orchestrates
 
@@ -126,7 +122,7 @@ Goal:
 <user goal verbatim>
 
 Rules:
-- Command: node <plugin-root>/src/cli.ts (agents, start, wait, status, tail, reply, cancel, ls, worktree)
+- Command: baton (agents, start, wait, status, tail, reply, cancel, ls, worktree)
 - Hold: dependency graph, task_id per job, results, rework counts
 - Do not implement worker coding tasks yourself
 - Do not require Speckit / OpenSpec / agent-skills; if the workspace has rules, copy them into worker prompts and use them for review; if not, still do minimal task-matched verification — never treat transport success as verified pass

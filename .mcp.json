@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "baton": {
-      "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/src/cli.ts", "mcp"]
+      "command": "baton",
+      "args": ["mcp"]
     }
   }
 }

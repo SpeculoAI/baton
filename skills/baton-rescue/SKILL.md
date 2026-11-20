@@ -17,13 +17,7 @@ For splitting into several jobs, dependencies, or fail-over: use `baton-orchestr
 
 ## The command
 
-Every command prints one JSON object. Call it as:
-
-```
-node <plugin-root>/src/cli.ts <command> ...
-```
-
-`<plugin-root>` is the directory that contains `src/cli.ts` (two levels above this skill's directory). If `baton` is on `PATH`, `baton <command>` is the same thing. Below, `baton` means either form.
+Every command prints one JSON object. Call it as `baton <command> ...`. If `baton` is not on PATH, run `/baton:setup` and stop.
 
 The same operations also exist as MCP tools (`delegate_task`, `task_wait`, `task_reply`, `task_status`, `task_cancel`, `task_list`, `list_agents`). Use MCP only when the host cannot run shell commands; the behavior is identical.
 
@@ -37,7 +31,7 @@ Delegate:
 Stay in the current session:
 
 - One or two small edits, explaining the current diff, or answering a question
-- `node <plugin-root>/src/cli.ts agents` fails or lists nothing installed: tell the user, then stop
+- `baton agents` fails or lists nothing installed: tell the user, then stop
 
 ## Who to send it to
 

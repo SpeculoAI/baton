@@ -1,0 +1,188 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { exec } from "./helpers.ts";
+import { commandsFor, parseChoice, planInstall, readInstalled, REPO, runInstall, writeInstalled } from "../src/install.ts";
+
+const cli = path.resolve(import.meta.dirname, "../src/cli.ts");
+
+function bins(t: test.TestContext, names: string[]) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "baton-bins-"));
+  const log = path.join(dir, "log");
+  for (const name of names) {
+    fs.writeFileSync(path.join(dir, name), `#!/bin/sh\nprintf '%s\\n' "$0 $*" >> ${JSON.stringify(log)}\n`, { mode: 0o755 });
+  }
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  return { dir, log };
+}
+
+test("parseChoice：回车全选，q 退出，编号可多选，越界报错", () => {
+  assert.deepEqual(parseChoice("", 3), [0, 1, 2]);
+  assert.deepEqual(parseChoice("  ", 2), [0, 1]);
+  assert.deepEqual(parseChoice("q", 3), []);
+  assert.deepEqual(parseChoice("1,3", 3), [0, 2]);
+  assert.deepEqual(parseChoice("2,2", 3), [1]);
+  assert.throws(() => parseChoice("0", 2), /越界/);
+  assert.throws(() => parseChoice("4", 2), /越界/);
+  assert.throws(() => parseChoice("a", 2), /无法识别/);
+});
+
+const argsOf = (id: string, action: "install" | "update" | "uninstall", opts?: { force?: boolean }) =>
+  commandsFor(id, action, opts).map((step) => step.args);
+
+test("五个 agent 的 install / update / uninstall 命令与规格一致", () => {
+  const id = "baton@speculoai";
+  assert.deepEqual(argsOf("claude", "install"), [
+    ["plugin", "uninstall", "baton@agent-plugin-agent"],
+    ["plugin", "marketplace", "remove", "agent-plugin-agent"],
+    ["plugin", "marketplace", "add", REPO],
+    ["plugin", "install", id],
+  ]);
+  assert.deepEqual(argsOf("claude", "update"), [
+    ["plugin", "marketplace", "update", "speculoai"],
+    ["plugin", "update", id],
+  ]);
+  assert.deepEqual(argsOf("claude", "uninstall"), [["plugin", "uninstall", id]]);
+
+  assert.deepEqual(argsOf("codex", "install"), [
+    ["plugin", "remove", "baton@agent-plugin-agent"],
+    ["plugin", "marketplace", "remove", "agent-plugin-agent"],
+    ["plugin", "marketplace", "add", REPO],
+    ["plugin", "add", id],
+  ]);
+  assert.deepEqual(argsOf("codex", "update"), [
+    ["plugin", "marketplace", "upgrade", "speculoai"],
+    ["plugin", "add", id],
+  ]);
+  assert.deepEqual(argsOf("codex", "uninstall"), [["plugin", "remove", id]]);
+
+  assert.deepEqual(argsOf("cursor", "install"), [
+    ["plugin", "marketplace", "remove", "agent-plugin-agent"],
+    ["plugin", "marketplace", "add", REPO],
+  ]);
+  assert.deepEqual(argsOf("cursor", "update"), [["plugin", "marketplace", "update", "speculoai"]]);
+  assert.deepEqual(argsOf("cursor", "uninstall"), [["plugin", "marketplace", "remove", "speculoai"]]);
+
+  assert.deepEqual(argsOf("agy", "install"), [["plugin", "install", REPO]]);
+  assert.deepEqual(argsOf("agy", "update"), [["plugin", "install", REPO]]);
+  assert.deepEqual(argsOf("agy", "uninstall"), [["plugin", "uninstall", "baton"]]);
+
+  assert.deepEqual(argsOf("gemini", "install"), [["extensions", "install", REPO, "--consent"]]);
+  assert.deepEqual(argsOf("gemini", "update"), [["extensions", "update", "baton"]]);
+  assert.deepEqual(argsOf("gemini", "uninstall"), [["extensions", "uninstall", "baton"]]);
+});
+
+test("--force 在安装前先卸载当前 ID", () => {
+  const args = argsOf("gemini", "install", { force: true });
+  assert.deepEqual(args, [
+    ["extensions", "uninstall", "baton"],
+    ["extensions", "install", REPO, "--consent"],
+  ]);
+});
+
+test("install 迁移步骤是软失败，正式安装不是", () => {
+  const steps = commandsFor("claude", "install");
+  assert.equal(steps[0].soft, true);
+  assert.equal(steps[1].soft, true);
+  assert.equal(steps[2].soft, true);
+  assert.equal(steps[3].soft, undefined);
+});
+
+test("--only 未知或未检测到的 agent 报错；update 默认只用记录", () => {
+  const env = { PATH: "" };
+  assert.throws(() => planInstall({ action: "install", only: ["nope"], env }), /未知/);
+  assert.throws(() => planInstall({ action: "install", only: ["claude"], env }), /未检测到/);
+  const update = planInstall({ action: "update", recorded: ["gemini", "claude"], env });
+  assert.deepEqual(update.hosts.map((host) => host.id), []);
+  assert.deepEqual(update.missing, ["gemini", "claude"]);
+});
+
+test("--dry-run 只列出命令，不执行，不写 installed.json", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "baton-home-"));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const { dir, log } = bins(t, ["claude"]);
+  const env = { ...process.env, PATH: dir, BATON_HOME: home };
+  const out = JSON.parse((await exec(process.execPath, [cli, "install", "--dry-run", "--only", "claude", "--skip-global"], { env, timeout: 8000 })).stdout);
+  assert.equal(out.dry_run, true);
+  assert.equal(out.global, undefined);
+  assert.equal(out.hosts[0].id, "claude");
+  assert.deepEqual(out.hosts[0].commands, commandsFor("claude", "install").map((step) => step.args));
+  assert.equal(out.hosts[0].bin, path.join(dir, "claude"));
+  assert.equal(fs.existsSync(log), false);
+  assert.equal(fs.existsSync(path.join(home, "installed.json")), false);
+});
+
+test("全局安装失败仍继续，硬失败不写入记录，软失败不挡住后面的 agent", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "baton-home-"));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  writeInstalled(["codex"], home);
+  const { dir } = bins(t, ["claude", "gemini"]);
+  const calls: string[] = [];
+  const ran = await runInstall({
+    action: "install",
+    only: ["claude", "gemini"],
+    env: { PATH: dir },
+    home,
+    spawn(command, args) {
+      calls.push(`${path.basename(command)} ${args.join(" ")}`);
+      if (command === "npm") return { status: 1, stderr: "EACCES" };
+      if (args.at(-1) === "baton@speculoai") return { status: 1, stderr: "install failed" };
+      return { status: 0 };
+    },
+  });
+  assert.equal(ran.exitCode, 1);
+  assert.equal(ran.result.global?.ok, false);
+  assert.match(ran.result.global?.error ?? "", /EACCES/);
+  assert.equal(ran.result.hosts[0].ok, false);
+  assert.equal(ran.result.hosts[1].ok, true);
+  assert.ok(calls.some((line) => line.startsWith("gemini ")));
+  assert.deepEqual(readInstalled(home), ["codex", "gemini"]);
+});
+
+test("install 调用全局 npm 和 agent，成功后写入记录", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "baton-home-"));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const { dir, log } = bins(t, ["gemini", "npm"]);
+  const env = { ...process.env, PATH: `${dir}${path.delimiter}${process.env.PATH || ""}`, BATON_HOME: home };
+  const out = JSON.parse((await exec(process.execPath, [cli, "install", "--only", "gemini"], { env, timeout: 8000 })).stdout);
+  assert.equal(out.hosts[0].ok, true);
+  assert.equal(out.global.ok, true);
+  assert.deepEqual(readInstalled(home), ["gemini"]);
+  const text = fs.readFileSync(log, "utf8");
+  const version = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+  assert.match(text, new RegExp(`npm install -g @speculoai/baton@${version.replaceAll(".", "\\.")}`));
+  assert.match(text, /extensions install https:\/\/github.com\/SpeculoAI\/baton/);
+});
+
+test("目标已安装时视为成功并记入记录", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "baton-home-"));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const { dir } = bins(t, ["gemini"]);
+  const ran = await runInstall({
+    action: "install",
+    only: ["gemini"],
+    skipGlobal: true,
+    env: { PATH: dir },
+    home,
+    spawn: () => ({ status: 1, stderr: 'Extension "baton" is already installed.' }),
+  });
+  assert.equal(ran.exitCode, 0);
+  assert.equal(ran.result.hosts[0].ok, true);
+  assert.equal(ran.result.hosts[0].note, "已安装，跳过");
+  assert.deepEqual(readInstalled(home), ["gemini"]);
+});
+
+test("q 退出时不执行安装", async (t) => {
+  const { dir } = bins(t, ["claude"]);
+  const ran = await runInstall({
+    action: "install",
+    tty: true,
+    readLine: async () => "q",
+    env: { PATH: dir },
+    spawn() { throw new Error("不应执行"); },
+  });
+  assert.equal(ran.exitCode, 0);
+  assert.deepEqual(ran.result.hosts, []);
+});

@@ -1,60 +1,46 @@
 ---
 name: setup
 description: >-
-  Install baton plugin npm dependencies so the MCP server can start. Use when
-  the user runs /baton:setup, when delegate_task is missing, or when MCP fails
-  with ERR_MODULE_NOT_FOUND for @modelcontextprotocol/sdk.
+  Ensure the baton command is on PATH so skills and MCP can call it. Use when
+  the user runs /baton:setup, when baton is not found, or when a GUI host
+  cannot see the npm global bin.
 ---
 
 # Baton Setup
 
-Plugin install clones the repo and does not run npm install. The MCP process then crashes before `delegate_task` exists. This skill installs dependencies in the plugin directory only.
+The runtime comes from the npm package `@speculoai/baton`. A marketplace install does not put `baton` on PATH. This skill checks the command and installs it globally when it is missing.
 
-Baton needs **Node.js >= 24** (`package.json` `engines`). If Node is older, stop and tell the user to upgrade before installing.
-
-## Find the plugin root
-
-Do not run npm in the user's project. Use the first directory that contains `scripts/setup.mjs`:
-
-1. `$CLAUDE_PLUGIN_ROOT`
-2. `$CURSOR_PLUGIN_ROOT`
-3. Two directories above the loaded `skills/setup/SKILL.md`
-4. The directory that contains `src/mcp.ts` on the `ERR_MODULE_NOT_FOUND` stack
-
-If none of these exist, stop and tell the user the plugin root was not found.
+Baton needs **Node.js >= 20.17**. If Node is older, stop and tell the user to upgrade. Do not run npm inside the plugin directory or inside the user's project.
 
 ## Check
 
 ```bash
-node "<plugin-root>/scripts/setup.mjs" --json
+baton version
 ```
 
-Show the user the `next` field.
+If this prints `{"version":"..."}`, show the version and stop. Do not reinstall.
 
-## Ask
+If the shell reports that `baton` is missing, ask once. Use AskUserQuestion when it exists. Put install first:
 
-If `ready` is false, `package` is `baton`, and `npm` is true, ask once. Use AskUserQuestion when it exists. Otherwise ask in the conversation. Put install first:
-
-- `安装依赖 (Recommended)`
+- `安装 baton 命令 (Recommended)`
 - `暂时跳过`
 
-If they skip, show the check output and stop. Do not install.
-
-If they install:
+If they skip, stop. If they install:
 
 ```bash
-node "<plugin-root>/scripts/setup.mjs" --install --json
+npm install -g @speculoai/baton
+baton version
 ```
 
-Show `next`. Tell them to reload the plugin so MCP can start. Do not start MCP yourself.
+Show the version. Do not start MCP yourself.
 
-If already ready, or npm is missing, do not ask. Show `next`.
+## GUI hosts
 
-## After ready
+Apps launched from the Dock, such as the Cursor IDE, often do not inherit an nvm or volta PATH. If `baton version` works in a terminal but MCP cannot start, put the absolute path from `command -v baton` into that app's MCP config as `command`, with args `["mcp"]`.
+
+## After the command works
 
 Reload the plugin (new session) so MCP picks up tools. Then:
 
 - One bounded handoff → `baton-rescue` (supports `--scope`, `worktree add` then `start --cwd`, Cursor `--model`)
 - Several jobs / dependencies / review → `baton-orchestrate`
-
-After a plugin update, run `/baton:setup` again if MCP still fails with missing deps; reload so the host loads the latest skills.

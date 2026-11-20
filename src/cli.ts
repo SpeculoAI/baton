@@ -4,6 +4,7 @@ import { parseArgs } from "node:util";
 import { agents, start, status, cancel, wait, reply, ls, prune } from "./tasks.ts";
 import { addWorktree, listWorktrees, removeWorktree } from "./worktree.ts";
 import { redact } from "./redact.ts";
+import { runInstall, type Action } from "./install.ts";
 import type { Author, Effort, ScopeOnViolation, TaskMode } from "./types.ts";
 
 async function main(): Promise<void> {
@@ -18,7 +19,9 @@ async function main(): Promise<void> {
     await (await import("./mcp.ts")).startMcp();
     return;
   }
-  if (command === "agents") {
+  if (command === "version" || command === "--version") {
+    result = { version: JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")).version };
+  } else if (command === "agents") {
     result = { agents: agents() };
   } else if (command === "start") {
     const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
@@ -86,7 +89,34 @@ async function main(): Promise<void> {
     } else {
       throw new Error("用法：baton worktree add|ls|rm");
     }
-  } else throw new Error("用法：baton agents | start | status | cancel | wait | tail | reply | ls | prune | worktree | mcp");
+  } else if (command === "install" || command === "update" || command === "uninstall") {
+    const { values, positionals } = parseArgs({
+      args, allowPositionals: true,
+      options: {
+        only: { type: "string", multiple: true }, force: { type: "boolean" },
+        "dry-run": { type: "boolean" }, "skip-global": { type: "boolean" },
+      },
+    });
+    if (positionals.length) throw new Error(`${command} 不接受位置参数。`);
+    if (command !== "install" && values.force) throw new Error(`${command} 不接受 --force。`);
+    if (command === "uninstall" && values["skip-global"]) throw new Error("uninstall 不接受 --skip-global。");
+    const interactive = command === "install" && !values.only?.length && Boolean(process.stdin.isTTY);
+    const readline = interactive ? await import("node:readline/promises") : null;
+    const rl = readline?.createInterface({ input: process.stdin, output: process.stderr });
+    try {
+      const ran = await runInstall({
+        action: command as Action,
+        only: values.only,
+        force: values.force,
+        skipGlobal: values["skip-global"],
+        dryRun: Boolean(values["dry-run"]),
+        tty: interactive,
+        readLine: rl ? () => rl.question("") : undefined,
+      });
+      result = ran.result;
+      if (ran.exitCode) process.exitCode = ran.exitCode;
+    } finally { rl?.close(); }
+  } else throw new Error("用法：baton version | agents | start | status | cancel | wait | tail | reply | ls | prune | worktree | install | update | uninstall | mcp");
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }
 
