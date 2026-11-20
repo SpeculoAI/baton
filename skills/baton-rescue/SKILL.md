@@ -48,7 +48,7 @@ If not named, use `codex`. If the current session is already Codex, use `claude`
 ## Start
 
 ```
-baton start --target <t> --prompt "<self-contained task>" [--file <path>...] [--effort low|medium|high|ultra] [--model <id>] [--idle-timeout <s>] [--max-duration <s>] [--cwd <dir>] [--scope <glob>...] [--scope-on-violation warn|fail]
+baton start --target <t> --prompt "<self-contained task>" [--file <path>...] [--effort low|medium|high|ultra] [--model <id>] [--idle-timeout <s>] [--max-duration <s>] [--cwd <dir>] [--scope <glob>...] [--scope-on-violation warn|fail] [--mode readonly|write]
 ```
 
 - The prompt states done criteria and which files to look at. Long prompts can come on stdin instead of `--prompt`.
@@ -57,15 +57,24 @@ baton start --target <t> --prompt "<self-contained task>" [--file <path>...] [--
 - `--idle-timeout` (default 600) stops the job only after that many seconds with no output at all. There is no total time cap unless you pass `--max-duration`. Raise `--idle-timeout` for models that think silently for a long time.
 - Optional isolation: `baton worktree add` first, then pass that path as `--cwd`. Opening a worktree is not tied to the task; clean up later with `baton worktree rm`.
 - Optional `--scope`: post-check mistake fence (not a sandbox); prefer with worktree.
+- Review / read-only jobs: pass `--mode readonly` (default `write`). Kept across `reply`. Dirty tree after a readonly turn becomes `readonly_violation`.
 - It returns at once with `task_id` and `status: "running"`. Keep the `task_id`. Tell the user they can watch live with `baton tail -f <task_id>`.
 
 ## Wait
+
+If the host can run a background shell and wake this session when it exits, start once and end the current turn:
+
+```
+baton wait <task_id> --until-done
+```
+
+Otherwise (sync shell only, or MCP `task_wait`):
 
 ```
 baton wait <task_id> --for 50
 ```
 
-Returns as soon as the job leaves `running`, or after 50 seconds with the `running` view. Repeat until it is not `running`. Each call is short, so no host tool timeout is hit. If the host can run a long background shell command, a longer `--for` is fine; that is optional.
+Returns as soon as the job leaves `running`, or after 50 seconds with the `running` view. Repeat until it is not `running`. Each short call avoids host tool timeouts. Do not pass `--for` with `--until-done`.
 
 While `running`, read `liveness`:
 
@@ -77,6 +86,7 @@ While `running`, read `liveness`:
 
 - `success`: if `scope_violations` is non-empty (warn policy), treat as **not** done — `baton reply` to revert/move those paths; do not switch vendor. Otherwise tell the user `summary` and the turn's `git_changes`; do not redo those edits.
 - `scope_violation`: out-of-scope edits under `--scope-on-violation fail`. `baton reply` asking to restore those paths; do not switch vendor.
+- `readonly_violation`: `--mode readonly` but the tree changed. `baton reply` asking to restore; do not switch vendor.
 - `needs_input`: the worker asked `decision.question` with `decision.options`. Ask the user unchanged and wait. Then:
   ```
   baton reply <task_id> --as human --prompt "<the user's answer>"
@@ -87,7 +97,7 @@ While `running`, read `liveness`:
 - `timed_out`: relay `summary` (it says `idle` or `max_duration`). The task is closed; if the user wants another try, `baton start` again with a larger `--idle-timeout`.
 - `not_installed`: say so and stop.
 
-`baton reply` works after `success`, `needs_input`, or `scope_violation` for a follow-up in the same conversation. While the job is `running`, `reply` returns `busy`; wait first.
+`baton reply` works after `success`, `needs_input`, `scope_violation`, or `readonly_violation` for a follow-up in the same conversation. While the job is `running`, `reply` returns `busy`; wait first.
 
 ## Other commands
 

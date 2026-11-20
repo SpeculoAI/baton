@@ -32,12 +32,16 @@ export function resolveCursorModelArg(
 
 export const cursor: Adapter = {
   id: "cursor",
+  readonlyEnforcement: "agent-enforced",
   resolve(env) {
     // cursor-agent 名字不会撞上 IDE 的 `cursor`，也比 PATH 里别的 `agent` 先命中。
     return which(["cursor-agent", "agent"], env);
   },
-  build({ bin, cwd, prompt, sessionId, reasoningEffort, model }) {
-    const args = ["--print", "--force", "--trust", "--output-format", "stream-json", "--workspace", cwd];
+  build({ bin, cwd, prompt, sessionId, reasoningEffort, model, mode }) {
+    const args = ["--print"];
+    if (mode === "readonly") args.push("--mode", "ask");
+    else args.push("--force");
+    args.push("--trust", "--output-format", "stream-json", "--workspace", cwd);
     const modelArg = resolveCursorModelArg(model, reasoningEffort);
     if (modelArg) args.push("--model", modelArg);
     if (sessionId) args.push("--resume", sessionId);

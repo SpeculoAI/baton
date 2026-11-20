@@ -14,11 +14,12 @@ function parse(line: string): any {
 
 export const agy: Adapter = {
   id: "agy",
+  readonlyEnforcement: "agent-enforced",
   resolve(env) {
     return which(["agy"], env);
   },
-  build({ bin, prompt, sessionId, reasoningEffort }) {
-    const args = ["--print", prompt, "--mode", "accept-edits", "--output-format", "stream-json"];
+  build({ bin, prompt, sessionId, reasoningEffort, mode }) {
+    const args = ["--print", prompt, "--mode", mode === "readonly" ? "plan" : "accept-edits", "--output-format", "stream-json"];
     if (reasoningEffort) args.push("--effort", reasoningEffort === "ultra" ? "max" : reasoningEffort);
     if (sessionId) args.push("--conversation", sessionId);
     return { command: bin, args, stdin: null };

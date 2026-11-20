@@ -1,8 +1,10 @@
 export type Target = "codex" | "claude" | "agy" | "cursor";
 export type Effort = "low" | "medium" | "high" | "ultra";
-export type TaskStatus = "running" | "needs_input" | "success" | "failed" | "timed_out" | "cancelled" | "not_installed" | "not_authenticated" | "quota_exceeded" | "scope_violation";
+export type TaskStatus = "running" | "needs_input" | "success" | "failed" | "timed_out" | "cancelled" | "not_installed" | "not_authenticated" | "quota_exceeded" | "scope_violation" | "readonly_violation";
 export type Author = "host" | "human";
 export type ScopeOnViolation = "warn" | "fail";
+export type TaskMode = "readonly" | "write";
+export type Enforcement = "os-sandbox" | "agent-enforced" | "none";
 export type ScopeBaseline = {
   head: string;
   /** Porcelain lines: path → full porcelain line */
@@ -24,6 +26,12 @@ export type TaskMeta = {
   model?: string;
   /** Last argv value passed as `--model` (requested, not provider-confirmed). */
   model_argv?: string;
+  /** Only set when readonly; omit for default write. */
+  mode?: TaskMode;
+  /** How strongly readonly is enforced for this target. */
+  enforcement?: Enforcement;
+  /** Task-start git snapshot for readonly post-check (like scope_baseline). */
+  readonly_baseline?: ScopeBaseline;
   idle_timeout_s: number;
   max_duration_s: number | null;
   supervisor_pid: number | null;
@@ -59,6 +67,8 @@ export type SpawnSpec = {
 export type Adapter = {
   id: Target;
   resolve(env: NodeJS.ProcessEnv): string | null;
+  /** Readonly enforcement strength; omit or return null when unsupported. */
+  readonlyEnforcement?: Enforcement;
   build(input: {
     bin: string;
     cwd: string;
@@ -66,6 +76,7 @@ export type Adapter = {
     sessionId: string | null;
     reasoningEffort: Effort | null;
     model?: string | null;
+    mode?: TaskMode | null;
   }): SpawnSpec;
   parseLine(line: string): BatonEvent[] | null;
   sessionIdFrom(line: string): string | null;

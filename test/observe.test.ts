@@ -25,6 +25,23 @@ test("wait --for 1 到点返回 running，支持多任务任一完成及已完�
   for (const args of [["wait"], ["wait", quick.task_id, "--for", "-1"], ["wait", quick.task_id, "../x"]]) await assert.rejects(s.run(...args));
 });
 
+test("wait --until-done 阻塞到结束；与 --for 互斥", async (t) => {
+  const s = sandbox(t);
+  s.env.FAKE_SLEEP = "0.3";
+  const task = await s.run("start", "--target", "codex", "--prompt", "until");
+  const done = await s.run("wait", task.task_id, "--until-done");
+  assert.equal(done.task_id, task.task_id);
+  assert.equal(done.status, "success");
+  await assert.rejects(
+    () => s.run("wait", task.task_id, "--until-done", "--for", "1"),
+    (err: NodeJS.ErrnoException & { stdout?: string }) => {
+      const body = JSON.parse(err.stdout || "{}") as { summary?: string };
+      assert.match(body.summary || "", /--until-done|--for/);
+      return true;
+    },
+  );
+});
+
 test("tail 人读与 raw 输出；-f 在结束后退出且包含最后一个事件", async (t) => {
   const s = sandbox(t);
   s.env.FAKE_SLEEP = "0.5";

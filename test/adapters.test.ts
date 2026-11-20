@@ -110,6 +110,22 @@ test("codex build 沿用 fresh/resume 与四档 effort 参数", () => {
   assert.equal(getAdapter("constructor"), null);
 });
 
+test("readonly mode：四家 argv 映射；codex resume 仍无 sandbox/approve", () => {
+  const input = { bin: "/b", cwd: "/w", prompt: "p", sessionId: null as string | null, reasoningEffort: null as null, mode: "readonly" as const };
+  assert.deepEqual(codex.build(input).args.slice(0, 8), ["exec", "--json", "--color", "never", "--sandbox", "read-only", "--skip-git-repo-check", "--cd"]);
+  assert.ok(!codex.build(input).args.includes("--approve-for-me"));
+  const resume = codex.build({ ...input, sessionId: "thread-9" });
+  assert.ok(!resume.args.includes("--sandbox"));
+  assert.ok(!resume.args.includes("--approve-for-me"));
+  assert.deepEqual(getAdapter("claude")!.build(input).args.slice(0, 8),
+    ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "plan", "--permission-prompts", "none"]);
+  assert.deepEqual(getAdapter("cursor")!.build(input).args.slice(0, 7),
+    ["--print", "--mode", "ask", "--trust", "--output-format", "stream-json", "--workspace"]);
+  assert.ok(!getAdapter("cursor")!.build(input).args.includes("--force"));
+  assert.deepEqual(getAdapter("agy")!.build(input).args.slice(0, 5),
+    ["--print", "p", "--mode", "plan", "--output-format"]);
+});
+
 test("fake CLI 通过 PATH 解析，按 fixture 输出并支持退出码", () => {
   const dir = path.join(import.meta.dirname, "fake-cli");
   const env = { ...process.env, PATH: dir, FAKE_FIXTURE: path.join(import.meta.dirname, "fixtures/codex.stream.jsonl"), FAKE_SLEEP: "0", FAKE_EXIT: "0", FAKE_HANG: "0" };
