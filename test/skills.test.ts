@@ -16,9 +16,10 @@ test("skills 带正确 frontmatter，正文保持英文", () => {
 
 test("skills 以 shell 命令为主，覆盖 0.3.0 的状态与续轮方式", () => {
   for (const text of [read("baton-rescue"), read("baton-orchestrate")]) {
-    for (const needle of ["src/cli.ts", " start ", "wait", "--for 50", "reply", "--as human", "tail -f", "needs_input", "quota_exceeded", "orphaned", "busy"]) {
+    for (const needle of ["baton ", " start ", "wait", "--for 50", "reply", "--as human", "tail -f", "needs_input", "quota_exceeded", "orphaned", "busy"]) {
       assert.ok(text.includes(needle), `缺少 ${needle}`);
     }
+    assert.doesNotMatch(text, /src\/cli\.ts|plugin-root|setup\.mjs/);
     // MCP 只是备选入口，不能要求宿主开后台子 Agent。
     assert.match(text, /MCP/);
     assert.doesNotMatch(text, /must open a (host )?background sub-agent/i);
@@ -80,9 +81,11 @@ test("skills: --until-done 与 --mode readonly；仍保留 --for 50", () => {
   }
 });
 
-test("setup: Node >= 24 与就绪后指向 rescue/orchestrate", () => {
+test("setup: Node >= 20.17，缺命令时安装全局包", () => {
   const setup = read("setup");
-  assert.match(setup, /Node\.js >= 24/);
+  assert.match(setup, /Node\.js >= 20\.17/);
+  assert.match(setup, /@speculoai\/baton/);
+  assert.doesNotMatch(setup, /setup\.mjs/);
   assert.match(setup, /baton-rescue/);
   assert.match(setup, /baton-orchestrate/);
   assert.match(setup, /--model/);

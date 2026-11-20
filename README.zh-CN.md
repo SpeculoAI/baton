@@ -7,7 +7,7 @@
 
 可派工的目标：`claude` (Claude Code)、`codex` (Codex CLI)、`cursor` (Cursor Agent CLI)、`agy` (Antigravity)。
 
-> **0.3.0 是破坏性升级**，见 [从 0.2.x 升级](#从-02x-升级)。
+> **0.4.0 是破坏性升级**，见 [从 0.3.x 升级](#从-03x-升级)。0.3.0 的说明在 [从 0.2.x 升级](#从-02x-升级)。
 
 ---
 
@@ -27,6 +27,7 @@
 - [安全机制](#安全机制)
 - [手工冒烟测试](#手工冒烟测试)
 - [开发与单元测试](#开发与单元测试)
+- [从 0.3.x 升级](#从-03x-升级)
 - [从 0.2.x 升级](#从-02x-升级)
 
 ---
@@ -52,18 +53,29 @@
 
 ## 安装指南 (Installation)
 
-不同开发工具的插件与扩展管理方式不同。根据你常用的宿主（Host），直接复制对应的指令即可完成安装。
+```bash
+npx @speculoai/baton install
+```
+
+这条命令会把 `baton` 装成全局命令，并把插件装进你选中的 agent。`--only <agent>` 可重复（`claude`、`codex`、`cursor`、`agy`、`gemini`），`--force` 重装，`--dry-run` 只打印命令。以后更新：
+
+```bash
+npx @speculoai/baton@latest update
+```
+
+下面各家的命令是同一套步骤，供手动安装。
 
 ### 前置要求
 
-1. **Node.js** >= 24（直接运行 TypeScript 源码，无构建步骤）
+1. **Node.js** >= 20.17。
 2. 本地已安装并登录至少一个受支持的 Agent CLI（`codex`、`claude`、`agy`、`cursor`）。
-3. 通过插件市场安装后，在宿主会话运行 `/baton:setup`。市场安装不会执行 `npm install`，不跑这一步时 MCP 会因找不到 `@modelcontextprotocol/sdk` 起不来。
-4. （可选）如果你打算以源码方式本地安装或二次开发，先克隆本仓库并安装依赖：
+3. 通过插件市场安装不会把 `baton` 放进 PATH。运行 `/baton:setup`，或执行 `npm install -g @speculoai/baton`。
+4. （可选）本地开发：
    ```bash
-   git clone https://github.com/wei292224644/agent-plugin-agent.git
-   cd agent-plugin-agent
+   git clone https://github.com/SpeculoAI/baton.git
+   cd baton
    npm install
+   npm run build
    ```
 
 ---
@@ -77,24 +89,24 @@ Claude Code 原生支持通过插件市场进行扩展。
 在系统终端中运行：
 
 ```bash
-claude plugin marketplace add https://github.com/wei292224644/agent-plugin-agent
-claude plugin install baton@agent-plugin-agent
+claude plugin marketplace add https://github.com/SpeculoAI/baton
+claude plugin install baton@speculoai
 ```
 
 或者在已开启的 `claude` 交互终端内直接输入 Slash 命令：
 
 ```text
-/plugin marketplace add https://github.com/wei292224644/agent-plugin-agent
-/plugin install baton@agent-plugin-agent
+/plugin marketplace add https://github.com/SpeculoAI/baton
+/plugin install baton@speculoai
 ```
 
 #### 本地克隆安装
 
-在克隆好的 `agent-plugin-agent` 目录下执行：
+在克隆好的 `baton` 目录下执行：
 
 ```bash
 claude plugin marketplace add .
-claude plugin install baton@agent-plugin-agent
+claude plugin install baton@speculoai
 ```
 
 ---
@@ -108,12 +120,12 @@ Antigravity 原生支持插件系统与技能自动加载。
 在终端中直接运行：
 
 ```bash
-agy plugin install https://github.com/wei292224644/agent-plugin-agent
+agy plugin install https://github.com/SpeculoAI/baton
 ```
 
 #### 本地克隆安装
 
-在克隆好的 `agent-plugin-agent` 目录下执行：
+在克隆好的 `baton` 目录下执行：
 
 ```bash
 agy plugin install .
@@ -132,8 +144,8 @@ Codex 命令行支持通过插件体系注册并接入 MCP。
 在系统终端中运行：
 
 ```bash
-codex plugin marketplace add https://github.com/wei292224644/agent-plugin-agent
-codex plugin add baton@agent-plugin-agent
+codex plugin marketplace add https://github.com/SpeculoAI/baton
+codex plugin add baton@speculoai
 ```
 
 #### 交互式安装
@@ -148,11 +160,11 @@ codex plugin add baton@agent-plugin-agent
 
 #### 本地克隆安装
 
-在克隆好的 `agent-plugin-agent` 目录下执行：
+在克隆好的 `baton` 目录下执行：
 
 ```bash
 codex plugin marketplace add .
-codex plugin add baton@agent-plugin-agent
+codex plugin add baton@speculoai
 ```
 
 ---
@@ -162,7 +174,7 @@ codex plugin add baton@agent-plugin-agent
 适用于 Codex 桌面客户端：
 
 1. 打开 Codex App，点击左侧边栏的 **Plugins**。
-2. 搜索 `Baton`（或点击添加自定义市场源：`https://github.com/wei292224644/agent-plugin-agent`）。
+2. 搜索 `Baton`（或点击添加自定义市场源：`https://github.com/SpeculoAI/baton`）。
 3. 点击 **Install** 确认安装。
 
 ---
@@ -174,8 +186,8 @@ codex plugin add baton@agent-plugin-agent
 Cursor 官方 Agent CLI 支持直接添加 Git 地址：
 
 ```bash
-agent plugin marketplace add https://github.com/wei292224644/agent-plugin-agent
-agent plugin install baton@agent-plugin-agent
+agent plugin marketplace add https://github.com/SpeculoAI/baton
+agent plugin install baton@speculoai
 ```
 
 或者在 Cursor Agent 聊天框中输入：
@@ -194,8 +206,8 @@ agent plugin install baton@agent-plugin-agent
 {
   "mcpServers": {
     "baton": {
-      "command": "node",
-      "args": ["<仓库绝对路径>/src/cli.ts", "mcp"]
+      "command": "baton",
+      "args": ["mcp"]
     }
   }
 }
@@ -205,19 +217,19 @@ agent plugin install baton@agent-plugin-agent
 
 ### Gemini CLI
 
-Gemini CLI 采用扩展（Extensions）系统。这里把 baton 装进 Gemini CLI 当宿主用；0.3.0 暂不支持把任务派给 gemini。
+Gemini CLI 采用扩展（Extensions）系统。这里把 baton 装进 Gemini CLI 当宿主用；暂不支持把任务派给 gemini。
 
 #### 远程安装
 
 在终端中执行：
 
 ```bash
-gemini extensions install https://github.com/wei292224644/agent-plugin-agent
+gemini extensions install https://github.com/SpeculoAI/baton --consent
 ```
 
 #### 本地链接模式（推荐用于本地开发）
 
-在克隆好的 `agent-plugin-agent` 目录下执行：
+在克隆好的 `baton` 目录下执行：
 
 ```bash
 gemini extensions link .
@@ -241,19 +253,21 @@ gemini extensions update baton
 {
   "mcpServers": {
     "baton": {
-      "command": "node",
-      "args": ["<仓库绝对路径>/src/cli.ts", "mcp"]
+      "command": "baton",
+      "args": ["mcp"]
     }
   }
 }
 ```
+
+从 Dock 启动的应用常常拿不到 nvm 或 volta 的 PATH。如果终端里 `baton` 可用、MCP 却起不来，把 `command -v baton` 的绝对路径填进 `command`。
 
 ---
 
 ## 验证安装
 
 ```bash
-node src/cli.ts agents
+baton agents
 ```
 
 输出示例：
@@ -272,7 +286,7 @@ node src/cli.ts agents
 
 安装插件后，宿主会加载三个技能：
 
-- [skills/setup/SKILL.md](skills/setup/SKILL.md)：`/baton:setup`，给插件目录装上 npm 依赖
+- [skills/setup/SKILL.md](skills/setup/SKILL.md)：`/baton:setup`，确认 `baton` 命令在 PATH 上
 - [skills/baton-rescue/SKILL.md](skills/baton-rescue/SKILL.md)：单跳派工，有界等待，转问或代答子 CLI 的问题
 - [skills/baton-orchestrate/SKILL.md](skills/baton-orchestrate/SKILL.md)：多单调度，持依赖图、逐单推进、审查、返工、换家、汇总（不绑定 Speckit / OpenSpec / agent-skills）
 
@@ -282,7 +296,7 @@ node src/cli.ts agents
 
 ### 命令行
 
-所有命令都只输出一个 JSON 对象（`tail` 除外），出错时退出码非 0。下面的 `baton` 指 `node <插件目录>/src/cli.ts`。
+所有命令都只输出一个 JSON 对象（`tail` 除外），出错时退出码非 0。`baton` 是 `@speculoai/baton` 提供的全局命令。
 
 ```bash
 baton agents
@@ -425,10 +439,16 @@ npm run typecheck
 
 ---
 
+## 从 0.3.x 升级
+
+- 用 `npx @speculoai/baton install` 安装，用 `npx @speculoai/baton@latest update` 更新。插件 id 是 `baton@speculoai`。
+- MCP 运行 `baton`，参数是 `["mcp"]`。`/baton:setup` 安装全局包，不再往插件目录里执行 npm。
+- Node 要求改为 >= 20.17。发布包由 `tsc` 构建，市场安装不再需要 TypeScript 源码。
+
 ## 从 0.2.x 升级
 
-- **Node 最低 24**，源码改为 TypeScript，直接运行 `src/cli.ts`。
-- 入口从 `src/cli.mjs` 改为 `src/cli.ts`；手工配置的 MCP 要同步修改。
+- **Node 最低 20.17。** 源码是 TypeScript。安装后使用 `baton` 命令。
+- 手工 MCP 配置的 `command` 为 `baton`，`args` 为 `["mcp"]`。
 - CLI 去掉 `delegate`，改为 `start` + `wait` + `reply`；`wait` 用位置参数传 id。
 - MCP 去掉 `delegate_task(session_id)` 续派和 `task_wait_any`：续轮用 `task_reply`，多单等待用 `task_wait(task_ids)`。
 - `needs_decision` 改名 `needs_input`；`timeout_seconds`（上限 1800）改为 `idle_timeout_seconds` + `max_duration_seconds`，默认没有总时长上限。
@@ -437,4 +457,4 @@ npm run typecheck
 
 ---
 
-曾用名：**Agent-Plugin-Agent (APA)**。旧安装串 `apa@apa` 已失效，请使用 `baton@agent-plugin-agent`。
+曾用名：**Agent-Plugin-Agent (APA)**。更早的安装串已失效，请使用 `baton@speculoai`。

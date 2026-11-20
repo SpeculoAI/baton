@@ -7,7 +7,7 @@
 
 Delegation targets: `claude` (Claude Code), `codex` (Codex CLI), `cursor` (Cursor Agent CLI), `agy` (Antigravity).
 
-> **0.3.0 is a breaking release.** See [Upgrading from 0.2.x](#upgrading-from-02x).
+> **0.4.0 is a breaking release.** See [Upgrading from 0.3.x](#upgrading-from-03x). 0.3.0 notes are in [Upgrading from 0.2.x](#upgrading-from-02x).
 
 ---
 
@@ -27,6 +27,7 @@ Delegation targets: `claude` (Claude Code), `codex` (Codex CLI), `cursor` (Curso
 - [Safety](#safety)
 - [Manual Smoke Testing](#manual-smoke-testing)
 - [Development & Testing](#development--testing)
+- [Upgrading from 0.3.x](#upgrading-from-03x)
 - [Upgrading from 0.2.x](#upgrading-from-02x)
 
 ---
@@ -52,18 +53,29 @@ Host CLI ──shell──> baton start ──spawns a detached supervisor──
 
 ## Installation
 
-Installation differs by harness. Simply copy and paste the commands for your preferred Host environment below.
+```bash
+npx @speculoai/baton install
+```
+
+This installs the `baton` command globally and the plugin into the agent CLIs you select. `--only <agent>` is repeatable (`claude`, `codex`, `cursor`, `agy`, `gemini`), `--force` reinstalls, and `--dry-run` prints the commands. Update everything later with:
+
+```bash
+npx @speculoai/baton@latest update
+```
+
+The per-host commands below are the same steps, run by hand.
 
 ### Prerequisites
 
-1. **Node.js** >= 24 (runs the TypeScript source directly, no build step)
+1. **Node.js** >= 20.17.
 2. At least one supported Agent CLI installed and logged in locally (`codex`, `claude`, `agy`, or `cursor`).
-3. After a marketplace install, run `/baton:setup` in the host session. Marketplace install does not run `npm install`; without this step MCP exits because `@modelcontextprotocol/sdk` is missing.
-4. (Optional) If installing from local source or developing:
+3. A marketplace install does not put `baton` on PATH. Run `/baton:setup`, or `npm install -g @speculoai/baton`.
+4. (Optional) Local checkout:
    ```bash
-   git clone https://github.com/wei292224644/agent-plugin-agent.git
-   cd agent-plugin-agent
+   git clone https://github.com/SpeculoAI/baton.git
+   cd baton
    npm install
+   npm run build
    ```
 
 ---
@@ -77,24 +89,24 @@ Claude Code supports plugins via its plugin marketplace.
 Run directly in your system terminal:
 
 ```bash
-claude plugin marketplace add https://github.com/wei292224644/agent-plugin-agent
-claude plugin install baton@agent-plugin-agent
+claude plugin marketplace add https://github.com/SpeculoAI/baton
+claude plugin install baton@speculoai
 ```
 
 Or inside an active `claude` session using Slash commands:
 
 ```text
-/plugin marketplace add https://github.com/wei292224644/agent-plugin-agent
-/plugin install baton@agent-plugin-agent
+/plugin marketplace add https://github.com/SpeculoAI/baton
+/plugin install baton@speculoai
 ```
 
 #### Local Checkout Install
 
-From inside your local `agent-plugin-agent` directory:
+From inside your local `baton` directory:
 
 ```bash
 claude plugin marketplace add .
-claude plugin install baton@agent-plugin-agent
+claude plugin install baton@speculoai
 ```
 
 ---
@@ -108,12 +120,12 @@ Antigravity natively discovers plugins and auto-loads their skills.
 Run in your terminal:
 
 ```bash
-agy plugin install https://github.com/wei292224644/agent-plugin-agent
+agy plugin install https://github.com/SpeculoAI/baton
 ```
 
 #### Local Checkout Install
 
-From inside your local `agent-plugin-agent` directory:
+From inside your local `baton` directory:
 
 ```bash
 agy plugin install .
@@ -132,8 +144,8 @@ Codex CLI supports adding plugin marketplaces and registering MCP tools.
 Run in your system terminal:
 
 ```bash
-codex plugin marketplace add https://github.com/wei292224644/agent-plugin-agent
-codex plugin add baton@agent-plugin-agent
+codex plugin marketplace add https://github.com/SpeculoAI/baton
+codex plugin add baton@speculoai
 ```
 
 #### Interactive TUI Install
@@ -148,11 +160,11 @@ Search for `baton` and select `Install Plugin`.
 
 #### Local Checkout Install
 
-From inside your local `agent-plugin-agent` directory:
+From inside your local `baton` directory:
 
 ```bash
 codex plugin marketplace add .
-codex plugin add baton@agent-plugin-agent
+codex plugin add baton@speculoai
 ```
 
 ---
@@ -162,7 +174,7 @@ codex plugin add baton@agent-plugin-agent
 For the Codex desktop application:
 
 1. Open Codex App and navigate to **Plugins** in the sidebar.
-2. Search for `Baton` (or add custom marketplace source: `https://github.com/wei292224644/agent-plugin-agent`).
+2. Search for `Baton` (or add custom marketplace source: `https://github.com/SpeculoAI/baton`).
 3. Click **Install**.
 
 ---
@@ -174,8 +186,8 @@ For the Codex desktop application:
 Cursor's official Agent CLI accepts Git repositories:
 
 ```bash
-agent plugin marketplace add https://github.com/wei292224644/agent-plugin-agent
-agent plugin install baton@agent-plugin-agent
+agent plugin marketplace add https://github.com/SpeculoAI/baton
+agent plugin install baton@speculoai
 ```
 
 Or in the Cursor Agent chat window:
@@ -194,8 +206,8 @@ In your project's `.cursor/mcp.json` (or global Cursor MCP Settings):
 {
   "mcpServers": {
     "baton": {
-      "command": "node",
-      "args": ["<ABSOLUTE_PATH_TO_REPO>/src/cli.ts", "mcp"]
+      "command": "baton",
+      "args": ["mcp"]
     }
   }
 }
@@ -205,19 +217,19 @@ In your project's `.cursor/mcp.json` (or global Cursor MCP Settings):
 
 ### Gemini CLI
 
-Gemini CLI uses an extension system. This installs baton into Gemini CLI as the host; delegating tasks to gemini is not supported in 0.3.0.
+Gemini CLI uses an extension system. This installs baton into Gemini CLI as the host; delegating tasks to gemini is not supported.
 
 #### Remote Install
 
 Run in your terminal:
 
 ```bash
-gemini extensions install https://github.com/wei292224644/agent-plugin-agent
+gemini extensions install https://github.com/SpeculoAI/baton --consent
 ```
 
 #### Local Link Mode (For development)
 
-From inside your local `agent-plugin-agent` directory:
+From inside your local `baton` directory:
 
 ```bash
 gemini extensions link .
@@ -241,19 +253,21 @@ Add the following to your client's MCP configuration JSON:
 {
   "mcpServers": {
     "baton": {
-      "command": "node",
-      "args": ["<ABSOLUTE_PATH_TO_REPO>/src/cli.ts", "mcp"]
+      "command": "baton",
+      "args": ["mcp"]
     }
   }
 }
 ```
+
+Apps launched from the Dock often miss an nvm or volta PATH. If `baton` works in a terminal but MCP cannot start it, set `command` to the absolute path from `command -v baton`.
 
 ---
 
 ## Verify Installation
 
 ```bash
-node src/cli.ts agents
+baton agents
 ```
 
 Example output:
@@ -272,7 +286,7 @@ Only agents with `installed: true` can be delegation targets.
 
 After installation the host loads three skills:
 
-- [skills/setup/SKILL.md](skills/setup/SKILL.md): `/baton:setup`, installs the plugin's npm dependencies
+- [skills/setup/SKILL.md](skills/setup/SKILL.md): `/baton:setup`, makes sure the `baton` command is on PATH
 - [skills/baton-rescue/SKILL.md](skills/baton-rescue/SKILL.md): one hop, bounded waiting, relays or answers the worker's questions
 - [skills/baton-orchestrate/SKILL.md](skills/baton-orchestrate/SKILL.md): several jobs with a dependency graph, per-job review, rework, fail-over, and a summary (does not require Speckit / OpenSpec / agent-skills)
 
@@ -282,7 +296,7 @@ Say something like "rescue this refactor to Codex" and the host runs `baton star
 
 ### Command line
 
-Every command prints exactly one JSON object (except `tail`) and exits non-zero on error. `baton` below means `node <plugin-root>/src/cli.ts`.
+Every command prints exactly one JSON object (except `tail`) and exits non-zero on error. `baton` is the global command from `@speculoai/baton`.
 
 ```bash
 baton agents
@@ -425,10 +439,16 @@ Integration tests use fake CLIs in `test/fake-cli/` and a temporary `BATON_HOME`
 
 ---
 
+## Upgrading from 0.3.x
+
+- Install and update with `npx @speculoai/baton install` and `npx @speculoai/baton@latest update`. The marketplace id is `baton@speculoai`.
+- MCP runs `baton` with args `["mcp"]`. `/baton:setup` installs the global package instead of running npm inside the plugin directory.
+- Node requirement is >= 20.17. The published package is built with `tsc`; a marketplace install no longer needs the TypeScript source.
+
 ## Upgrading from 0.2.x
 
-- **Node 24 or newer.** The source is now TypeScript and runs directly as `src/cli.ts`.
-- The entry point moved from `src/cli.mjs` to `src/cli.ts`; update any hand-written MCP config.
+- **Node 20.17 or newer.** The source is TypeScript. Published installs use the `baton` command.
+- Hand-written MCP config uses `command: "baton"` and `args: ["mcp"]`.
 - The CLI drops `delegate` in favor of `start` + `wait` + `reply`; `wait` takes ids as positional arguments.
 - MCP drops `delegate_task(session_id)` continuation and `task_wait_any`: continue with `task_reply`, wait on several jobs with `task_wait(task_ids)`.
 - `needs_decision` is now `needs_input`. `timeout_seconds` (capped at 1800) is replaced by `idle_timeout_seconds` + `max_duration_seconds`, with no total cap by default.
@@ -437,4 +457,4 @@ Integration tests use fake CLIs in `test/fake-cli/` and a temporary `BATON_HOME`
 
 ---
 
-Formerly named **Agent-Plugin-Agent (APA)**. The old install string `apa@apa` is no longer valid; use `baton@agent-plugin-agent`.
+Formerly named **Agent-Plugin-Agent (APA)**. Older install strings are no longer valid; use `baton@speculoai`.

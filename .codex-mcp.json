@@ -1,9 +1,8 @@
 {
   "mcpServers": {
     "baton": {
-      "command": "node",
-      "args": ["src/cli.ts", "mcp"],
-      "cwd": "."
+      "command": "baton",
+      "args": ["mcp"]
     }
   }
 }
