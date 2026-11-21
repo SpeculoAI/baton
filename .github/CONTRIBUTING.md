@@ -41,7 +41,7 @@ Use `!` (or a `BREAKING CHANGE:` line in the PR body) for anything that changes 
 | Job | What it checks |
 |---|---|
 | PR title | Conventional Commits format |
-| Test | `npm test` (typecheck + `node --test`) on Ubuntu and macOS × Node 22 and 24 |
+| Test | `npm test` (typecheck + `node --test`) on Ubuntu and macOS, Node 24 (the development runtime) |
 | dist on Node 20.17 | The built `dist/` starts on the lowest supported Node |
 | Package contents | `npm pack` ships `dist/`, `README.md`, `LICENSE` and nothing from `src/` or `test/` |
 | Dependency audit | No high-severity advisories in runtime dependencies |

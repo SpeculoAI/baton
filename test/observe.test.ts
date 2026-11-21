@@ -44,14 +44,14 @@ test("wait --until-done blocks until finished; mutually exclusive with --for", a
 
 test("tail human-readable and raw output; -f exits after finish and includes the last event", async (t) => {
   const s = sandbox(t);
-  s.env.FAKE_SLEEP = "0.5";
+  s.env.FAKE_SLEEP = "3";
   const task = await s.run("start", "--target", "codex", "--prompt", "watch");
   const follower = spawn(process.execPath, [cli, "tail", task.task_id, "-f"], { cwd: s.cwd, env: s.env, stdio: ["ignore", "pipe", "pipe"] });
   t.after(() => follower.kill("SIGKILL"));
   let output = "";
   follower.stdout.on("data", (chunk) => { output += String(chunk); });
   const finished = new Promise((resolve, reject) => { follower.on("close", resolve); follower.on("error", reject); });
-  await sleep(150);
+  for (const deadline = Date.now() + 5000; !/watch/.test(output) && Date.now() < deadline;) await sleep(50);
   assert.match(output, /watch/);
   assert.equal(s.meta(task.task_id).status, "running");
   await s.until(task.task_id);
