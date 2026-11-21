@@ -63,7 +63,7 @@ Host install paths and which manifest each host reads are documented in [hosts.m
 
 ## Tech stack
 
-- TypeScript, Node ≥ 20.17 for published `dist/`; development runs `.ts` directly on Node ≥ 22.18.
+- TypeScript, Node ≥ 20.17 for published `dist/`; development and tests run `.ts` directly on Node ≥ 24.
 - Runtime dependency: `@modelcontextprotocol/sdk`.
 - Build: `tsc -p tsconfig.build.json` → `dist/`. Tests: `tsc --noEmit && node --test "test/**/*.test.ts"`.
 
