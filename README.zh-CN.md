@@ -5,6 +5,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/SpeculoAI/baton/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/SpeculoAI/baton/ci.yml?branch=main&style=flat-square&label=CI" alt="CI"></a>
   <a href="https://www.npmjs.com/package/@speculoai/baton"><img src="https://img.shields.io/npm/v/@speculoai/baton?style=flat-square&color=111111&label=npm" alt="npm"></a>
   <img src="https://img.shields.io/node/v/@speculoai/baton?style=flat-square&color=111111" alt="Node 版本">
   <img src="https://img.shields.io/badge/hosts-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20Cursor%20%C2%B7%20Antigravity%20%C2%B7%20Gemini-111111?style=flat-square" alt="支持的宿主">
@@ -157,7 +158,7 @@ npm install
 npm test        # 类型检查 + node --test，用假 CLI 跑，不消耗模型额度
 ```
 
-设计文档见 [docs/architecture.md](docs/architecture.md) 和 [docs/hosts.md](docs/hosts.md)。从 0.3.x 或更早版本升级，请看[升级说明](docs/reference.zh-CN.md#从-03x-升级)。
+所有改动都必须通过 PR 合并，分支、PR、CI 和发布流程见 [CONTRIBUTING](.github/CONTRIBUTING.md)。设计文档见 [docs/architecture.md](docs/architecture.md) 和 [docs/hosts.md](docs/hosts.md)。从 0.3.x 或更早版本升级，请看[升级说明](docs/reference.zh-CN.md#从-03x-升级)。
 
 ## 许可证
 

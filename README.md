@@ -5,6 +5,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/SpeculoAI/baton/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/SpeculoAI/baton/ci.yml?branch=main&style=flat-square&label=CI" alt="CI"></a>
   <a href="https://www.npmjs.com/package/@speculoai/baton"><img src="https://img.shields.io/npm/v/@speculoai/baton?style=flat-square&color=111111&label=npm" alt="npm"></a>
   <img src="https://img.shields.io/node/v/@speculoai/baton?style=flat-square&color=111111" alt="Node version">
   <img src="https://img.shields.io/badge/hosts-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20Cursor%20%C2%B7%20Antigravity%20%C2%B7%20Gemini-111111?style=flat-square" alt="Hosts">
@@ -157,7 +158,7 @@ npm install
 npm test        # typecheck + node --test, using fake CLIs; no model quota spent
 ```
 
-Design notes are in [docs/architecture.md](docs/architecture.md) and [docs/hosts.md](docs/hosts.md). Upgrading from 0.3.x or earlier? See [the upgrade notes](docs/reference.md#upgrading-from-03x).
+Changes land through pull requests only; see [CONTRIBUTING](.github/CONTRIBUTING.md) for the branch, PR, CI, and release workflow. Design notes are in [docs/architecture.md](docs/architecture.md) and [docs/hosts.md](docs/hosts.md). Upgrading from 0.3.x or earlier? See [the upgrade notes](docs/reference.md#upgrading-from-03x).
 
 ## License
 
