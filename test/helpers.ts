@@ -48,7 +48,7 @@ export function sandbox(t: TestContext) {
   async function until(id: string, predicate: (meta: TaskMeta) => boolean = (meta) => meta.status !== "running", timeout = 6000) {
     const end = Date.now() + timeout;
     while (Date.now() < end) { const m = meta(id); if (predicate(m)) return m; await sleep(20); }
-    throw new Error(`任务未达到预期状态: ${JSON.stringify(meta(id))}`);
+    throw new Error(`task did not reach the expected state: ${JSON.stringify(meta(id))}`);
   }
   return { home, cwd, env, fixture, run, dir, meta, turn, events, until };
 }

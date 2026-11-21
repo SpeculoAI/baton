@@ -70,7 +70,7 @@ export function gitSnapshot(cwd: string): Snapshot | null {
 }
 
 export function snapshotToBaseline(snapshot: Snapshot): ScopeBaseline {
-  if (!snapshot.head) throw new Error("scope baseline 需要有效 HEAD。");
+  if (!snapshot.head) throw new Error("scope baseline requires a valid HEAD.");
   return {
     head: snapshot.head,
     porcelain: Object.fromEntries(snapshot.porcelain),
@@ -107,7 +107,7 @@ export function committedNames(cwd: string, fromHead: string, toHead: string): s
   );
   if (result.error || result.status !== 0) {
     const detail = (result.stderr || result.stdout || result.error?.message || "").trim();
-    throw new Error(`git diff ${fromHead.slice(0, 7)}..${toHead.slice(0, 7)} 失败：${detail || `exit ${result.status}`}`);
+    throw new Error(`git diff ${fromHead.slice(0, 7)}..${toHead.slice(0, 7)} failed: ${detail || `exit ${result.status}`}`);
   }
   const paths = new Set<string>();
   for (const line of (result.stdout || "").split("\n")) {
@@ -171,7 +171,7 @@ export function gitChanges(cwd: string, beforeRaw: SnapshotInput, afterRaw: Snap
   let insertions = 0;
   let deletions = 0;
   if (tracked.length) {
-    // shortcut: 超过 50 个路径就不再逐个点名，升级时改成 --raw 再过滤。
+    // shortcut: stop naming paths individually beyond 50; upgrade by switching to --raw and filtering.
     const result = spawnSync("git", ["diff", "--stat", "--", ...tracked.slice(0, 50)], {
       cwd: root,
       encoding: "utf8",

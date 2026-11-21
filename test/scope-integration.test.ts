@@ -40,7 +40,7 @@ test("scope fail: success → scope_violation", async (t) => {
   const done = await s.until(started.task_id);
   assert.equal(done.status, "scope_violation");
   assert.ok(done.scope_violations?.includes("leak.txt"));
-  assert.match(done.summary || "", /scope_violation: 见 scope_violations/);
+  assert.match(done.summary || "", /scope_violation: see scope_violations/);
 });
 
 test("scope: in-scope write → no violations", async (t) => {
@@ -63,7 +63,7 @@ test("scope without git repo rejected", async (t) => {
     () => s.run("start", "--target", "codex", "--prompt", "hi", "--scope", "a/**"),
     (err: NodeJS.ErrnoException & { stdout?: string }) => {
       const body = JSON.parse(err.stdout || "{}") as { summary?: string };
-      assert.match(body.summary || "", /git|HEAD|仓库/i);
+      assert.match(body.summary || "", /git|HEAD|repo/i);
       return true;
     },
   );

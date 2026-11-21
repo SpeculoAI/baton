@@ -14,7 +14,7 @@ function gitInit(cwd: string) {
   git(["-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-m", "init"]);
 }
 
-test("resolveReadonlyEnforcement：默认 write；none 拒绝；allow-weak 闭合", () => {
+test("resolveReadonlyEnforcement: defaults to write; none is rejected; allow-weak closes the gap", () => {
   assert.deepEqual(resolveReadonlyEnforcement({ id: "codex", readonlyEnforcement: "os-sandbox" }, undefined, undefined), {});
   assert.deepEqual(resolveReadonlyEnforcement({ id: "codex", readonlyEnforcement: "os-sandbox" }, "write", undefined), {});
   assert.deepEqual(
@@ -23,7 +23,7 @@ test("resolveReadonlyEnforcement：默认 write；none 拒绝；allow-weak 闭�
   );
   assert.throws(
     () => resolveReadonlyEnforcement({ id: "future" }, "readonly", undefined),
-    /无法强制只读|--allow-weak/,
+    /cannot enforce read-?only|--allow-weak/i,
   );
   assert.deepEqual(
     resolveReadonlyEnforcement({ id: "future" }, "readonly", true),
@@ -31,15 +31,15 @@ test("resolveReadonlyEnforcement：默认 write；none 拒绝；allow-weak 闭�
   );
   assert.throws(
     () => resolveReadonlyEnforcement({ id: "codex", readonlyEnforcement: "os-sandbox" }, "readonly", true),
-    /无需 --allow-weak/,
+    /no need for --allow-weak|--allow-weak is not needed/i,
   );
   assert.throws(
     () => resolveReadonlyEnforcement({ id: "codex", readonlyEnforcement: "os-sandbox" }, "write", true),
-    /仅用于 --mode readonly/,
+    /only (for|with|valid with) --mode readonly/i,
   );
 });
 
-test("readonly dirty → readonly_violation；干净仍 success；可 reply", async (t) => {
+test("readonly dirty → readonly_violation; clean still succeeds; reply allowed", async (t) => {
   const s = sandbox(t);
   gitInit(s.cwd);
   s.env.FAKE_WRITE = "leak.txt";
@@ -64,7 +64,7 @@ test("readonly dirty → readonly_violation；干净仍 success；可 reply", as
   assert.equal(ok.status, "success");
 });
 
-test("readonly + scope：只读违规优先", async (t) => {
+test("readonly + scope: readonly violation takes precedence", async (t) => {
   const s = sandbox(t);
   gitInit(s.cwd);
   s.env.FAKE_WRITE = "leak.txt";
@@ -76,7 +76,7 @@ test("readonly + scope：只读违规优先", async (t) => {
   assert.equal(done.status, "readonly_violation");
 });
 
-test("readonly：reply 后未清理仍对照任务起点 baseline", async (t) => {
+test("readonly: after reply, uncleaned changes are still compared against the task-start baseline", async (t) => {
   const s = sandbox(t);
   gitInit(s.cwd);
   s.env.FAKE_WRITE = "leak.txt";

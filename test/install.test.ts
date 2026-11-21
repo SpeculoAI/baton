@@ -18,21 +18,21 @@ function bins(t: test.TestContext, names: string[]) {
   return { dir, log };
 }
 
-test("parseChoice：回车全选，q 退出，编号可多选，越界报错", () => {
+test("parseChoice: Enter selects all, q quits, numbers allow multi-select, out-of-range errors", () => {
   assert.deepEqual(parseChoice("", 3), [0, 1, 2]);
   assert.deepEqual(parseChoice("  ", 2), [0, 1]);
   assert.deepEqual(parseChoice("q", 3), []);
   assert.deepEqual(parseChoice("1,3", 3), [0, 2]);
   assert.deepEqual(parseChoice("2,2", 3), [1]);
-  assert.throws(() => parseChoice("0", 2), /越界/);
-  assert.throws(() => parseChoice("4", 2), /越界/);
-  assert.throws(() => parseChoice("a", 2), /无法识别/);
+  assert.throws(() => parseChoice("0", 2), /out of range/i);
+  assert.throws(() => parseChoice("4", 2), /out of range/i);
+  assert.throws(() => parseChoice("a", 2), /unrecognized|unrecognised|invalid/i);
 });
 
 const argsOf = (id: string, action: "install" | "update" | "uninstall", opts?: { force?: boolean }) =>
   commandsFor(id, action, opts).map((step) => step.args);
 
-test("五个 agent 的 install / update / uninstall 命令与规格一致", () => {
+test("install / update / uninstall commands and specs are consistent for all five agents", () => {
   const id = "baton@speculoai";
   assert.deepEqual(argsOf("claude", "install"), [
     ["plugin", "uninstall", "baton@agent-plugin-agent"],
@@ -74,7 +74,7 @@ test("五个 agent 的 install / update / uninstall 命令与规格一致", () =
   assert.deepEqual(argsOf("gemini", "uninstall"), [["extensions", "uninstall", "baton"]]);
 });
 
-test("--force 在安装前先卸载当前 ID", () => {
+test("--force uninstalls the current ID before installing", () => {
   const args = argsOf("gemini", "install", { force: true });
   assert.deepEqual(args, [
     ["extensions", "uninstall", "baton"],
@@ -82,7 +82,7 @@ test("--force 在安装前先卸载当前 ID", () => {
   ]);
 });
 
-test("install 迁移步骤是软失败，正式安装不是", () => {
+test("install migration steps are soft failures; the real install is not", () => {
   const steps = commandsFor("claude", "install");
   assert.equal(steps[0].soft, true);
   assert.equal(steps[1].soft, true);
@@ -90,16 +90,16 @@ test("install 迁移步骤是软失败，正式安装不是", () => {
   assert.equal(steps[3].soft, undefined);
 });
 
-test("--only 未知或未检测到的 agent 报错；update 默认只用记录", () => {
+test("--only with an unknown or undetected agent errors; update uses only the record by default", () => {
   const env = { PATH: "" };
-  assert.throws(() => planInstall({ action: "install", only: ["nope"], env }), /未知/);
-  assert.throws(() => planInstall({ action: "install", only: ["claude"], env }), /未检测到/);
+  assert.throws(() => planInstall({ action: "install", only: ["nope"], env }), /unknown/i);
+  assert.throws(() => planInstall({ action: "install", only: ["claude"], env }), /not detected/i);
   const update = planInstall({ action: "update", recorded: ["gemini", "claude"], env });
   assert.deepEqual(update.hosts.map((host) => host.id), []);
   assert.deepEqual(update.missing, ["gemini", "claude"]);
 });
 
-test("--dry-run 只列出命令，不执行，不写 installed.json", async (t) => {
+test("--dry-run only lists commands, does not run them, and does not write installed.json", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "baton-home-"));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const { dir, log } = bins(t, ["claude"]);
@@ -114,7 +114,7 @@ test("--dry-run 只列出命令，不执行，不写 installed.json", async (t) 
   assert.equal(fs.existsSync(path.join(home, "installed.json")), false);
 });
 
-test("全局安装失败仍继续，硬失败不写入记录，软失败不挡住后面的 agent", async (t) => {
+test("global install failure still continues; hard failure writes no record; soft failure does not block later agents", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "baton-home-"));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   writeInstalled(["codex"], home);
@@ -141,7 +141,7 @@ test("全局安装失败仍继续，硬失败不写入记录，软失败不挡�
   assert.deepEqual(readInstalled(home), ["codex", "gemini"]);
 });
 
-test("install 调用全局 npm 和 agent，成功后写入记录", async (t) => {
+test("install calls global npm and the agent, and writes the record on success", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "baton-home-"));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const { dir, log } = bins(t, ["gemini", "npm"]);
@@ -156,7 +156,7 @@ test("install 调用全局 npm 和 agent，成功后写入记录", async (t) => 
   assert.match(text, /extensions install https:\/\/github.com\/SpeculoAI\/baton/);
 });
 
-test("目标已安装时视为成功并记入记录", async (t) => {
+test("an already-installed target counts as success and is recorded", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "baton-home-"));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const { dir } = bins(t, ["gemini"]);
@@ -170,18 +170,18 @@ test("目标已安装时视为成功并记入记录", async (t) => {
   });
   assert.equal(ran.exitCode, 0);
   assert.equal(ran.result.hosts[0].ok, true);
-  assert.equal(ran.result.hosts[0].note, "已安装，跳过");
+  assert.equal(ran.result.hosts[0].note, "already installed, skipped");
   assert.deepEqual(readInstalled(home), ["gemini"]);
 });
 
-test("q 退出时不执行安装", async (t) => {
+test("quitting with q does not run the install", async (t) => {
   const { dir } = bins(t, ["claude"]);
   const ran = await runInstall({
     action: "install",
     tty: true,
     readLine: async () => "q",
     env: { PATH: dir },
-    spawn() { throw new Error("不应执行"); },
+    spawn() { throw new Error("should not run"); },
   });
   assert.equal(ran.exitCode, 0);
   assert.deepEqual(ran.result.hosts, []);

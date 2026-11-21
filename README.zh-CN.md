@@ -157,7 +157,7 @@ npm install
 npm test        # 类型检查 + node --test，用假 CLI 跑，不消耗模型额度
 ```
 
-设计文档见 [SPEC.md](SPEC.md) 和 [docs/](docs/)。从 0.3.x 或更早版本升级，请看[升级说明](docs/reference.zh-CN.md#从-03x-升级)。
+设计文档见 [docs/architecture.md](docs/architecture.md) 和 [docs/hosts.md](docs/hosts.md)。从 0.3.x 或更早版本升级，请看[升级说明](docs/reference.zh-CN.md#从-03x-升级)。
 
 ## 许可证
 

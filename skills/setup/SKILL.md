@@ -22,8 +22,8 @@ If this prints `{"version":"..."}`, show the version and stop. Do not reinstall.
 
 If the shell reports that `baton` is missing, ask once. Use AskUserQuestion when it exists. Put install first:
 
-- `安装 baton 命令 (Recommended)`
-- `暂时跳过`
+- `Install the baton command (Recommended)`
+- `Skip for now`
 
 If they skip, stop. If they install:
 

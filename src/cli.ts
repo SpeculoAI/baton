@@ -11,7 +11,7 @@ async function main(): Promise<void> {
   const [command, ...args] = process.argv.slice(2);
   let result: unknown;
   if (command === "_supervise") {
-    if (args.length !== 1) throw new Error("缺少 task_id。");
+    if (args.length !== 1) throw new Error("task_id is missing.");
     await (await import("./supervisor.ts")).supervise(args[0]);
     return;
   }
@@ -31,7 +31,7 @@ async function main(): Promise<void> {
       scope: { type: "string", multiple: true }, "scope-on-violation": { type: "string" },
       mode: { type: "string" }, "allow-weak": { type: "boolean" },
     } });
-    if (positionals.length) throw new Error("start 不接受位置参数。");
+    if (positionals.length) throw new Error("start takes no positional arguments.");
     result = await start({ target: values.target || "", prompt: values.prompt ?? fs.readFileSync(0, "utf8"), cwd: values.cwd, files: values.file,
       reasoningEffort: values.effort as Effort | undefined, model: values.model,
       idleTimeout: values["idle-timeout"] === undefined ? undefined : Number(values["idle-timeout"]), maxDuration: values["max-duration"] === undefined ? undefined : Number(values["max-duration"]),
@@ -40,11 +40,11 @@ async function main(): Promise<void> {
     });
     if ((result as { status: string }).status !== "running") process.exitCode = 1;
   } else if (command === "status") {
-    if (args.length !== 1) throw new Error("status 需要一个 task_id。");
+    if (args.length !== 1) throw new Error("status requires one task_id.");
     result = status(args[0]);
   } else if (command === "reply") {
     const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { prompt: { type: "string" }, as: { type: "string" } } });
-    if (positionals.length !== 1) throw new Error("reply 需要一个 task_id。");
+    if (positionals.length !== 1) throw new Error("reply requires one task_id.");
     result = await reply(positionals[0], values.prompt ?? fs.readFileSync(0, "utf8"), (values.as ?? "host") as Author);
     if ((result as { status: string }).status !== "running") process.exitCode = 1;
   } else if (command === "wait") {
@@ -52,23 +52,23 @@ async function main(): Promise<void> {
       args, allowPositionals: true,
       options: { for: { type: "string" }, "until-done": { type: "boolean" } },
     });
-    if (values["until-done"] && values.for !== undefined) throw new Error("--until-done 与 --for 不能同时使用。");
+    if (values["until-done"] && values.for !== undefined) throw new Error("--until-done and --for cannot be used together.");
     result = await wait(positionals, values["until-done"] ? Infinity : values.for === undefined ? 50 : Number(values.for));
   } else if (command === "tail") {
     const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { follow: { type: "boolean", short: "f" }, raw: { type: "boolean" } } });
-    if (positionals.length !== 1) throw new Error("tail 需要一个 task_id。");
+    if (positionals.length !== 1) throw new Error("tail requires one task_id.");
     await (await import("./tail.ts")).tail(positionals[0], { follow: values.follow, raw: values.raw });
     return;
   } else if (command === "ls") {
     const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { all: { type: "boolean" } } });
-    if (positionals.length) throw new Error("ls 不接受位置参数。");
+    if (positionals.length) throw new Error("ls takes no positional arguments.");
     result = { tasks: ls(values.all) };
   } else if (command === "prune") {
     const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { older: { type: "string" } } });
-    if (positionals.length || values.older === undefined) throw new Error("prune 需要 --older 天数。");
+    if (positionals.length || values.older === undefined) throw new Error("prune requires --older days.");
     result = { deleted: prune(Number(values.older)) };
   } else if (command === "cancel") {
-    if (args.length !== 1) throw new Error("cancel 需要一个 task_id。");
+    if (args.length !== 1) throw new Error("cancel requires one task_id.");
     result = await cancel(args[0]);
   } else if (command === "worktree") {
     const [action, ...rest] = args;
@@ -78,16 +78,16 @@ async function main(): Promise<void> {
         allowPositionals: true,
         options: { name: { type: "string" }, branch: { type: "string" }, base: { type: "string" } },
       });
-      if (positionals.length) throw new Error("worktree add 不接受位置参数。");
+      if (positionals.length) throw new Error("worktree add takes no positional arguments.");
       result = addWorktree(process.cwd(), { name: values.name, branch: values.branch, base: values.base });
     } else if (action === "ls") {
-      if (rest.length) throw new Error("worktree ls 不接受额外参数。");
+      if (rest.length) throw new Error("worktree ls takes no extra arguments.");
       result = { worktrees: listWorktrees(process.cwd()) };
     } else if (action === "rm") {
-      if (rest.length !== 1) throw new Error("worktree rm 需要一个 name 或 path。");
+      if (rest.length !== 1) throw new Error("worktree rm requires one name or path.");
       result = removeWorktree(process.cwd(), rest[0]!);
     } else {
-      throw new Error("用法：baton worktree add|ls|rm");
+      throw new Error("Usage: baton worktree add|ls|rm");
     }
   } else if (command === "install" || command === "update" || command === "uninstall") {
     const { values, positionals } = parseArgs({
@@ -97,9 +97,9 @@ async function main(): Promise<void> {
         "dry-run": { type: "boolean" }, "skip-global": { type: "boolean" },
       },
     });
-    if (positionals.length) throw new Error(`${command} 不接受位置参数。`);
-    if (command !== "install" && values.force) throw new Error(`${command} 不接受 --force。`);
-    if (command === "uninstall" && values["skip-global"]) throw new Error("uninstall 不接受 --skip-global。");
+    if (positionals.length) throw new Error(`${command} takes no positional arguments.`);
+    if (command !== "install" && values.force) throw new Error(`${command} does not accept --force.`);
+    if (command === "uninstall" && values["skip-global"]) throw new Error("uninstall does not accept --skip-global.");
     const interactive = command === "install" && !values.only?.length && Boolean(process.stdin.isTTY);
     const readline = interactive ? await import("node:readline/promises") : null;
     const rl = readline?.createInterface({ input: process.stdin, output: process.stderr });
@@ -116,7 +116,7 @@ async function main(): Promise<void> {
       result = ran.result;
       if (ran.exitCode) process.exitCode = ran.exitCode;
     } finally { rl?.close(); }
-  } else throw new Error("用法：baton version | agents | start | status | cancel | wait | tail | reply | ls | prune | worktree | install | update | uninstall | mcp");
+  } else throw new Error("Usage: baton version | agents | start | status | cancel | wait | tail | reply | ls | prune | worktree | install | update | uninstall | mcp");
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }
 

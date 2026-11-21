@@ -15,7 +15,7 @@ async function call(client: Client, name: string, args: Record<string, unknown> 
   return JSON.parse((result.content as { text: string }[])[0].text);
 }
 
-test("MCP 薄壳：工具清单、派工、有界等待、续轮、列表、取消，状态全在磁盘", async (t) => {
+test("MCP thin shell: tool list, dispatch, bounded wait, reply, list, cancel; all state lives on disk", async (t) => {
   const s = sandbox(t);
   let client = await connect(s.env);
   t.after(() => client.close());
@@ -25,7 +25,7 @@ test("MCP 薄壳：工具清单、派工、有界等待、续轮、列表、取�
 
   const started = await call(client, "delegate_task", { target_agent: "codex", prompt: "hi", cwd: s.cwd });
   assert.equal(started.status, "running");
-  // MCP 重启后仍能读到同一单：MCP 进程里不保存任务状态。
+  // After an MCP restart the same task is still readable: the MCP process keeps no task state.
   await client.close();
   client = await connect(s.env);
   const done = await call(client, "task_wait", { task_ids: [started.task_id], wait_seconds: 10 });

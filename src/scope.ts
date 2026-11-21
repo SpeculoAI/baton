@@ -12,8 +12,8 @@ export type ScopePolicy = "warn" | "fail";
 const HAS_WILDCARD = /[*?[\]]/;
 
 export function validateScopeGlob(glob: string): void {
-  if (!glob || !glob.trim()) throw new Error("scope 不能为空。");
-  if (glob.trimStart().startsWith("!")) throw new Error("scope 不支持 ! 否定模式。");
+  if (!glob || !glob.trim()) throw new Error("scope must not be empty.");
+  if (glob.trimStart().startsWith("!")) throw new Error("scope does not support ! negation patterns.");
 }
 
 /** Normalize CLI/MCP scope list; throws if policy set without scopes. */
@@ -22,12 +22,12 @@ export function normalizeScopeInput(
   policy: ScopePolicy | undefined,
 ): { scope?: string[]; scope_on_violation?: ScopePolicy } {
   const cleaned = (scopes ?? []).map((s) => s.trim()).filter(Boolean);
-  if (policy && !cleaned.length) throw new Error("未指定 --scope 时不能使用 --scope-on-violation。");
+  if (policy && !cleaned.length) throw new Error("--scope-on-violation cannot be used without --scope.");
   if (!cleaned.length) return {};
   for (const g of cleaned) validateScopeGlob(g);
   const scope_on_violation: ScopePolicy = policy ?? "warn";
   if (scope_on_violation !== "warn" && scope_on_violation !== "fail") {
-    throw new Error("scope-on-violation 必须是 warn 或 fail。");
+    throw new Error("scope-on-violation must be warn or fail.");
   }
   return { scope: cleaned, scope_on_violation };
 }
@@ -130,7 +130,7 @@ export function applyScopePolicy(input: ScopePolicyInput): ScopePolicyResult {
     const body = input.summary ?? "";
     const summary = body.startsWith("scope_violation:")
       ? body
-      : `scope_violation: 见 scope_violations${body ? `\n${body}` : ""}`;
+      : `scope_violation: see scope_violations${body ? `\n${body}` : ""}`;
     return { status: "scope_violation", summary, warning, scope_violations: violations };
   }
   return {

@@ -8,7 +8,7 @@ import { Worker } from "node:worker_threads";
 import { batonHome, taskDir, writeMeta, readMeta, appendEvent, writeTurn, listTasks } from "../src/store.ts";
 import type { TaskMeta } from "../src/types.ts";
 
-test("任务存储校验 UUID、隔离 BATON_HOME 并保护权限", (t) => {
+test("task store validates UUIDs, isolates BATON_HOME and protects permissions", (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "baton-store-"));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const previous = process.env.BATON_HOME;
@@ -17,7 +17,7 @@ test("任务存储校验 UUID、隔离 BATON_HOME 并保护权限", (t) => {
   assert.equal(batonHome(), home);
   assert.throws(() => taskDir("../x"), /UUID/);
   assert.throws(() => readMeta("a".repeat(36)), /UUID/);
-  assert.throws(() => writeTurn(randomUUID(), { turn: -1, author: "host", prompt: "", status: "running" }), /轮/);
+  assert.throws(() => writeTurn(randomUUID(), { turn: -1, author: "host", prompt: "", status: "running" }), /turn/i);
   const id = randomUUID();
   const now = new Date().toISOString();
   const meta: TaskMeta = {
@@ -42,7 +42,7 @@ test("任务存储校验 UUID、隔离 BATON_HOME 并保护权限", (t) => {
   assert.equal(batonHome(), path.join(os.homedir(), ".baton"));
 });
 
-test("原子写 meta：另一线程持续读取时永远获得完整 JSON", async (t) => {
+test("atomic meta write: a concurrent reader thread always gets complete JSON", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "baton-atomic-"));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const previous = process.env.BATON_HOME;
@@ -64,7 +64,7 @@ test("原子写 meta：另一线程持续读取时永远获得完整 JSON", asyn
   assert.ok(readMeta(id));
 });
 
-test("脱敏在摘要和预览截断之前执行，长凭据不会以片段泄漏", async () => {
+test("redaction runs before summary and preview truncation, so long credentials do not leak as fragments", async () => {
   const { redact } = await import("../src/redact.ts");
   const secret = "canary".repeat(60);
   const previous = process.env.BATON_TEST_TOKEN;

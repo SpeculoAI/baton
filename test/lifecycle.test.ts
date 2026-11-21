@@ -7,7 +7,7 @@ import { once } from "node:events";
 import { sandbox, exec, cli, sleep } from "./helpers.ts";
 import type { TaskMeta } from "../src/types.ts";
 
-test("start 在 1s 内返回，SIGKILL 发起父进程后 supervisor 仍写出 success", async (t) => {
+test("start returns within 1s; supervisor still writes success after the parent process is SIGKILLed", async (t) => {
   const s = sandbox(t);
   s.env.FAKE_SLEEP = "0.5";
   const parent = spawn(process.execPath, [path.join(import.meta.dirname, "fake-cli/start-parent.ts")], { cwd: s.cwd, env: s.env, stdio: ["ignore", "pipe", "pipe"] });
@@ -37,7 +37,7 @@ test("start 在 1s 内返回，SIGKILL 发起父进程后 supervisor 仍写出 s
   assert.equal((await s.run("status", done.task_id)).status, "success");
 });
 
-test("start 拒绝递归、缺少参数与未安装，stdout 错误也为单个 JSON", async (t) => {
+test("start rejects recursion, missing arguments and uninstalled CLIs; stdout errors are a single JSON", async (t) => {
   const s = sandbox(t);
   for (const args of [["start"], ["start", "--target", "codex", "--prompt", "hi", "--idle-timeout", "0"], ["status", "../x"]]) {
     await assert.rejects(exec(process.execPath, [cli, ...args], { cwd: s.cwd, env: s.env }), (error: unknown) => {
@@ -55,7 +55,7 @@ test("start 拒绝递归、缺少参数与未安装，stdout 错误也为单个 
   assert.ok(!fs.existsSync(path.join(s.home, "tasks")));
 });
 
-test("鉴权、额度、terminal error 与正常退出沿用旧判定", async (t) => {
+test("auth, quota, terminal error and normal exit keep the legacy classification", async (t) => {
   const s = sandbox(t);
   for (const [text, exit, status] of [["codex login", "1", "not_authenticated"], ["turn.failed: usage limit", "1", "quota_exceeded"], ["turn.failed: disk full", "1", "failed"], ["plain text", "0", "success"]]) {
     fs.writeFileSync(s.fixture, text);
@@ -65,7 +65,7 @@ test("鉴权、额度、terminal error 与正常退出沿用旧判定", async (t
   }
 });
 
-test("idle 与 max_duration 杀整个进程组；cancel 同样终止孙进程", async (t) => {
+test("idle and max_duration kill the whole process group; cancel also terminates grandchild processes", async (t) => {
   const s = sandbox(t);
   for (const mode of ["idle", "max_duration", "cancel"] as const) {
     const pidFile = path.join(s.home, `${mode}.pid`);
@@ -93,10 +93,10 @@ async function assertProcessGone(pid: number) {
     try { process.kill(pid, 0); } catch { return; }
     await sleep(20);
   }
-  assert.fail(`进程 ${pid} 未退出`);
+  assert.fail(`process ${pid} did not exit`);
 }
 
-test("supervisor 被杀后 status 报 orphaned、杀残留进程并且只补写一次终态", async (t) => {
+test("after supervisor is killed, status reports orphaned, kills leftover processes and writes the terminal state only once", async (t) => {
   const s = sandbox(t);
   s.env.FAKE_HANG = "1";
   s.env.FAKE_CHILD_PID_FILE = path.join(s.home, "orphan.pid");
@@ -107,7 +107,7 @@ test("supervisor 被杀后 status 报 orphaned、杀残留进程并且只补写�
   const recovered = await s.run("status", started.task_id);
   assert.equal(recovered.liveness, "orphaned");
   assert.equal(recovered.status, "failed");
-  assert.equal(recovered.summary, "supervisor 意外退出");
+  assert.equal(recovered.summary, "supervisor exited unexpectedly");
   await assertProcessGone(Number(fs.readFileSync(s.env.FAKE_CHILD_PID_FILE!, "utf8")));
   const count = s.events(started.task_id).length;
   assert.equal((await s.run("status", started.task_id)).status, "failed");
@@ -115,7 +115,7 @@ test("supervisor 被杀后 status 报 orphaned、杀残留进程并且只补写�
   assert.equal(s.turn(started.task_id).status, "failed");
 });
 
-test("无 max_duration 时持续输出不会被杀，空闲计时按字节而非整行", async (t) => {
+test("without max_duration, continuous output is not killed; idle timer counts bytes, not whole lines", async (t) => {
   const s = sandbox(t);
   s.env.FAKE_TICKS = "12";
   s.env.FAKE_TICK_SLEEP = "0.08";
@@ -125,7 +125,7 @@ test("无 max_duration 时持续输出不会被杀，空闲计时按字节而非
   assert.equal(done.max_duration_s, null);
 });
 
-test("心跳每 10s 更新；读 status 不改写存活任务", async (t) => {
+test("heartbeat updates every 10s; reading status does not rewrite live tasks", async (t) => {
   const s = sandbox(t);
   s.env.FAKE_HANG = "1";
   const started = await s.run("start", "--target", "codex", "--prompt", "hi");
@@ -139,7 +139,7 @@ test("心跳每 10s 更新；读 status 不改写存活任务", async (t) => {
   await s.run("cancel", started.task_id);
 });
 
-test("存活但久无事件为 quiet，心跳过期视为孤儿", async (t) => {
+test("alive but long without events is quiet; expired heartbeat is treated as orphaned", async (t) => {
   const s = sandbox(t);
   const { status } = await import("../src/tasks.ts");
   const oldHome = process.env.BATON_HOME;
@@ -152,21 +152,21 @@ test("存活但久无事件为 quiet，心跳过期视为孤儿", async (t) => {
   writeMeta(meta);
   assert.equal(status(id).liveness, "quiet");
   assert.ok(status(id).quiet_for_s! >= 60);
-  // 使用已退出的 pid，避免终止测试进程。
+  // Use an already-exited pid to avoid terminating the test process.
   meta.supervisor_pid = 2147483000;
   meta.heartbeat_at = new Date(Date.now() - 31_000).toISOString();
   writeMeta(meta);
   assert.equal(status(id).liveness, "orphaned");
 });
 
-test("needs_input → reply 续同一 session，记录 human/host 作者与原始输入，超时重新计时", async (t) => {
+test("needs_input → reply continues the same session, records human/host author and raw input, and restarts the timeout", async (t) => {
   const s = sandbox(t);
-  const decision = { type: "item.completed", item: { type: "agent_message", text: "BATON_DECISION\nquestion: 选哪个？\noptions: A | B\nBATON_END" } };
+  const decision = { type: "item.completed", item: { type: "agent_message", text: "BATON_DECISION\nquestion: Which one?\noptions: A | B\nBATON_END" } };
   fs.writeFileSync(s.fixture, `${JSON.stringify({ type: "thread.started", thread_id: "thread-fake-1" })}\n${JSON.stringify(decision)}\n`);
   const first = await s.run("start", "--target", "codex", "--prompt", "ask", "--max-duration", "0.6");
   const pending = await s.until(first.task_id);
   assert.equal(pending.status, "needs_input");
-  assert.deepEqual(pending.decision, { question: "选哪个？", options: ["A", "B"] });
+  assert.deepEqual(pending.decision, { question: "Which one?", options: ["A", "B"] });
   await sleep(650);
   fs.writeFileSync(s.fixture, `${JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "BATON_RESULT\nsummary: continued\nBATON_END" } })}\n`);
   s.env.FAKE_ARGS_FILE = path.join(s.home, "argv.txt");
@@ -184,7 +184,7 @@ test("needs_input → reply 续同一 session，记录 human/host 作者与原�
   const args = fs.readFileSync(s.env.FAKE_ARGS_FILE, "utf8").trim().split("\n");
   assert.deepEqual(args.slice(0, 3), ["exec", "resume", "--json"]);
   assert.equal(args.at(-2), "thread-fake-1");
-  assert.match(fs.readFileSync(s.env.FAKE_INPUT_FILE, "utf8"), /^A\n\n完成前/);
+  assert.match(fs.readFileSync(s.env.FAKE_INPUT_FILE, "utf8"), /^A\n\nBefore finishing/);
   assert.ok(s.events(first.task_id).every((event) => event.turn >= 1));
   const again = await s.run("reply", first.task_id, "--prompt", "follow up");
   await s.until(first.task_id);
@@ -192,7 +192,7 @@ test("needs_input → reply 续同一 session，记录 human/host 作者与原�
   assert.equal(s.turn(first.task_id, 3).author, "host");
 });
 
-test("running reply 返回 busy；失败、无 session 和无效作者不可续接", async (t) => {
+test("reply while running returns busy; failed tasks, missing session and invalid author cannot be continued", async (t) => {
   const s = sandbox(t);
   s.env.FAKE_HANG = "1";
   const first = await s.run("start", "--target", "codex", "--prompt", "busy");
@@ -209,7 +209,7 @@ test("running reply 返回 busy；失败、无 session 和无效作者不可续�
   await assert.rejects(s.run("reply", noSession.task_id, "--prompt", "hi", "--as", "nobody"));
 });
 
-test("并发 reply 只有一个新轮次；重复 _supervise 不拉起第二个 worker", async (t) => {
+test("concurrent reply starts only one new turn; repeated _supervise does not start a second worker", async (t) => {
   const s = sandbox(t);
   const first = await s.run("start", "--target", "codex", "--prompt", "hello");
   await s.until(first.task_id);
@@ -224,7 +224,7 @@ test("并发 reply 只有一个新轮次；重复 _supervise 不拉起第二个 
   assert.equal(s.events(first.task_id).filter((event) => event.type === "turn_started" && event.turn === 2).length, 1);
 });
 
-test("start 返回后立即 cancel，即使 gitSnapshot 尚未结束也记 cancelled", async (t) => {
+test("cancel right after start returns is recorded as cancelled even if gitSnapshot has not finished", async (t) => {
   const s = sandbox(t);
   s.env.FAKE_GIT_SLEEP = "0.4";
   s.env.FAKE_HANG = "1";
@@ -233,7 +233,7 @@ test("start 返回后立即 cancel，即使 gitSnapshot 尚未结束也记 cance
   assert.equal(s.turn(first.task_id).status, "cancelled");
 });
 
-test("事件和摘要不记录凭据，原始日志完整保留并受权限保护", async (t) => {
+test("events and summary do not record credentials; raw log is kept intact and permission-protected", async (t) => {
   const s = sandbox(t);
   s.env.FAKE_API_TOKEN = "canary-private-value";
   fs.writeFileSync(s.fixture, `${JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: 'BATON_RESULT\nsummary: {"token":"unknown-canary"} Bearer bearer-canary canary-private-value\nBATON_END' } })}\n`);
@@ -241,7 +241,7 @@ test("事件和摘要不记录凭据，原始日志完整保留并受权限保�
   const done = await s.until(first.task_id);
   const events = fs.readFileSync(path.join(s.dir(first.task_id), "events.jsonl"), "utf8");
   for (const secret of ["unknown-canary", "bearer-canary", "canary-private-value", "prompt-canary"]) {
-    assert.ok(!events.includes(secret), `events 包含测试凭据 ${secret}`);
+    assert.ok(!events.includes(secret), `events contain test credential ${secret}`);
     assert.ok(!done.summary?.includes(secret));
   }
   const raw = fs.readFileSync(path.join(s.dir(first.task_id), "raw/1.stdout.log"), "utf8");
@@ -249,14 +249,14 @@ test("事件和摘要不记录凭据，原始日志完整保留并受权限保�
   assert.equal(s.turn(first.task_id).prompt, "token=prompt-canary");
 });
 
-test("last-message 文件未生成时仍能使用流消息判定成功", async (t) => {
+test("success is still determined from stream messages when the last-message file is not produced", async (t) => {
   const s = sandbox(t);
   s.env.FAKE_REMOVE_LAST = "1";
   const first = await s.run("start", "--target", "codex", "--prompt", "fallback");
   assert.equal((await s.until(first.task_id)).status, "success");
 });
 
-test("supervisor 无法启动时，meta 与本轮记录均为 failed", async (t) => {
+test("when supervisor cannot start, meta and the current turn record are both failed", async (t) => {
   const s = sandbox(t);
   const source = path.join(s.home, "src");
   fs.cpSync(path.resolve(import.meta.dirname, "../src"), source, { recursive: true });
@@ -269,7 +269,7 @@ test("supervisor 无法启动时，meta 与本轮记录均为 failed", async (t)
   assert.equal(s.events(meta.task_id).at(-1)?.type, "turn_ended");
 });
 
-test("supervisor pid 存在但心跳过期时，先杀写者再恢复孤儿终态", async (t) => {
+test("when supervisor pid exists but heartbeat expired, kill the writer first, then recover the orphaned terminal state", async (t) => {
   const s = sandbox(t);
   s.env.FAKE_HANG = "1";
   const first = await s.run("start", "--target", "codex", "--prompt", "stalled");

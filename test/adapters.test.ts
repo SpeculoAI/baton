@@ -8,7 +8,7 @@ import { codex } from "../src/adapters/codex.ts";
 import { which, authHit } from "../src/adapters/common.ts";
 import { getAdapter } from "../src/adapters/index.ts";
 
-test("codex fixture 解析消息、命令、文件修改和失败，未知行不丢弃", () => {
+test("codex fixture parses messages, commands, file changes and failures; unknown lines are not dropped", () => {
   const lines = fs.readFileSync(new URL("fixtures/codex.stream.jsonl", import.meta.url), "utf8").trim().split("\n");
   assert.equal(codex.sessionIdFrom(lines[0]), "thread-fake-1");
   const events = lines.flatMap((line) => codex.parseLine(line) ?? []);
@@ -23,7 +23,7 @@ test("codex fixture 解析消息、命令、文件修改和失败，未知行不
   assert.equal(codex.isAuthFailure("Please log in"), true);
 });
 
-test("codex 0.167.0 真实输出：生命周期事件静默，error 项转 error，不留 raw", () => {
+test("codex 0.167.0 real output: lifecycle events are silent, error items become error, no raw kept", () => {
   const lines = fs.readFileSync(new URL("fixtures/codex-0.167.0.stream.jsonl", import.meta.url), "utf8").trim().split("\n");
   for (const line of lines) assert.notEqual(codex.parseLine(line), null, line);
   const events = lines.flatMap((line) => codex.parseLine(line) ?? []);
@@ -34,7 +34,7 @@ function fixture(name: string): string[] {
   return fs.readFileSync(new URL(`fixtures/${name}`, import.meta.url), "utf8").trim().split("\n");
 }
 
-test("cursor 真实 stream-json：session、工具、消息，思考增量不出事件，不留 raw", () => {
+test("cursor real stream-json: session, tools, messages; thinking deltas emit no events; no raw kept", () => {
   const cursor = getAdapter("cursor")!;
   const lines = fixture("cursor-2026.11.11.stream.jsonl");
   assert.equal(cursor.sessionIdFrom(lines[0]), "ac43faa4-c292-43be-83ce-3dca1fa125cf");
@@ -50,7 +50,7 @@ test("cursor 真实 stream-json：session、工具、消息，思考增量不出
     ["--print", "--force", "--trust", "--output-format", "stream-json", "--workspace", "/w", "--model", "grok-4.7-xhigh", "p"]);
 });
 
-test("agy 真实 stream-json：工具步骤成对，完整回复只从 result 出一次，不留 raw", () => {
+test("agy real stream-json: tool steps are paired; the full reply comes from result only once; no raw kept", () => {
   const agy = getAdapter("agy")!;
   const lines = fixture("agy-1.5.6.stream.jsonl");
   assert.equal(agy.sessionIdFrom(lines[0]), "9c0bfa4e-4c5c-4b0c-bd90-ff90c173e27c");
@@ -64,7 +64,7 @@ test("agy 真实 stream-json：工具步骤成对，完整回复只从 result �
     ["--print", "p", "--mode", "accept-edits", "--output-format", "stream-json", "--effort", "max", "--conversation", "c1"]);
 });
 
-test("claude 真实 stream-json：hook/init/thinking/限流不出事件，工具成对，不留 raw", () => {
+test("claude real stream-json: hook/init/thinking/rate-limit emit no events; tools are paired; no raw kept", () => {
   const claude = getAdapter("claude")!;
   const lines = fixture("claude-2.1.323.stream.jsonl");
   assert.equal(claude.sessionIdFrom(lines[0]), null);
@@ -80,7 +80,7 @@ test("claude 真实 stream-json：hook/init/thinking/限流不出事件，工具
     ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits", "--permission-prompts", "none", "--effort", "max", "--resume", "s1", "p"]);
 });
 
-test("cursor 优先解析 cursor-agent，再退到 agent", () => {
+test("cursor resolves cursor-agent first, then falls back to agent", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "baton-bin-"));
   for (const name of ["agent", "cursor-agent"]) { fs.writeFileSync(path.join(dir, name), "#!/bin/sh\n"); fs.chmodSync(path.join(dir, name), 0o755); }
   assert.equal(getAdapter("cursor")!.resolve({ PATH: dir }), path.join(dir, "cursor-agent"));
@@ -88,7 +88,7 @@ test("cursor 优先解析 cursor-agent，再退到 agent", () => {
   assert.equal(getAdapter("cursor")!.resolve({ PATH: dir }), path.join(dir, "agent"));
 });
 
-test("codex build 沿用 fresh/resume 与四档 effort 参数", () => {
+test("codex build keeps fresh/resume and the four effort-level arguments", () => {
   for (const reasoningEffort of ["low", "medium", "high", "ultra"] as const) {
     for (const sessionId of [null, "thread-9"]) {
       const spec = codex.build({ bin: "/fake/codex", cwd: "/work", prompt: "hello", sessionId, reasoningEffort });
@@ -110,7 +110,7 @@ test("codex build 沿用 fresh/resume 与四档 effort 参数", () => {
   assert.equal(getAdapter("constructor"), null);
 });
 
-test("readonly mode：四家 argv 映射；codex resume 仍无 sandbox/approve", () => {
+test("readonly mode: argv mapping for all four; codex resume still has no sandbox/approve", () => {
   const input = { bin: "/b", cwd: "/w", prompt: "p", sessionId: null as string | null, reasoningEffort: null as null, mode: "readonly" as const };
   assert.deepEqual(codex.build(input).args.slice(0, 8), ["exec", "--json", "--color", "never", "--sandbox", "read-only", "--skip-git-repo-check", "--cd"]);
   assert.ok(!codex.build(input).args.includes("--approve-for-me"));
@@ -126,7 +126,7 @@ test("readonly mode：四家 argv 映射；codex resume 仍无 sandbox/approve",
     ["--print", "p", "--mode", "plan", "--output-format"]);
 });
 
-test("fake CLI 通过 PATH 解析，按 fixture 输出并支持退出码", () => {
+test("fake CLI resolves via PATH, outputs per fixture and supports exit codes", () => {
   const dir = path.join(import.meta.dirname, "fake-cli");
   const env = { ...process.env, PATH: dir, FAKE_FIXTURE: path.join(import.meta.dirname, "fixtures/codex.stream.jsonl"), FAKE_SLEEP: "0", FAKE_EXIT: "0", FAKE_HANG: "0" };
   const bin = which(["codex"], env);

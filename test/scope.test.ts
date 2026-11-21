@@ -30,8 +30,8 @@ test("pathInScope: **/* does not match dotdir without explicit segment", () => {
 });
 
 test("validateScopeGlob rejects empty and negation", () => {
-  assert.throws(() => validateScopeGlob(""), /空|empty/i);
-  assert.throws(() => validateScopeGlob("!foo"), /!|否定|negation/i);
+  assert.throws(() => validateScopeGlob(""), /empty/i);
+  assert.throws(() => validateScopeGlob("!foo"), /!|negation/i);
   validateScopeGlob("src/**");
 });
 
@@ -68,7 +68,7 @@ test("applyScopePolicy: fail upgrades success", () => {
     summary: "done",
   });
   assert.equal(r.status, "scope_violation");
-  assert.match(r.summary!, /^scope_violation: 见 scope_violations/);
+  assert.match(r.summary!, /^scope_violation: see scope_violations/);
   assert.match(r.summary!, /done/);
 });
 

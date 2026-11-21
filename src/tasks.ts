@@ -34,21 +34,21 @@ export function resolveReadonlyEnforcement(
   mode: TaskMode | undefined,
   allowWeak: boolean | undefined,
 ): { mode?: TaskMode; enforcement?: Enforcement } {
-  if (allowWeak && mode !== "readonly") throw new Error("--allow-weak 仅用于 --mode readonly。");
+  if (allowWeak && mode !== "readonly") throw new Error("--allow-weak is only for --mode readonly.");
   if (!mode || mode === "write") return {};
   // Runtime guard — CLI casts via `as TaskMode`.
-  if (mode !== "readonly") throw new Error("mode 必须为 readonly 或 write。");
+  if (mode !== "readonly") throw new Error("mode must be readonly or write.");
   const enforcement = adapter.readonlyEnforcement ?? "none";
   if (enforcement === "none" && !allowWeak) {
-    throw new Error(`${adapter.id} 无法强制只读；加 --allow-weak 才放行。`);
+    throw new Error(`${adapter.id} cannot enforce read-only; add --allow-weak to allow it.`);
   }
-  if (allowWeak && enforcement !== "none") throw new Error(`${adapter.id} 已有只读映射，无需 --allow-weak。`);
+  if (allowWeak && enforcement !== "none") throw new Error(`${adapter.id} has a read-only mapping; --allow-weak is not needed.`);
   return { mode: "readonly", enforcement };
 }
 export type StartResult = TaskMeta | { status: "failed" | "not_installed"; summary: string };
 
 function positive(value: number, name: string): number {
-  if (!Number.isFinite(value) || value <= 0) throw new Error(`${name} 必须为正数。`);
+  if (!Number.isFinite(value) || value <= 0) throw new Error(`${name} must be a positive number.`);
   return value;
 }
 
@@ -63,19 +63,19 @@ async function launch(id: string): Promise<void> {
   }
   child.kill("SIGKILL");
   killGroup(readMeta(id)?.child_pid ?? null);
-  throw new Error("supervisor 未就绪。");
+  throw new Error("supervisor not ready.");
 }
 
 export async function start(input: StartInput): Promise<StartResult> {
-  if (process.env.BATON_DELEGATION === "1") return { status: "failed", summary: "BATON_DELEGATION=1，拒绝再次派工。" };
-  if (!input.prompt?.trim()) throw new Error("缺少 prompt。");
+  if (process.env.BATON_DELEGATION === "1") return { status: "failed", summary: "BATON_DELEGATION=1; refusing to delegate again." };
+  if (!input.prompt?.trim()) throw new Error("prompt is missing.");
   const adapter = getAdapter(input.target);
-  if (!adapter) throw new Error(`未知目标：${input.target}`);
+  if (!adapter) throw new Error(`Unknown target: ${input.target}`);
   const idle = positive(input.idleTimeout ?? 600, "idle_timeout");
   const max = input.maxDuration == null ? null : positive(input.maxDuration, "max_duration");
-  if (input.reasoningEffort && !["low", "medium", "high", "ultra"].includes(input.reasoningEffort)) throw new Error("未知 effort。");
+  if (input.reasoningEffort && !["low", "medium", "high", "ultra"].includes(input.reasoningEffort)) throw new Error("Unknown effort.");
   const model = input.model?.trim() || undefined;
-  if (model && adapter.id !== "cursor") throw new Error(`${adapter.id} 暂不支持 --model（当前仅 cursor）。`);
+  if (model && adapter.id !== "cursor") throw new Error(`${adapter.id} does not support --model yet (cursor only).`);
   let model_argv: string | undefined;
   if (adapter.id === "cursor") {
     const resolved = resolveCursorModelArg(model, input.reasoningEffort ?? null);
@@ -83,8 +83,8 @@ export async function start(input: StartInput): Promise<StartResult> {
   }
   const modeFields = resolveReadonlyEnforcement(adapter, input.mode, input.allowWeak);
   const cwd = path.resolve(input.cwd || process.env.BATON_CWD || process.cwd());
-  if (!fs.statSync(cwd).isDirectory()) throw new Error("cwd 必须是目录。");
-  if (!adapter.resolve(process.env)) return { status: "not_installed", summary: `${input.target} 不在 PATH 里。` };
+  if (!fs.statSync(cwd).isDirectory()) throw new Error("cwd must be a directory.");
+  if (!adapter.resolve(process.env)) return { status: "not_installed", summary: `${input.target} is not on PATH.` };
   const scopeFields = normalizeScopeInput(input.scope, input.scopeOnViolation);
   let scope_baseline: TaskMeta["scope_baseline"];
   let readonly_baseline: TaskMeta["readonly_baseline"];
@@ -92,7 +92,7 @@ export async function start(input: StartInput): Promise<StartResult> {
   const needSnap = Boolean(scopeFields.scope?.length) || modeFields.mode === "readonly";
   const snap = needSnap ? gitSnapshot(cwd) : null;
   if (scopeFields.scope?.length) {
-    if (!snap?.head) throw new Error("带 --scope 时 cwd 必须是 git 仓库（需要 HEAD baseline）。");
+    if (!snap?.head) throw new Error("With --scope, cwd must be a git repository (HEAD baseline required).");
     scope_baseline = snapshotToBaseline(snap);
     prompt = `${scopePromptPrefix(scopeFields.scope)}${prompt}`;
   }
@@ -116,7 +116,7 @@ export async function start(input: StartInput): Promise<StartResult> {
 
 async function launchTurn(meta: TaskMeta): Promise<TaskMeta> {
   try { await launch(meta.task_id); } catch (error) {
-    const failed: TaskMeta = { ...readMeta(meta.task_id) ?? meta, status: "failed", updated_at: new Date().toISOString(), summary: redact(`supervisor 启动失败：${(error as Error).message}`) };
+    const failed: TaskMeta = { ...readMeta(meta.task_id) ?? meta, status: "failed", updated_at: new Date().toISOString(), summary: redact(`supervisor failed to start: ${(error as Error).message}`) };
     writeTurn(meta.task_id, { ...readTurn(meta.task_id, meta.turn), status: "failed", summary: failed.summary });
     appendEvent(meta.task_id, { ts: failed.updated_at, turn: meta.turn, type: "turn_ended", status: "failed", exit_code: null });
     writeMeta(failed);
@@ -127,7 +127,7 @@ async function launchTurn(meta: TaskMeta): Promise<TaskMeta> {
 
 export type TaskView = TaskMeta & { liveness?: "active" | "quiet" | "orphaned"; quiet_for_s?: number; git_changes?: GitChanges };
 
-// 终态视图带上本轮 git_changes，宿主不用再去读 turns/<n>.json。
+// Terminal view includes this turn's git_changes so the host need not read turns/<n>.json.
 function finished(meta: TaskMeta): TaskView {
   try { return { ...meta, git_changes: readTurn(meta.task_id, meta.turn).git_changes }; } catch { return meta; }
 }
@@ -139,7 +139,7 @@ function orphaned(meta: TaskMeta): boolean {
 
 export function status(id: string): TaskView {
   let meta = readMeta(id);
-  if (!meta) throw new Error("没有这一单派工。");
+  if (!meta) throw new Error("No such task.");
   if (meta.status !== "running") return finished(meta);
   const quiet = Math.max(0, (Date.now() - Date.parse(meta.last_event_at || meta.updated_at)) / 1000);
   if (!orphaned(meta)) return { ...meta, liveness: quiet <= 60 ? "active" : "quiet", quiet_for_s: quiet };
@@ -148,7 +148,7 @@ export function status(id: string): TaskView {
   try {
     meta = readMeta(id)!;
     if (meta.status !== "running" || !orphaned(meta)) return meta;
-    // 心跳可能只是写慢；再次检查 pid。心跳过期且仍存活时先停止写者，再接管。
+    // The heartbeat may just be a slow write; check the pid again. If the heartbeat is stale and the process is still alive, stop the writer first, then take over.
     if (isAlive(meta.supervisor_pid)) {
       try { process.kill(meta.supervisor_pid!, "SIGKILL"); } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
@@ -156,7 +156,7 @@ export function status(id: string): TaskView {
     }
     killGroup(meta.child_pid);
     meta.status = "failed";
-    meta.summary = "supervisor 意外退出";
+    meta.summary = "supervisor exited unexpectedly";
     meta.updated_at = new Date().toISOString();
     try { const turn = readTurn(id, meta.turn); writeTurn(id, { ...turn, status: "failed", summary: meta.summary }); } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
@@ -182,13 +182,13 @@ export async function cancel(id: string): Promise<TaskView> {
     }
     await sleep(20);
   }
-  throw new Error("取消尚未确认，请重试 status。");
+  throw new Error("Cancellation not yet confirmed; retry status.");
 }
 
 export async function wait(ids: string[], seconds = 50): Promise<TaskView | { status: "running"; tasks: TaskView[] }> {
-  if (!ids.length) throw new Error("缺少 task_ids。");
+  if (!ids.length) throw new Error("task_ids is missing.");
   ids.forEach(taskDir);
-  if (seconds !== Infinity && (!Number.isFinite(seconds) || seconds < 0)) throw new Error("for 必须为非负秒数。");
+  if (seconds !== Infinity && (!Number.isFinite(seconds) || seconds < 0)) throw new Error("for must be a non-negative number of seconds.");
   const deadline = seconds === Infinity ? Infinity : Date.now() + seconds * 1000;
   for (;;) {
     const views = ids.map(status);
@@ -201,11 +201,11 @@ export async function wait(ids: string[], seconds = 50): Promise<TaskView | { st
 
 export async function reply(id: string, prompt: string, author: Author = "host"): Promise<TaskMeta | { task_id: string; status: "busy"; summary: string }> {
   taskDir(id);
-  if (process.env.BATON_DELEGATION === "1") throw new Error("BATON_DELEGATION=1，拒绝再次派工。");
-  if (!prompt.trim()) throw new Error("缺少 prompt。");
-  if (author !== "host" && author !== "human") throw new Error("as 必须为 host 或 human。");
+  if (process.env.BATON_DELEGATION === "1") throw new Error("BATON_DELEGATION=1; refusing to delegate again.");
+  if (!prompt.trim()) throw new Error("prompt is missing.");
+  if (author !== "host" && author !== "human") throw new Error("as must be host or human.");
   const current = status(id);
-  const busy = { task_id: id, status: "busy" as const, summary: "这一单正在运行。" };
+  const busy = { task_id: id, status: "busy" as const, summary: "This task is running." };
   if (current.status === "running") return busy;
   const release = lockTask(id);
   if (!release) return busy;
@@ -213,9 +213,9 @@ export async function reply(id: string, prompt: string, author: Author = "host")
   try {
     const meta = readMeta(id)!;
     if (meta.status === "running") return busy;
-    if (!["success", "needs_input", "scope_violation", "readonly_violation"].includes(meta.status)) throw new Error(`不能继续 ${meta.status} 的任务。`);
-    if (!meta.session_id) throw new Error("没有 session_id，无法续会话。");
-    if (!getAdapter(meta.target)?.resolve(process.env)) throw new Error(`${meta.target} 不在 PATH 里。`);
+    if (!["success", "needs_input", "scope_violation", "readonly_violation"].includes(meta.status)) throw new Error(`Cannot continue a task in status ${meta.status}.`);
+    if (!meta.session_id) throw new Error("No session_id; cannot resume the session.");
+    if (!getAdapter(meta.target)?.resolve(process.env)) throw new Error(`${meta.target} is not on PATH.`);
     next = { ...meta, status: "running", turn: meta.turn + 1, updated_at: new Date().toISOString(), supervisor_pid: null, child_pid: null, heartbeat_at: null, last_event_at: null };
     delete next.decision;
     delete next.summary;
@@ -234,7 +234,7 @@ export function ls(all = false, cwd = process.cwd()): TaskView[] {
 
 export function prune(older: number): string[] {
   const cutoff = Date.now() - older * 86_400_000;
-  if (!Number.isFinite(older) || older < 0 || !Number.isFinite(cutoff)) throw new Error("older 必须为非负天数。");
+  if (!Number.isFinite(older) || older < 0 || !Number.isFinite(cutoff)) throw new Error("older must be a non-negative number of days.");
   const deleted: string[] = [];
   for (const candidate of listTasks()) {
     if (candidate.status === "running" || Date.parse(candidate.updated_at) >= cutoff) continue;

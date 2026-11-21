@@ -17,12 +17,12 @@ test("resolveCursorModelArg: model + effort → bracket form", () => {
 });
 
 test("resolveCursorModelArg: model with embedded tier + effort → throw", () => {
-  assert.throws(() => resolveCursorModelArg("grok-4.7-xhigh", "high"), /档位|effort/i);
-  assert.throws(() => resolveCursorModelArg("grok-4.7-high-fast", "low"), /档位|effort/i);
+  assert.throws(() => resolveCursorModelArg("grok-4.7-xhigh", "high"), /tier|effort/i);
+  assert.throws(() => resolveCursorModelArg("grok-4.7-high-fast", "low"), /tier|effort/i);
 });
 
 test("resolveCursorModelArg: model already bracketed + effort → throw", () => {
-  assert.throws(() => resolveCursorModelArg("claude-opus-4-8[context=1m]", "high"), /括号|effort/i);
+  assert.throws(() => resolveCursorModelArg("claude-opus-4-8[context=1m]", "high"), /bracket|effort/i);
 });
 
 test("resolveCursorModelArg: neither → null", () => {

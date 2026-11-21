@@ -64,7 +64,7 @@ export const HOSTS: Host[] = [
     id: "cursor",
     label: "Cursor Agent CLI",
     bins: ["agent", "cursor-agent"],
-    note: "在 Cursor 对话里执行 /add-plugin baton",
+    note: "Run /add-plugin baton in a Cursor chat",
     migrate: [{ args: ["plugin", "marketplace", "remove", OLD_MARKET], soft: true }],
     install: [{ args: ["plugin", "marketplace", "add", REPO] }],
     update: [{ args: ["plugin", "marketplace", "update", "speculoai"] }],
@@ -94,9 +94,9 @@ export function parseChoice(line: string, count: number): number[] {
   if (text === "q") return [];
   const picked: number[] = [];
   for (const part of text.split(/[,\s]+/).filter(Boolean)) {
-    if (!/^\d+$/.test(part)) throw new Error(`无法识别的选择：${part}`);
+    if (!/^\d+$/.test(part)) throw new Error(`Unrecognized selection: ${part}`);
     const number = Number(part);
-    if (number < 1 || number > count) throw new Error(`选择越界：${part}`);
+    if (number < 1 || number > count) throw new Error(`Selection out of range: ${part}`);
     if (!picked.includes(number - 1)) picked.push(number - 1);
   }
   return picked;
@@ -104,7 +104,7 @@ export function parseChoice(line: string, count: number): number[] {
 
 export function commandsFor(id: string, action: Action, opts: { force?: boolean } = {}): Step[] {
   const host = HOSTS.find((item) => item.id === id);
-  if (!host) throw new Error(`未知的 agent：${id}`);
+  if (!host) throw new Error(`Unknown agent: ${id}`);
   if (action !== "install") return host[action];
   const forced = opts.force ? host.uninstall.map((step) => ({ ...step, soft: true })) : [];
   return [...(host.migrate ?? []), ...forced, ...host.install];
@@ -122,7 +122,7 @@ export function planInstall(input: {
 }): { hosts: PlannedHost[]; missing: string[]; global?: { command: string[] } } {
   const env = input.env ?? process.env;
   const known = new Set(HOSTS.map((host) => host.id));
-  for (const id of input.only ?? []) if (!known.has(id)) throw new Error(`未知的 agent：${id}`);
+  for (const id of input.only ?? []) if (!known.has(id)) throw new Error(`Unknown agent: ${id}`);
   const ids = input.only?.length
     ? input.only
     : input.action === "install"
@@ -132,10 +132,10 @@ export function planInstall(input: {
   const missing: string[] = [];
   for (const id of ids) {
     const host = HOSTS.find((item) => item.id === id);
-    if (!host) throw new Error(`未知的 agent：${id}`);
+    if (!host) throw new Error(`Unknown agent: ${id}`);
     const bin = which(host.bins, env);
     if (!bin) {
-      if (input.only?.length) throw new Error(`未检测到 ${id}。`);
+      if (input.only?.length) throw new Error(`${id} not detected.`);
       missing.push(id);
       continue;
     }
@@ -185,7 +185,7 @@ function defaultSpawn(command: string, args: string[], env: NodeJS.ProcessEnv): 
 }
 
 function failText(ran: SpawnResult): string {
-  return `${ran.stderr || ran.stdout || ""}`.trim().slice(-500) || `退出码 ${ran.status}`;
+  return `${ran.stderr || ran.stdout || ""}`.trim().slice(-500) || `exit code ${ran.status}`;
 }
 
 export async function runInstall(input: {
@@ -206,7 +206,7 @@ export async function runInstall(input: {
   if (input.action === "install" && !only?.length && input.tty) {
     const detected = HOSTS.filter((host) => which(host.bins, env));
     if (!detected.length) return { exitCode: 0, result: { action: input.action, hosts: [] } };
-    process.stderr.write(`${detected.map((host, index) => `[${index + 1}] ${host.id}  ${host.label}`).join("\n")}\n回车全选，q 退出：`);
+    process.stderr.write(`${detected.map((host, index) => `[${index + 1}] ${host.id}  ${host.label}`).join("\n")}\nPress Enter to select all, q to quit: `);
     const picked = parseChoice(await input.readLine!(), detected.length);
     if (!picked.length) return { exitCode: 0, result: { action: input.action, hosts: [] } };
     only = picked.map((index) => detected[index]!.id);
@@ -235,7 +235,7 @@ export async function runInstall(input: {
       error = failText(ran);
       break;
     }
-    const note = skipped ? "已安装，跳过" : host.note;
+    const note = skipped ? "already installed, skipped" : host.note;
     hosts.push({ id: host.id, ok: !error, ...(note ? { note } : {}), ...(error ? { error } : {}) });
   }
   if (input.action !== "update") {

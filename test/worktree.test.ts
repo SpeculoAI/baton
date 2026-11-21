@@ -27,7 +27,7 @@ function tempRepo(): { cwd: string; git: (args: string[]) => string; cleanup: ()
   return { cwd, git, cleanup: () => rmSync(cwd, { recursive: true, force: true }) };
 }
 
-test("loadWorktreeConfig 读 .baton.json，缺省给安全默认值", () => {
+test("loadWorktreeConfig reads .baton.json and falls back to safe defaults", () => {
   const { cwd, cleanup } = tempRepo();
   try {
     const empty = loadWorktreeConfig(cwd);
@@ -57,7 +57,7 @@ test("loadWorktreeConfig 读 .baton.json，缺省给安全默认值", () => {
   }
 });
 
-test("resolveWorktreeRoot：配置 dir > .worktrees > worktrees > 默认 .worktrees", () => {
+test("resolveWorktreeRoot: configured dir > .worktrees > worktrees > default .worktrees", () => {
   const { cwd, cleanup } = tempRepo();
   try {
     assert.equal(resolveWorktreeRoot(cwd, {}), path.join(cwd, ".worktrees"));
@@ -77,7 +77,7 @@ test("resolveWorktreeRoot：配置 dir > .worktrees > worktrees > 默认 .worktr
   }
 });
 
-test("ensureIgnored：未忽略则追加 .gitignore，已忽略则不动", () => {
+test("ensureIgnored: appends to .gitignore if not ignored, leaves it alone if already ignored", () => {
   const { cwd, git, cleanup } = tempRepo();
   try {
     const root = path.join(cwd, ".worktrees");
@@ -94,7 +94,7 @@ test("ensureIgnored：未忽略则追加 .gitignore，已忽略则不动", () =>
   }
 });
 
-test("assertNotNestedWorktree：主仓通过，linked worktree 拒绝", () => {
+test("assertNotNestedWorktree: main repo passes, linked worktree is rejected", () => {
   const { cwd, git, cleanup } = tempRepo();
   try {
     assert.doesNotThrow(() => assertNotNestedWorktree(cwd));
@@ -106,13 +106,13 @@ test("assertNotNestedWorktree：主仓通过，linked worktree 拒绝", () => {
     const linked = path.join(cwd, ".worktrees", "feat");
     git(["worktree", "add", "-b", "feat-branch", linked]);
 
-    assert.throws(() => assertNotNestedWorktree(linked), /linked worktree|嵌套|main repo/i);
+    assert.throws(() => assertNotNestedWorktree(linked), /linked worktree|nested|main repo/i);
   } finally {
     cleanup();
   }
 });
 
-test("addWorktree 默认命名并写登记文件；ls 可见", () => {
+test("addWorktree uses default naming and writes the registry file; visible in ls", () => {
   const { cwd, cleanup } = tempRepo();
   try {
     const added = addWorktree(cwd);
@@ -134,7 +134,7 @@ test("addWorktree 默认命名并写登记文件；ls 可见", () => {
   }
 });
 
-test("addWorktree 接受自定义 name/branch/base", () => {
+test("addWorktree accepts custom name/branch/base", () => {
   const { cwd, git, cleanup } = tempRepo();
   try {
     git(["branch", "develop"]);
@@ -148,14 +148,14 @@ test("addWorktree 接受自定义 name/branch/base", () => {
   }
 });
 
-test("matchBasename 覆盖 .env 与 .env.*", () => {
+test("matchBasename covers .env and .env.*", () => {
   assert.equal(matchBasename(".env", ".env"), true);
   assert.equal(matchBasename(".env.local", ".env.*"), true);
   assert.equal(matchBasename(".env", ".env.*"), false);
   assert.equal(matchBasename("node_modules", "node_modules"), true);
 });
 
-test("addWorktree 按配置 copy / symlink，post_create 注入环境变量", () => {
+test("addWorktree copies / symlinks per config; post_create receives injected env vars", () => {
   const { cwd, cleanup } = tempRepo();
   try {
     writeFileSync(path.join(cwd, ".env"), "SECRET=1\n");
@@ -182,7 +182,7 @@ test("addWorktree 按配置 copy / symlink，post_create 注入环境变量", ()
   }
 });
 
-test("post_create 失败会清理半成品 worktree", () => {
+test("a failing post_create cleans up the half-built worktree", () => {
   const { cwd, cleanup } = tempRepo();
   try {
     writeFileSync(path.join(cwd, ".baton.json"), JSON.stringify({
@@ -196,7 +196,7 @@ test("post_create 失败会清理半成品 worktree", () => {
   }
 });
 
-test("CLI worktree add/ls/rm 与 start --cwd 冒烟", async () => {
+test("smoke test: CLI worktree add/ls/rm and start --cwd", async () => {
   const { cwd, cleanup } = tempRepo();
   const { exec, cli, sleep } = await import("./helpers.ts");
   const home = mkdtempSync(path.join(os.tmpdir(), "baton-home-"));
@@ -240,7 +240,7 @@ test("CLI worktree add/ls/rm 与 start --cwd 冒烟", async () => {
     cleanup();
   }
 });
-test("removeWorktree：净树可删；脏树与未合并提交拒绝；provenance 拒绝主仓", () => {
+test("removeWorktree: clean tree can be removed; dirty tree and unmerged commits are rejected; provenance rejects the main repo", () => {
   const { cwd, git, cleanup } = tempRepo();
   try {
     const clean = addWorktree(cwd, { name: "clean" });
@@ -251,15 +251,15 @@ test("removeWorktree：净树可删；脏树与未合并提交拒绝；provenanc
 
     const dirty = addWorktree(cwd, { name: "dirty" });
     writeFileSync(path.join(dirty.path, "README.md"), "dirty\n");
-    assert.throws(() => removeWorktree(cwd, "dirty"), /未提交/);
+    assert.throws(() => removeWorktree(cwd, "dirty"), /uncommitted/i);
 
     const ahead = addWorktree(cwd, { name: "ahead" });
     writeFileSync(path.join(ahead.path, "extra.txt"), "x\n");
     git(["-C", ahead.path, "add", "extra.txt"]);
     git(["-C", ahead.path, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-m", "ahead"]);
-    assert.throws(() => removeWorktree(cwd, "ahead"), /未合并/);
+    assert.throws(() => removeWorktree(cwd, "ahead"), /not merged|unmerged/i);
 
-    assert.throws(() => removeWorktree(cwd, cwd), /只能删除|管理/);
+    assert.throws(() => removeWorktree(cwd, cwd), /only (remove|delete)|managed/i);
   } finally {
     cleanup();
   }

@@ -34,8 +34,8 @@ export const agy: Adapter = {
     if (obj.event === "init") return [];
     if (obj.event === "step_update") {
       const step = obj.step_update ?? {};
-      // agent_response 的 text_delta 是逐字增量；完整回复在 result.response 里出一次，
-      // 否则标记解析只会看到最后一个增量。
+      // agent_response text_delta events are per-character increments; the full reply appears once in result.response,
+      // otherwise marker parsing would only see the last increment.
       if (step.step_type !== "tool") return [];
       const name = String(step.tool_name ?? step.tool_info?.name ?? "tool");
       const detail = redact(JSON.stringify(step.tool_info?.parameters ?? {})).slice(0, 200);
@@ -44,7 +44,7 @@ export const agy: Adapter = {
     }
     if (obj.event === "result") {
       const result = obj.result ?? {};
-      if (result.status !== "SUCCESS") return event({ type: "error", text: redact(String(result.response || result.status || "agy 返回错误")) });
+      if (result.status !== "SUCCESS") return event({ type: "error", text: redact(String(result.response || result.status || "agy returned an error")) });
       return typeof result.response === "string" && result.response ? event({ type: "message", text: result.response }) : [];
     }
     return null;

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-test("开发时 Node 原生运行 TypeScript；发布包是 dist/，要求 Node >= 20.17", () => {
+test("Node runs TypeScript natively in development; the published package is dist/ and requires Node >= 20.17", () => {
   const value: number = 24;
   assert.ok(Number(process.versions.node.split(".")[0]) >= value);
   const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));

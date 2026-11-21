@@ -5,7 +5,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { sandbox, exec, cli, sleep } from "./helpers.ts";
 
-test("wait --for 1 到点返回 running，支持多任务任一完成及已完成任务", async (t) => {
+test("wait --for 1 returns running at the deadline; supports any-of-many completion and already-finished tasks", async (t) => {
   const s = sandbox(t);
   s.env.FAKE_HANG = "1";
   const slow = await s.run("start", "--target", "codex", "--prompt", "slow");
@@ -13,7 +13,7 @@ test("wait --for 1 到点返回 running，支持多任务任一完成及已完�
   const waiting = await s.run("wait", slow.task_id, "--for", "1");
   const elapsed = performance.now() - begin;
   assert.equal(waiting.status, "running");
-  assert.ok(elapsed >= 1000 && elapsed < 3000, `耗时 ${elapsed}ms`);
+  assert.ok(elapsed >= 1000 && elapsed < 3000, `took ${elapsed}ms`);
   s.env.FAKE_HANG = "0";
   s.env.FAKE_SLEEP = "0.4";
   const quick = await s.run("start", "--target", "codex", "--prompt", "quick");
@@ -25,7 +25,7 @@ test("wait --for 1 到点返回 running，支持多任务任一完成及已完�
   for (const args of [["wait"], ["wait", quick.task_id, "--for", "-1"], ["wait", quick.task_id, "../x"]]) await assert.rejects(s.run(...args));
 });
 
-test("wait --until-done 阻塞到结束；与 --for 互斥", async (t) => {
+test("wait --until-done blocks until finished; mutually exclusive with --for", async (t) => {
   const s = sandbox(t);
   s.env.FAKE_SLEEP = "0.3";
   const task = await s.run("start", "--target", "codex", "--prompt", "until");
@@ -42,7 +42,7 @@ test("wait --until-done 阻塞到结束；与 --for 互斥", async (t) => {
   );
 });
 
-test("tail 人读与 raw 输出；-f 在结束后退出且包含最后一个事件", async (t) => {
+test("tail human-readable and raw output; -f exits after finish and includes the last event", async (t) => {
   const s = sandbox(t);
   s.env.FAKE_SLEEP = "0.5";
   const task = await s.run("start", "--target", "codex", "--prompt", "watch");
@@ -61,11 +61,11 @@ test("tail 人读与 raw 输出；-f 在结束后退出且包含最后一个事�
   const raw = await exec(process.execPath, [cli, "tail", task.task_id, "--raw"], { cwd: s.cwd, env: s.env });
   assert.equal(raw.stdout, fs.readFileSync(path.join(s.dir(task.task_id), "events.jsonl"), "utf8"));
   const human = await exec(process.execPath, [cli, "tail", task.task_id], { cwd: s.cwd, env: s.env });
-  assert.match(human.stdout, /第 1 轮/);
+  assert.match(human.stdout, /Turn 1/i);
   await assert.rejects(s.run("tail", "../x"));
 });
 
-test("ls 按 cwd 筛选、按更新时间倒序；prune 只删过期的非 running 任务", async (t) => {
+test("ls filters by cwd and sorts by update time descending; prune only removes expired non-running tasks", async (t) => {
   const s = sandbox(t);
   const { randomUUID } = await import("node:crypto");
   const first = await s.run("start", "--target", "codex", "--prompt", "done");
@@ -105,7 +105,7 @@ test("ls 按 cwd 筛选、按更新时间倒序；prune 只删过期的非 runni
   for (const args of [["prune"], ["prune", "--older", "-1"], ["prune", "--older", "NaN"], ["ls", "extra"]]) await assert.rejects(s.run(...args));
 });
 
-test("终态 status/wait 带上当前轮的 git_changes", async (t) => {
+test("terminal status/wait include git_changes of the current turn", async (t) => {
   const s = sandbox(t);
   for (const args of [["init", "-q"], ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"]]) await exec("git", args, { cwd: s.cwd, env: s.env });
   const started = await s.run("start", "--target", "codex", "--prompt", "hi");

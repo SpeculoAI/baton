@@ -21,8 +21,8 @@ export function resolveCursorModelArg(
   const id = typeof model === "string" ? model.trim() : "";
   const e = effort || null;
   if (id && e) {
-    if (id.includes("[")) throw new Error("模型已含参数括号，不要再传 --effort。");
-    if (EMBEDDED_EFFORT.test(id)) throw new Error(`模型 ${id} 已含档位，不要再传 --effort。`);
+    if (id.includes("[")) throw new Error("Model already has a parameter bracket; do not pass --effort.");
+    if (EMBEDDED_EFFORT.test(id)) throw new Error(`Model ${id} already includes an effort level; do not pass --effort.`);
     return `${id}[effort=${e}]`;
   }
   if (id) return id;
@@ -34,7 +34,7 @@ export const cursor: Adapter = {
   id: "cursor",
   readonlyEnforcement: "agent-enforced",
   resolve(env) {
-    // cursor-agent 名字不会撞上 IDE 的 `cursor`，也比 PATH 里别的 `agent` 先命中。
+    // The cursor-agent name does not collide with the IDE's `cursor` and is matched before any other `agent` on PATH.
     return which(["cursor-agent", "agent"], env);
   },
   build({ bin, cwd, prompt, sessionId, reasoningEffort, model, mode }) {
@@ -55,7 +55,7 @@ export const cursor: Adapter = {
   parseLine(line) {
     const obj = parse(line);
     if (!obj || typeof obj !== "object" || typeof obj.type !== "string") return null;
-    // init 由 sessionIdFrom 处理；user 是 prompt 回显；thinking 是逐字增量，只会刷屏。
+    // init is handled by sessionIdFrom; user is the prompt echo; thinking is a per-character increment that would only flood the output.
     if (["system", "user", "thinking"].includes(obj.type)) return [];
     if (obj.type === "assistant") {
       const text = (obj.message?.content ?? [])
@@ -76,8 +76,8 @@ export const cursor: Adapter = {
       return null;
     }
     if (obj.type === "result") {
-      // 最终文本已经以 assistant 消息出过一次，这里只报错误。
-      return obj.is_error ? event({ type: "error", text: redact(String(obj.result ?? "cursor 返回错误")) }) : [];
+      // The final text was already emitted once as an assistant message; only report errors here.
+      return obj.is_error ? event({ type: "error", text: redact(String(obj.result ?? "cursor returned an error")) }) : [];
     }
     return null;
   },

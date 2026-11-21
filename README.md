@@ -17,7 +17,7 @@
   <a href="#use-it">Use it</a> •
   <a href="#how-it-works">How it works</a> •
   <a href="docs/reference.md">Full reference</a> •
-  <a href="README.zh-CN.md">简体中文</a>
+  <a href="README.zh-CN.md">Chinese</a>
 </p>
 
 ---
@@ -157,7 +157,7 @@ npm install
 npm test        # typecheck + node --test, using fake CLIs; no model quota spent
 ```
 
-Design notes are in [SPEC.md](SPEC.md) and [docs/](docs/). Upgrading from 0.3.x or earlier? See [the upgrade notes](docs/reference.md#upgrading-from-03x).
+Design notes are in [docs/architecture.md](docs/architecture.md) and [docs/hosts.md](docs/hosts.md). Upgrading from 0.3.x or earlier? See [the upgrade notes](docs/reference.md#upgrading-from-03x).
 
 ## License
 

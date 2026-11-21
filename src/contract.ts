@@ -1,17 +1,17 @@
 export const OUTPUT_CONTRACT = [
-  "完成前用下面两种结尾之一。标记必须各占一行。",
-  "需要用户做选择时停下来，不要猜，也不要继续后面的步骤：",
+  "Before finishing, end with one of the two endings below. Each marker must be on its own line.",
+  "If the user must make a choice, stop; do not guess and do not continue with later steps:",
   "BATON_DECISION",
-  "question: <一个问题>",
-  "options: <选项A> | <选项B>",
+  "question: <one question>",
+  "options: <option A> | <option B>",
   "BATON_END",
   "",
-  "做完时：",
+  "When done:",
   "BATON_RESULT",
-  "summary: <做了什么>",
+  "summary: <what you did>",
   "BATON_END",
   "",
-  "不要再调用其他 Agent。",
+  "Do not call other agents.",
 ].join("\n");
 
 export function buildPrompt(prompt: unknown, files?: string[]) {

@@ -25,7 +25,7 @@ export const claude: Adapter = {
     return which(["claude"], env);
   },
   build({ bin, prompt, sessionId, reasoningEffort, mode }) {
-    // stream-json 在 -p 下必须配 --verbose。
+    // stream-json requires --verbose with -p.
     const permission = mode === "readonly" ? "plan" : "acceptEdits";
     const args = ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode", permission, "--permission-prompts", "none"];
     if (reasoningEffort) args.push("--effort", reasoningEffort === "ultra" ? "max" : reasoningEffort);
@@ -40,7 +40,7 @@ export const claude: Adapter = {
   parseLine(line) {
     const obj = parse(line);
     if (!obj || typeof obj !== "object" || typeof obj.type !== "string") return null;
-    // system：init 由 sessionIdFrom 处理，hook_* 会带出宿主 hook 的输出，不进事件流。
+    // system: init is handled by sessionIdFrom; hook_* carries host hook output and stays out of the event stream.
     if (obj.type === "system" || obj.type === "rate_limit_event") return [];
     const parts: any[] = Array.isArray(obj.message?.content) ? obj.message.content : [];
     if (obj.type === "assistant") {
@@ -61,8 +61,8 @@ export const claude: Adapter = {
         .map((p) => stamp({ type: "tool_result", name: "tool", ok: p.is_error !== true, detail: redact(contentText(p.content)).slice(0, 200) }));
     }
     if (obj.type === "result") {
-      // 最终文本已经以 assistant 消息出过一次，这里只报错误。
-      return obj.is_error ? [stamp({ type: "error", text: redact(String(obj.result ?? obj.subtype ?? "claude 返回错误")) })] : [];
+      // The final text was already emitted once as an assistant message; only report errors here.
+      return obj.is_error ? [stamp({ type: "error", text: redact(String(obj.result ?? obj.subtype ?? "claude returned an error")) })] : [];
     }
     return null;
   },

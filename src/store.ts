@@ -11,7 +11,7 @@ export function batonHome(): string {
 }
 
 export function taskDir(id: string): string {
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw new Error("task_id 必须为 UUID。");
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw new Error("task_id must be a UUID.");
   return path.join(batonHome(), "tasks", id);
 }
 
@@ -53,7 +53,7 @@ export function appendEvent(id: string, event: BatonEvent): void {
 }
 
 export function writeTurn(id: string, turn: Turn): void {
-  if (!Number.isSafeInteger(turn.turn) || turn.turn < 1) throw new Error("轮次必须为正整数。");
+  if (!Number.isSafeInteger(turn.turn) || turn.turn < 1) throw new Error("turn must be a positive integer.");
   writeJson(path.join(ensureTask(id), "turns", `${turn.turn}.json`), turn);
 }
 

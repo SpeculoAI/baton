@@ -16,7 +16,7 @@ export const codex: Adapter = {
     const lastMessagePath = path.join(os.tmpdir(), `baton-codex-${process.pid}-${Date.now()}.txt`);
     const effortArgs = reasoningEffort ? ["-c", `model_reasoning_effort="${reasoningEffort}"`] : [];
     const readonly = mode === "readonly";
-    // `exec resume` 不接受 --cd/--color/--sandbox。write 首轮用 --approve-for-me（workspace-write，勿再加 --sandbox）。
+    // `exec resume` does not accept --cd/--color/--sandbox. The first write turn uses --approve-for-me (workspace-write; do not add --sandbox).
     if (sessionId) {
       return {
         command: bin,
@@ -67,7 +67,7 @@ export const codex: Adapter = {
     if (!obj || typeof obj !== "object") return null;
     const event = (data: EventData): BatonEvent[] => [{ ts: new Date().toISOString(), turn: 0, ...data }];
     if (obj.type === "turn.failed" && typeof obj.error?.message === "string") return event({ type: "error", text: obj.error.message });
-    // 生命周期事件：session id 由 sessionIdFrom 取，轮次起止由 supervisor 记录，这里不重复出事件。
+    // Lifecycle events: the session id comes from sessionIdFrom and turn start/end are recorded by the supervisor, so no events are emitted here.
     if (["thread.started", "turn.started", "turn.completed"].includes(obj.type)) return [];
     const item = obj.item;
     if (obj.type === "item.completed" && item?.type === "error" && typeof item.message === "string") {

@@ -52,7 +52,7 @@ export function loadWorktreeConfig(repo: string): WorktreeConfig {
   try {
     raw = JSON.parse(fs.readFileSync(file, "utf8"));
   } catch (error) {
-    throw new Error(`.baton.json 无效：${(error as Error).message}`);
+    throw new Error(`.baton.json is invalid: ${(error as Error).message}`);
   }
   const section = raw && typeof raw === "object" && "worktree" in raw
     ? (raw as { worktree?: Record<string, unknown> }).worktree
@@ -79,7 +79,7 @@ export function resolveWorktreeRoot(repo: string, cfg: Pick<WorktreeConfig, "dir
 export function ensureIgnored(repo: string, worktreeRoot: string): boolean {
   const rel = path.relative(repo, worktreeRoot) || ".";
   if (rel.startsWith("..") || path.isAbsolute(rel)) {
-    throw new Error("worktree 根目录必须在仓库内。");
+    throw new Error("worktree root must be inside the repository.");
   }
   const check = git(repo, ["check-ignore", "-q", rel]);
   if (check.status === 0) return false;
@@ -94,18 +94,18 @@ export function ensureIgnored(repo: string, worktreeRoot: string): boolean {
 export function assertNotNestedWorktree(cwd: string): void {
   const dir = git(cwd, ["rev-parse", "--git-dir"]);
   const common = git(cwd, ["rev-parse", "--git-common-dir"]);
-  if (dir.status !== 0 || common.status !== 0) throw new Error("当前目录不是 git 仓库。");
+  if (dir.status !== 0 || common.status !== 0) throw new Error("Current directory is not a git repository.");
   const gitDir = path.resolve(cwd, dir.stdout.trim());
   const gitCommon = path.resolve(cwd, common.stdout.trim());
   if (gitDir === gitCommon) return;
   const superproject = git(cwd, ["rev-parse", "--show-superproject-working-tree"]);
   if (superproject.status === 0 && superproject.stdout.trim()) return;
-  throw new Error("已在 linked worktree 中，请回到主仓再 add（禁止嵌套）。");
+  throw new Error("Already in a linked worktree; return to the main repository before add (nesting is not allowed).");
 }
 
 export function resolveRepoRoot(cwd: string): string {
   const ran = git(cwd, ["rev-parse", "--show-toplevel"]);
-  if (ran.status !== 0) throw new Error("当前目录不是 git 仓库。");
+  if (ran.status !== 0) throw new Error("Current directory is not a git repository.");
   return ran.stdout.trim();
 }
 
@@ -117,7 +117,7 @@ function defaultBase(repo: string, configured?: string): string {
   }
   const head = git(repo, ["rev-parse", "--abbrev-ref", "HEAD"]);
   if (head.status === 0 && head.stdout.trim() && head.stdout.trim() !== "HEAD") return head.stdout.trim();
-  throw new Error("无法探测 base 分支，请在 .baton.json 或 --base 指定。");
+  throw new Error("Cannot detect the base branch; set it in .baton.json or with --base.");
 }
 
 function writeMeta(worktreePath: string, meta: WorktreeMeta): void {
@@ -146,15 +146,15 @@ export function addWorktree(
   fs.mkdirSync(root, { recursive: true });
 
   const name = options.name || randomBytes(4).toString("hex");
-  if (!/^[A-Za-z0-9._-]+$/.test(name)) throw new Error("worktree name 含非法字符。");
+  if (!/^[A-Za-z0-9._-]+$/.test(name)) throw new Error("worktree name contains invalid characters.");
   const worktreePath = path.join(root, name);
-  if (fs.existsSync(worktreePath)) throw new Error(`worktree 已存在：${worktreePath}`);
+  if (fs.existsSync(worktreePath)) throw new Error(`worktree already exists: ${worktreePath}`);
 
   const branch = options.branch || `baton/${name}`;
   const base = defaultBase(repo, options.base ?? cfg.base);
   const created = git(repo, ["worktree", "add", "-b", branch, worktreePath, base]);
   if (created.status !== 0) {
-    throw new Error(`git worktree add 失败：${(created.stderr || created.stdout).trim()}`);
+    throw new Error(`git worktree add failed: ${(created.stderr || created.stdout).trim()}`);
   }
 
   const meta: WorktreeMeta = { name, branch, base, created_at: new Date().toISOString() };
@@ -222,7 +222,7 @@ function prepareWorktree(repo: string, worktreePath: string, cfg: WorktreeConfig
     });
     if (ran.status !== 0) {
       const detail = (ran.stderr || ran.stdout || "").trim() || `exit ${ran.status}`;
-      throw new Error(`post_create 失败（${command}）：${detail}`);
+      throw new Error(`post_create failed (${command}): ${detail}`);
     }
   }
 }
@@ -246,10 +246,10 @@ function resolveManagedPath(cwd: string, nameOrPath: string): { repo: string; ro
       : candidate;
   const rel = path.relative(root, worktreePath);
   if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) {
-    throw new Error("只能删除 worktree 根目录下由 baton 管理的树。");
+    throw new Error("Can only remove baton-managed trees under the worktree root.");
   }
   const meta = readMeta(worktreePath);
-  if (!meta) throw new Error(`不是 baton 管理的 worktree：${worktreePath}`);
+  if (!meta) throw new Error(`Not a baton-managed worktree: ${worktreePath}`);
   return { repo, root, worktreePath, meta };
 }
 
@@ -270,19 +270,19 @@ export type WorktreeRemoveResult = { status: "ok"; path: string; branch: string;
 export function removeWorktree(cwd: string, nameOrPath: string): WorktreeRemoveResult {
   const { repo, worktreePath, meta } = resolveManagedPath(cwd, nameOrPath);
   if (isDirty(worktreePath)) {
-    throw new Error(`worktree 有未提交改动，拒绝删除：${worktreePath}`);
+    throw new Error(`worktree has uncommitted changes; refusing to remove: ${worktreePath}`);
   }
   if (hasUnmergedCommits(repo, meta.branch, meta.base)) {
-    throw new Error(`分支 ${meta.branch} 相对 ${meta.base} 仍有未合并提交，拒绝删除。`);
+    throw new Error(`Branch ${meta.branch} has commits not merged into ${meta.base}; refusing to remove.`);
   }
   // ponytail: --force after our tracked-dirty + unmerged checks; untracked copy/meta are expected
   const removed = git(repo, ["worktree", "remove", "--force", worktreePath]);
   if (removed.status !== 0) {
-    throw new Error(`git worktree remove 失败：${(removed.stderr || removed.stdout).trim()}`);
+    throw new Error(`git worktree remove failed: ${(removed.stderr || removed.stdout).trim()}`);
   }
   const deleted = git(repo, ["branch", "-d", meta.branch]);
   if (deleted.status !== 0) {
-    throw new Error(`删除分支失败：${(deleted.stderr || deleted.stdout).trim()}`);
+    throw new Error(`Failed to delete branch: ${(deleted.stderr || deleted.stdout).trim()}`);
   }
   git(repo, ["worktree", "prune"]);
   return { status: "ok", path: worktreePath, branch: meta.branch, name: meta.name };

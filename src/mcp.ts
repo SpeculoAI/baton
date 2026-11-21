@@ -8,7 +8,7 @@ import type { Author, Effort, ScopeOnViolation, TaskMode } from "./types.ts";
 const MAX_WAIT_SECONDS = 55;
 const PROGRESS_MS = 15_000;
 
-// 每个工具只转调 tasks.ts；MCP 进程里不保存任何任务状态，重启后照样能读到任务。
+// Each tool only delegates to tasks.ts; the MCP process keeps no task state, so tasks remain readable after a restart.
 async function respond(run: () => unknown): Promise<{ content: { type: "text"; text: string }[] }> {
   let value: unknown;
   try { value = await run(); } catch (error) {
@@ -19,22 +19,22 @@ async function respond(run: () => unknown): Promise<{ content: { type: "text"; t
 
 export function createServer(): McpServer {
   const server = new McpServer({ name: "baton", version: "0.3.0" });
-  server.registerTool("list_agents", { description: "列出本机可派工的 CLI 及是否安装。" }, () => respond(() => ({ agents: agents() })));
+  server.registerTool("list_agents", { description: "List local CLIs available for delegation and whether each is installed." }, () => respond(() => ({ agents: agents() })));
   server.registerTool("delegate_task", {
-    description: "把一个有边界的任务派给本机另一个 AI CLI。立即返回 task_id（status=running），任务在独立进程里跑，不受本 MCP 进程或宿主会话退出影响。之后用 task_wait 有界等待。",
+    description: "Delegate a bounded task to another local AI CLI. Returns task_id immediately (status=running); the task runs in a separate process and survives exit of this MCP process or the host session. Then use task_wait for a bounded wait.",
     inputSchema: {
       target_agent: z.enum(["codex", "claude", "cursor", "agy"]),
       prompt: z.string(),
       files: z.array(z.string()).optional(),
       reasoning_effort: z.enum(["low", "medium", "high", "ultra"]).optional(),
-      model: z.string().optional().describe("按任务指定模型（当前仅 cursor；写入 meta，reply 延续）。"),
-      idle_timeout_seconds: z.number().optional().describe("连续这么久没有任何输出就停掉，默认 600。"),
-      max_duration_seconds: z.number().optional().describe("单轮总时长上限，默认不限。"),
+      model: z.string().optional().describe("Per-task model (cursor only for now; stored in meta and carried over by reply)."),
+      idle_timeout_seconds: z.number().optional().describe("Stop after this long with no output at all; default 600."),
+      max_duration_seconds: z.number().optional().describe("Maximum total duration per turn; default unlimited."),
       cwd: z.string().optional(),
-      scope: z.array(z.string()).optional().describe("允许修改的路径 glob，可多条；任务结束后对照净变更检查。"),
-      scope_on_violation: z.enum(["warn", "fail"]).optional().describe("越界策略，默认 warn。"),
-      mode: z.enum(["readonly", "write"]).optional().describe("权限模式，默认 write；readonly 映射到各 CLI 只读参数。"),
-      allow_weak: z.boolean().optional().describe("仅当目标无法强制只读时，显式放行 --mode readonly。"),
+      scope: z.array(z.string()).optional().describe("Path globs allowed to change (repeatable); checked against the net changes after the task ends."),
+      scope_on_violation: z.enum(["warn", "fail"]).optional().describe("Out-of-scope policy; default warn."),
+      mode: z.enum(["readonly", "write"]).optional().describe("Permission mode; default write. readonly maps to each CLI's read-only flags."),
+      allow_weak: z.boolean().optional().describe("Explicitly allow --mode readonly only when the target cannot enforce read-only."),
     },
   }, (args) => respond(() => start({
     target: args.target_agent, prompt: args.prompt, files: args.files, cwd: args.cwd,
@@ -44,11 +44,11 @@ export function createServer(): McpServer {
     mode: args.mode as TaskMode | undefined, allowWeak: args.allow_weak,
   })));
   server.registerTool("task_status", {
-    description: "看一单当前状态。running 时带 liveness（active/quiet/orphaned）和 quiet_for_s。",
+    description: "Get a task's current status. While running, includes liveness (active/quiet/orphaned) and quiet_for_s.",
     inputSchema: { task_id: z.string() },
   }, (args) => respond(() => status(args.task_id)));
   server.registerTool("task_wait", {
-    description: `有界等待：任一任务离开 running 即返回该任务；到 wait_seconds（默认 50，上限 ${MAX_WAIT_SECONDS}）仍在跑就返回 running，调用方再次调用即可。`,
+    description: `Bounded wait: returns as soon as any task leaves running; if still running at wait_seconds (default 50, max ${MAX_WAIT_SECONDS}), returns running and the caller can simply call again.`,
     inputSchema: { task_ids: z.array(z.string()).min(1), wait_seconds: z.number().optional() },
   }, (args, extra) => respond(async () => {
     const seconds = Math.min(Math.max(args.wait_seconds ?? 50, 0), MAX_WAIT_SECONDS);
@@ -56,21 +56,21 @@ export function createServer(): McpServer {
     let step = 0;
     const timer = token == null ? null : setInterval(() => {
       step += 1;
-      const quiet = args.task_ids.map((id) => { try { return `${id.slice(0, 8)} ${status(id).quiet_for_s ?? "?"}s 无输出`; } catch { return id; } }).join("; ");
+      const quiet = args.task_ids.map((id) => { try { return `${id.slice(0, 8)} ${status(id).quiet_for_s ?? "?"}s without output`; } catch { return id; } }).join("; ");
       extra.sendNotification({ method: "notifications/progress", params: { progressToken: token, progress: step, message: quiet } }).catch(() => {});
     }, PROGRESS_MS);
     try { return await wait(args.task_ids, seconds); } finally { if (timer) clearInterval(timer); }
   }));
   server.registerTool("task_reply", {
-    description: "任务停在 needs_input、success、scope_violation 或 readonly_violation 后，在同一会话开下一轮。as=human 表示这是人说的话，默认 host。running 时返回 busy。",
+    description: "After a task stops at needs_input, success, scope_violation or readonly_violation, start the next turn in the same session. as=human means a human said it; default host. Returns busy while running.",
     inputSchema: { task_id: z.string(), prompt: z.string(), as: z.enum(["host", "human"]).optional() },
   }, (args) => respond(() => reply(args.task_id, args.prompt, (args.as ?? "host") as Author)));
   server.registerTool("task_cancel", {
-    description: "停掉一单还在跑的任务（杀整个进程组）。",
+    description: "Stop a running task (kills the whole process group).",
     inputSchema: { task_id: z.string() },
   }, (args) => respond(() => cancel(args.task_id)));
   server.registerTool("task_list", {
-    description: "列出任务，按更新时间倒序。默认只列 cwd（或 BATON_CWD）下的任务，all=true 列全部。",
+    description: "List tasks, newest update first. By default lists only tasks under cwd (or BATON_CWD); all=true lists everything.",
     inputSchema: { all: z.boolean().optional(), cwd: z.string().optional() },
   }, (args) => respond(() => ({ tasks: ls(args.all ?? false, args.cwd ?? process.env.BATON_CWD ?? process.cwd()) })));
   return server;

@@ -8,7 +8,7 @@ import { exec, sandbox } from "./helpers.ts";
 const root = path.resolve(import.meta.dirname, "..");
 const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
 
-test("构建产物可运行：version 与 start 拉起 dist/cli.js _supervise", async (t) => {
+test("build output runs: version and start launch dist/cli.js _supervise", async (t) => {
   const out = fs.mkdtempSync(path.join(os.tmpdir(), "baton-dist-"));
   t.after(() => fs.rmSync(out, { recursive: true, force: true }));
   await exec(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"), "-p", path.join(root, "tsconfig.build.json"), "--outDir", path.join(out, "dist")], { cwd: root, timeout: 60000 });

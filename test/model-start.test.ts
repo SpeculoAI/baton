@@ -12,7 +12,7 @@ function cursorFixture(homeFixture: string) {
   );
 }
 
-test("cursor --model 写入 meta；reply 延续；argv 单 --model", async (t) => {
+test("cursor --model is written to meta; reply continues it; argv has a single --model", async (t) => {
   const s = sandbox(t);
   cursorFixture(s.fixture);
   const started = await s.run(
@@ -32,26 +32,26 @@ test("cursor --model 写入 meta；reply 延续；argv 单 --model", async (t) =
   await s.until(started.task_id);
 });
 
-test("非 cursor 传 --model 拒绝", async (t) => {
+test("--model on a non-cursor target is rejected", async (t) => {
   const s = sandbox(t);
   await assert.rejects(
     () => s.run("start", "--target", "codex", "--prompt", "hi", "--model", "grok-4.7-xhigh"),
     (err: NodeJS.ErrnoException & { stdout?: string }) => {
       const body = JSON.parse(err.stdout || "{}") as { summary?: string };
-      assert.match(body.summary || "", /不支持 --model|cursor/i);
+      assert.match(body.summary || "", /not support --model|cursor/i);
       return true;
     },
   );
 });
 
-test("cursor：已含档位的 model 再带 --effort 拒绝", async (t) => {
+test("cursor: a model that already embeds a tier is rejected when --effort is also passed", async (t) => {
   const s = sandbox(t);
   cursorFixture(s.fixture);
   await assert.rejects(
     () => s.run("start", "--target", "cursor", "--prompt", "hi", "--model", "grok-4.7-xhigh", "--effort", "high"),
     (err: NodeJS.ErrnoException & { stdout?: string }) => {
       const body = JSON.parse(err.stdout || "{}") as { summary?: string };
-      assert.match(body.summary || "", /档位|effort/i);
+      assert.match(body.summary || "", /tier|effort/i);
       return true;
     },
   );

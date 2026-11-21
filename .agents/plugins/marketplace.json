@@ -7,7 +7,7 @@
     {
       "name": "baton",
       "version": "0.4.0",
-      "description": "把一块有边界的工作下放到另一家本地 Agent CLI，需要决定时用同一会话继续。",
+      "description": "Hand a bounded coding task to another local agent CLI, then continue the same session when it needs a decision.",
       "source": {
         "source": "local",
         "path": "./"

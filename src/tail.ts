@@ -7,15 +7,15 @@ import { StringDecoder } from "node:string_decoder";
 import type { BatonEvent } from "./types.ts";
 
 export function formatEvent(event: BatonEvent): string {
-  const prefix = `[${event.ts}] 第 ${event.turn} 轮`;
+  const prefix = `[${event.ts}] turn ${event.turn}`;
   switch (event.type) {
     case "turn_started": return `${prefix} ${event.author}: ${event.prompt_preview}`;
     case "message": return `${prefix} ${event.text}`;
-    case "tool_call": return `${prefix} 调用 ${event.name}: ${event.detail}`;
-    case "tool_result": return `${prefix} ${event.name} ${event.ok ? "成功" : "失败"}: ${event.detail}`;
-    case "error": return `${prefix} 错误: ${event.text}`;
+    case "tool_call": return `${prefix} call ${event.name}: ${event.detail}`;
+    case "tool_result": return `${prefix} ${event.name} ${event.ok ? "ok" : "failed"}: ${event.detail}`;
+    case "error": return `${prefix} error: ${event.text}`;
     case "raw": return `${prefix} ${event.stream}: ${event.line}`;
-    case "turn_ended": return `${prefix} 结束: ${event.status} (exit ${event.exit_code})`;
+    case "turn_ended": return `${prefix} ended: ${event.status} (exit ${event.exit_code})`;
   }
 }
 

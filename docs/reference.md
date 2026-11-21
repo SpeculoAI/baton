@@ -1,6 +1,6 @@
 # Baton reference
 
-**English** | [简体中文](reference.zh-CN.md)
+**English** | [Chinese](reference.zh-CN.md)
 
 The full manual: every install path, flag, status, and calling convention. For the overview, see the [README](../README.md).
 

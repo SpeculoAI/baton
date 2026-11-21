@@ -79,7 +79,7 @@ export async function supervise(id: string): Promise<void> {
   } finally { release(); }
   const turn = readTurn(id, meta.turn);
   const adapter = getAdapter(meta.target);
-  if (!adapter) throw new Error("未知目标。");
+  if (!adapter) throw new Error("Unknown target.");
   const save = () => { meta.updated_at = new Date().toISOString(); writeMeta(meta); };
   const emit = (data: EventData) => {
     meta.last_event_at = new Date().toISOString();
@@ -103,7 +103,7 @@ export async function supervise(id: string): Promise<void> {
   }, 50);
   try {
     const bin = adapter.resolve(process.env);
-    if (!bin) throw new Error(`${meta.target} 不在 PATH 里。`);
+    if (!bin) throw new Error(`${meta.target} is not on PATH.`);
     spec = adapter.build({
       bin,
       cwd: meta.cwd,
@@ -132,7 +132,7 @@ export async function supervise(id: string): Promise<void> {
       output.on("data", (chunk: Buffer) => {
         lastByteAt = Date.now();
         fs.appendFileSync(file, chunk);
-        // shortcut: 判定只保留最近 2MB，完整输出始终在 raw；需要跨窗口标记时再扩展解析。
+        // shortcut: Only the most recent 2MB is kept for interpretation; full output always stays in raw; extend parsing if markers must span windows.
         if (stream === "stdout") stdout = (stdout + chunk.toString()).slice(-2_000_000);
         else stderr = (stderr + chunk.toString()).slice(-2_000_000);
       });
@@ -152,14 +152,14 @@ export async function supervise(id: string): Promise<void> {
       child.once("error", reject);
       child.once("close", resolve);
     });
-    child.stdin?.on("error", () => {}); // 子 CLI 可能在读 stdin 之前退出，close 会提供最终结果。
+    child.stdin?.on("error", () => {}); // the child CLI may exit before reading stdin; close will deliver the final result.
     child.stdin?.end(spec.stdin ?? undefined);
     code = await exited;
     if (spec.lastMessagePath) {
       try {
         const last = fs.readFileSync(spec.lastMessagePath, "utf8").trim();
         if (last) message = last;
-      } catch { /* 沿用旧逻辑：CLI 未写出文件时使用流消息。 */ }
+      } catch { /* keep legacy behavior: use stream messages when the CLI wrote no file. */ }
     }
   } catch (error) {
     killGroup(childPid);
@@ -175,7 +175,7 @@ export async function supervise(id: string): Promise<void> {
   const marker = interpret(message || stdout);
   let final: TaskStatus = "failed";
   let summary = failureSummary(stdout, stderr);
-  if (stopped) { final = stopped === "cancelled" ? "cancelled" : "timed_out"; summary = stopped === "cancelled" ? "已取消。" : `超时：${stopped}。`; }
+  if (stopped) { final = stopped === "cancelled" ? "cancelled" : "timed_out"; summary = stopped === "cancelled" ? "Cancelled." : `Timed out: ${stopped}.`; }
   else if (code !== 0 && adapter.isAuthFailure(raw)) { final = "not_authenticated"; summary = stderr || message || stdout; }
   else if (code !== 0 && isQuotaFailure(raw)) { final = "quota_exceeded"; summary = terminalReason(raw) || quotaSentence(raw); }
   else if (marker?.kind === "decision") { final = "needs_input"; meta.decision = { question: marker.question, options: marker.options }; summary = marker.question; }
@@ -186,12 +186,12 @@ export async function supervise(id: string): Promise<void> {
   turn.git_changes = gitChanges(meta.cwd, before, after);
   if (meta.mode === "readonly" && final === "success") {
     if (!meta.readonly_baseline) {
-      const note = "readonly: 非 git 目录，跳过事后检查";
+      const note = "readonly: not a git directory; skipping post-run check";
       meta.warning = meta.warning ? `${meta.warning}; ${note}` : note;
     } else if (!after) {
       final = "readonly_violation";
       meta.status = final;
-      meta.summary = `readonly_violation: git snapshot 失败\n${meta.summary ?? ""}`;
+      meta.summary = `readonly_violation: git snapshot failed\n${meta.summary ?? ""}`;
     } else {
       const dirty = pathsSinceBaseline(meta.cwd, baselineToSnapshot(meta.readonly_baseline), after);
       if (dirty.length) {
@@ -203,13 +203,13 @@ export async function supervise(id: string): Promise<void> {
   }
   if (meta.scope?.length && meta.scope_baseline && final !== "readonly_violation") {
     if (!after) {
-      const note = "scope_violation: git snapshot 失败，无法校验范围";
+      const note = "scope_violation: git snapshot failed; cannot verify scope";
       meta.warning = meta.warning ? `${meta.warning}; ${note}` : note;
       meta.scope_violations = ["<snapshot-unavailable>"];
       if ((meta.scope_on_violation ?? "warn") === "fail" && final === "success") {
         final = "scope_violation";
         meta.status = final;
-        meta.summary = `scope_violation: 见 scope_violations\n${meta.summary ?? ""}`;
+        meta.summary = `scope_violation: see scope_violations\n${meta.summary ?? ""}`;
       }
     } else {
       try {
@@ -241,7 +241,7 @@ export async function supervise(id: string): Promise<void> {
         if ((meta.scope_on_violation ?? "warn") === "fail" && final === "success") {
           final = "scope_violation";
           meta.status = final;
-          meta.summary = `scope_violation: 见 scope_violations\n${meta.summary ?? ""}`;
+          meta.summary = `scope_violation: see scope_violations\n${meta.summary ?? ""}`;
         }
       }
     }
