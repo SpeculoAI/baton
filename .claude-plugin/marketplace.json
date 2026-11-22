@@ -5,13 +5,13 @@
   },
   "metadata": {
     "description": "Baton: any agent as host, another local CLI as worker.",
-    "version": "0.4.0"
+    "version": "0.5.0"
   },
   "plugins": [
     {
       "name": "baton",
       "description": "Hand a bounded coding task to another local agent CLI, then continue the same session when it needs a decision.",
-      "version": "0.4.0",
+      "version": "0.5.0",
       "source": "./"
     }
   ]

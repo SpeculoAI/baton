@@ -33,7 +33,7 @@ test("start --rules check: cursor sees CLAUDE.md natively → unseen empty", asy
   const s = sandbox(t);
   gitInit(s.cwd);
   fs.writeFileSync(path.join(s.cwd, "CLAUDE.md"), "# rules\n");
-  const started = await s.run<TaskMeta>("start", "--target", "cursor", "--prompt", "hi");
+  const started = await s.run<TaskMeta>("start", "--target", "cursor", "--prompt", "hi", "--allow-dirty");
   await s.until(started.task_id);
   assert.deepEqual(s.meta(started.task_id).rules?.unseen, []);
   assert.equal(s.turn(started.task_id).prompt, "hi");
@@ -65,7 +65,7 @@ test("start --rules pointer: first turn injects; reply does not", async (t) => {
   const s = sandbox(t);
   gitInit(s.cwd);
   fs.writeFileSync(path.join(s.cwd, "CLAUDE.md"), "# rules\n");
-  const started = await s.run<TaskMeta>("start", "--target", "codex", "--prompt", "fix it", "--rules", "pointer");
+  const started = await s.run<TaskMeta>("start", "--target", "codex", "--prompt", "fix it", "--rules", "pointer", "--allow-dirty");
   await s.until(started.task_id);
   const turn1 = s.turn(started.task_id).prompt;
   assert.match(turn1, /does not load automatically/);
@@ -90,7 +90,7 @@ test("start with .rulesync: target_configured / gates; supervisor check → in_s
   const argsFile = path.join(s.home, "rulesync-args.txt");
   s.env.FAKE_RULESYNC_ARGS = argsFile;
 
-  const forCodex = await s.run<TaskMeta>("start", "--target", "codex", "--prompt", "hi");
+  const forCodex = await s.run<TaskMeta>("start", "--target", "codex", "--prompt", "hi", "--allow-dirty");
   assert.equal(forCodex.rules?.rulesync?.status, "pending");
   assert.equal(forCodex.rules?.rulesync?.target_configured, false);
   await s.until(forCodex.task_id);
@@ -98,7 +98,7 @@ test("start with .rulesync: target_configured / gates; supervisor check → in_s
   assert.equal(s.meta(forCodex.task_id).status, "success");
   assert.equal(fs.readFileSync(argsFile, "utf8").trim(), "generate\n--check");
 
-  const forCursor = await s.run<TaskMeta>("start", "--target", "cursor", "--prompt", "hi");
+  const forCursor = await s.run<TaskMeta>("start", "--target", "cursor", "--prompt", "hi", "--allow-dirty");
   assert.equal(forCursor.rules?.rulesync?.target_configured, true);
   assert.ok(forCursor.rules?.rulesync?.gates.some((g) => /--approve-mcps/.test(g)));
   await s.until(forCursor.task_id);
@@ -112,14 +112,14 @@ test("rulesync check: exit 1 → stale; exit 2 → error; hang → error; task s
   fs.writeFileSync(path.join(s.cwd, "rulesync.jsonc"), `{ "targets": ["codexcli"], "features": ["rules"] }`);
 
   s.env.FAKE_RULESYNC_EXIT = "1";
-  const stale = await s.run<TaskMeta>("start", "--target", "codex", "--prompt", "hi");
+  const stale = await s.run<TaskMeta>("start", "--target", "codex", "--prompt", "hi", "--allow-dirty");
   await s.until(stale.task_id);
   assert.equal(s.meta(stale.task_id).rules?.rulesync?.status, "stale");
   assert.equal(s.meta(stale.task_id).status, "success");
 
   s.env.FAKE_RULESYNC_EXIT = "2";
   s.env.FAKE_RULESYNC_STDERR = "boom";
-  const err = await s.run<TaskMeta>("start", "--target", "codex", "--prompt", "hi");
+  const err = await s.run<TaskMeta>("start", "--target", "codex", "--prompt", "hi", "--allow-dirty");
   await s.until(err.task_id);
   assert.equal(s.meta(err.task_id).rules?.rulesync?.status, "error");
   assert.match(s.meta(err.task_id).rules?.rulesync?.detail ?? "", /boom|exited 2/);
@@ -129,7 +129,7 @@ test("rulesync check: exit 1 → stale; exit 2 → error; hang → error; task s
   delete s.env.FAKE_RULESYNC_STDERR;
   s.env.FAKE_RULESYNC_SLEEP = "5";
   s.env.BATON_RULESYNC_CHECK_MS = "300";
-  const hung = await s.run<TaskMeta>("start", "--target", "codex", "--prompt", "hi");
+  const hung = await s.run<TaskMeta>("start", "--target", "codex", "--prompt", "hi", "--allow-dirty");
   // While rulesync is hanging, heartbeat must keep the task from looking orphaned.
   await new Promise((r) => setTimeout(r, 150));
   const mid = await s.run<TaskMeta & { liveness?: string }>("status", hung.task_id);

@@ -47,6 +47,24 @@ function normalizeSnapshot(snapshot: SnapshotInput): Snapshot | null {
   return null;
 }
 
+/** Paths from `git status --porcelain -uall` (repo-wide). Null outside a git repo. No content digests. */
+export function dirtyPaths(cwd: string): string[] | null {
+  const result = spawnSync("git", ["status", "--porcelain", "-uall"], {
+    cwd,
+    encoding: "utf8",
+    timeout: 5000,
+  });
+  if (result.error || result.status !== 0) return null;
+  const paths: string[] = [];
+  for (const line of result.stdout.split("\n")) {
+    if (line.length < 4) continue;
+    const body = line.slice(3);
+    const filePath = body.includes(" -> ") ? body.split(" -> ").pop()! : body;
+    paths.push(filePath);
+  }
+  return paths.sort();
+}
+
 export function gitSnapshot(cwd: string): Snapshot | null {
   const result = spawnSync("git", ["status", "--porcelain", "-uall"], {
     cwd,

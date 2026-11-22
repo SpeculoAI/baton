@@ -71,6 +71,15 @@ export type TaskMeta = {
   decision?: { question: string; options: string[] };
   summary?: string;
   warning?: string;
+  /** Set when start bypassed the dirty-tree guard via --allow-dirty. */
+  allow_dirty?: boolean;
+  /** Present when the task was started with --isolate. */
+  worktree?: {
+    path: string;
+    branch: string;
+    source_cwd: string;
+    gitignore_updated: boolean;
+  };
   scope?: string[];
   scope_on_violation?: ScopeOnViolation;
   scope_violations?: string[];

@@ -282,7 +282,7 @@ baton agents
 baton start --target <codex|claude|cursor|agy> [--prompt <text> | stdin] [--file <p>...] [--effort low|medium|high|ultra]
             [--model <id>] [--idle-timeout <秒>] [--max-duration <秒>] [--cwd <dir>]
             [--scope <glob> ...] [--scope-on-violation warn|fail]
-            [--mode readonly|write] [--allow-weak]
+            [--mode readonly|write] [--allow-weak] [--isolate] [--allow-dirty]
             [--rules check|pointer|off]
 baton status <id>
 baton wait <id>... [--for <秒> | --until-done]  # 默认 --for 50；--until-done 阻塞到任一任务离开 running
@@ -301,8 +301,8 @@ baton mcp                             # 启动 MCP 服务（stdio）
 - `--model <id>`（目前仅 Cursor）：按任务指定模型，写入 meta，`reply` 延续。Cursor 规则：仅 model → `--model <id>`；model+effort → `--model '<id>[effort=...]'`；若 id 已含档位（如 `grok-4.7-xhigh`）或已有括号再带 `--effort` 则报错。不会出现两个 `--model`。`status` 含 `model`（请求）与 `model_argv`（传给 CLI 的参数）；这不是 provider 确认的“实际模型”。
 - `--idle-timeout` 默认 600：连续这么久没有任何输出字节才停掉。`--max-duration` 默认不限。两者都按单轮计时，`reply` 开新一轮时重新计时。
 - **`--mode readonly|write`（默认 `write`）：** 映射到各家只读参数（Codex `--sandbox read-only`、Claude `--permission-mode plan`、Cursor `--mode ask`、Agy `--mode plan`）。写入 meta，`reply` 延续。每轮结束后若有净变更，会把干净的 `success` 升为 `readonly_violation`。无映射的目标默认拒绝，需显式 `--allow-weak`。**兼容性：** 新增终态 `readonly_violation`。
-- **Worktree 与任务解耦：** 先 `baton worktree add`，再 `baton start --cwd <path>`。默认目录 `.worktrees/`（会写入 `.gitignore`）；可选 `.baton.json` 配置 `copy` / `symlink` / `post_create` / `rulesync`（布尔，默认开启）。软链 `node_modules` 在分支依赖不一致时可能互相污染，必要时改用 `post_create` 独立安装。新 worktree 里若有 `.rulesync/` 且能找到 `rulesync`，`worktree add` 会在其中运行 `rulesync generate`，并在结果里报告 `rules.missing` / `rules.dirtied`。建议先在主仓库生成并提交 rulesync 输出，避免 worktree 一开始就脏。
-- **`--scope`（可选）：** 可重复，glob 相对任务 `cwd`。每轮结束后对照**任务起点净变更**（自 baseline HEAD 起的提交 ∪ 工作区 digest 差分）。`--scope-on-violation warn`（默认）保留原终态并写 `scope_violations` + `warning`；`fail` 会把干净的 `success` 升为 `scope_violation`。这是**防失误**，不是沙箱：忽略文件、仓外写入、共享 cwd 并发改动是已知盲区——建议与 worktree 叠用。带 `--scope` 时 cwd 必须是 git 仓库。**兼容性：** 新增终态 `scope_violation` 及可选 `scope_*` 字段。
+- **`--isolate` / `--allow-dirty`（仅 write）：** `--isolate` 从 `HEAD` 创建名为 `task-<id8>` 的 worktree（分支 `baton/task-<id8>`），在其中运行任务，并把 `worktree.path` / `worktree.branch` / `worktree.source_cwd` 记入任务。`reply` 在同一 worktree 继续；从源目录执行 `ls` 仍能看到该任务。改动保持未提交——Baton 不自动 commit、merge 或开 PR。在脏工作区上原地 write 会返回 `dirty_worktree` 与 `dirty_paths`，除非传入 `--allow-dirty`。两者不能并用，也不能与 `--mode readonly` 并用。手动流程仍可用：先 `baton worktree add`，再 `baton start --cwd <path>`。默认目录 `.worktrees/`（必要时写入 `.gitignore`，见 `worktree.gitignore_updated`）；可选 `.baton.json` 配置 `copy` / `symlink` / `post_create` / `rulesync`（布尔，默认开启）。软链 `node_modules` 在分支依赖不一致时可能互相污染，必要时改用 `post_create` 独立安装。新 worktree 里若有 `.rulesync/` 且能找到 `rulesync`，`worktree add` / `--isolate` 会在其中运行 `rulesync generate`，并报告 `rules.missing` / `rules.dirtied`。建议先在主仓库生成并提交 rulesync 输出，避免 worktree 一开始就脏。
+- **`--scope`（可选）：** 可重复，glob 相对任务 `cwd`。每轮结束后对照**任务起点净变更**（自 baseline HEAD 起的提交 ∪ 工作区 digest 差分）。`--scope-on-violation warn`（默认）保留原终态并写 `scope_violations` + `warning`；`fail` 会把干净的 `success` 升为 `scope_violation`。这是**防失误**，不是沙箱：忽略文件、仓外写入、共享 cwd 并发改动是已知盲区——建议与 `--isolate` 叠用。带 `--scope` 时 cwd 必须是 git 仓库。**兼容性：** 新增终态 `scope_violation` 及可选 `scope_*` 字段。
 - **`--rules check|pointer|off`（默认 `check`）：** 从任务 `cwd` 向上扫到 git 根，发现项目规则文件，写入 `meta.rules`（`found`、`unseen`、`pointer_injected`）。`check` 不改执行者 prompt；`pointer` 在首轮 prompt 前插入英文“请先读这些文件”提示（仅针对目标原生不会加载的条目；`reply` 不再注入）；`off` 完全关闭。仓库有 `.rulesync/` 时还会写 `rules.rulesync`：读取 `rulesync.jsonc`（及 `rulesync.local.jsonc`），报告目标是否在配置内以及 `mcp`/`hooks` 加载关卡，再由 supervisor 运行整个项目的 `rulesync generate --check`（不传 `--targets`/`--features`），结果为 `in_sync` / `stale` / `error` / `skipped`。任何失败都不阻断任务。Baton 不会用 `npx` 安装 rulesync，也不会在用户主工作目录里写入 rulesync 生成物。
 
 ### 各执行者原生规则文件与加载关卡（2026-11-21/22 核实）
@@ -328,6 +328,7 @@ baton mcp                             # 启动 MCP 服务（stdio）
 | `failed` / `timed_out` / `cancelled` | 终态，不能再 `reply` |
 | `not_authenticated` / `quota_exceeded` | 对方 CLI 没登录 / 额度用尽 |
 | `not_installed` | `start` 时就返回，目标不在 `PATH` 里 |
+| `dirty_worktree` | `start` 返回；脏工作区上拒绝原地 write——见 `dirty_paths`；改用 `--isolate` 或 `--allow-dirty` |
 
 `running` 时的 `liveness`：
 
@@ -356,7 +357,7 @@ MCP 是同一套逻辑的薄壳，进程里不存任何任务状态，重启 MCP
 | 工具 | 对应命令 |
 |---|---|
 | `list_agents` | `agents` |
-| `delegate_task` | `start`（参数 `target_agent`、`prompt`、`files`、`reasoning_effort`、`idle_timeout_seconds`、`max_duration_seconds`、`cwd`） |
+| `delegate_task` | `start`（参数 `target_agent`、`prompt`、`files`、`reasoning_effort`、`idle_timeout_seconds`、`max_duration_seconds`、`cwd`、`scope`、`scope_on_violation`、`mode`、`allow_weak`、`isolate`、`allow_dirty`、`rules`） |
 | `task_status` | `status` |
 | `task_wait` | `wait`（参数 `task_ids`、`wait_seconds`，默认 50，上限 55；等待期间每 15 秒发一次进度通知） |
 | `task_reply` | `reply`（参数 `task_id`、`prompt`、`as`） |
@@ -402,6 +403,15 @@ MCP 是同一套逻辑的薄壳，进程里不存任何任务状态，重启 MCP
 3. **凭据脱敏**：写进事件和摘要的文本先脱敏再截断；原始日志完整保留在受 `0600` 保护的 `raw/` 下。
 4. **id 校验**：所有传入的 task id 先校验是 UUID，再拼路径。
 5. **`--scope` 不是安全边界**：只事后检查 git 可见的净变更。被 ignore 的路径、仓外写入、共享 cwd 并发、orphaned（检查未跑）是已知盲区。
+6. **脏工作区拦截**：git 仓库内原地 `--mode write` 若工作区有未提交改动，返回 `dirty_worktree`。改用 `--isolate` 或 `--allow-dirty`。
+7. **write 模式自动批准**（未改；下表说明各执行者一旦进入 write 任务被允许做什么）：
+
+| 执行者 | write 模式参数 | 效果 |
+|---|---|---|
+| Codex | `--approve-for-me` | 工作区可写沙箱；改文件与跑命令不再询问 |
+| Claude Code | `--permission-mode acceptEdits --permission-prompts none` | 文件编辑自动接受 |
+| Cursor | `--force --trust` | 命令与编辑无需确认 |
+| Antigravity | `--mode accept-edits` | 编辑自动接受 |
 
 ---
 
@@ -430,6 +440,12 @@ npm run typecheck
 集成测试用 `test/fake-cli/` 里的假 CLI 和临时 `BATON_HOME`，覆盖：父进程被杀后任务照常完成、空闲与总时长超时、取消杀整组、守护进程死亡后的孤儿判定、needs_input → reply 续会话、有界 wait、tail、ls/prune、MCP 重启后仍能读到任务。适配器测试用各家真实输出样本。
 
 ---
+
+## 从 0.4.x 升级
+
+- **破坏性变更：** git 仓库内原地 `--mode write` 遇到脏工作区时，现在返回 `dirty_worktree` 并以非 0 退出。请传 `--isolate`（在从 `HEAD` 新建的 worktree 里跑）或 `--allow-dirty`。readonly 任务不受影响。
+- 新增参数 / MCP 字段：`--isolate` / `isolate`、`--allow-dirty` / `allow_dirty`。skill 对 git 仓库中的 write 任务默认使用 `--isolate`。
+- 隔离任务会在 meta 里记录 `worktree`；改动保持未提交——Baton 不自动提交或合并。
 
 ## 从 0.3.x 升级
 
