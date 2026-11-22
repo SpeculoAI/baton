@@ -2,10 +2,13 @@ import * as p from "@clack/prompts";
 import type { Writable } from "node:stream";
 import type { Action } from "./install.ts";
 
-/** stderr for humans, with a sane width when `stderr.columns` is 0/missing (piped TTYs, `script`, etc.). */
+/**
+ * Prefer stdout when it is a TTY — clack cursor redraws are more reliable there (iTerm2).
+ * Soft migrate noise is suppressed separately in install.ts; pad columns when the stream reports 0.
+ */
 function uiOutput(): Writable {
-  const stream = process.stderr;
-  const columns = Math.max(stream.columns || 0, process.stdout.columns || 0, Number(process.env.COLUMNS) || 0, 80);
+  const stream = process.stdout.isTTY ? process.stdout : process.stderr;
+  const columns = Math.max(stream.columns || 0, process.stdout.columns || 0, process.stderr.columns || 0, Number(process.env.COLUMNS) || 0, 80);
   if (stream.columns === columns) return stream;
   return new Proxy(stream, {
     get(target, prop, receiver) {

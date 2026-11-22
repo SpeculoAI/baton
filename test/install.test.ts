@@ -175,6 +175,36 @@ test("cancelling host selection does not run the install", async (t) => {
   assert.deepEqual(ran.result.hosts, []);
 });
 
+test("soft migrate failures stay quiet on stderr when the host still succeeds", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "baton-home-"));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "baton-bins-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(dir, "claude"), `#!/bin/sh
+case " $* " in
+  *"agent-plugin-agent"*) printf 'Failed to uninstall old plugin\\n' >&2; exit 1 ;;
+esac
+exit 0
+`, { mode: 0o755 });
+  let leaked = "";
+  const original = process.stderr.write.bind(process.stderr);
+  (process.stderr as NodeJS.WriteStream).write = ((chunk: string | Uint8Array, ...rest: unknown[]) => {
+    leaked += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString();
+    return (original as (chunk: string | Uint8Array, ...args: unknown[]) => boolean)(chunk, ...rest);
+  }) as typeof process.stderr.write;
+  t.after(() => { process.stderr.write = original as typeof process.stderr.write; });
+  const ran = await runInstall({
+    action: "install",
+    only: ["claude"],
+    skipGlobal: true,
+    home,
+    env: { PATH: dir },
+  });
+  assert.equal(ran.exitCode, 0);
+  assert.equal(ran.result.hosts[0]?.ok, true);
+  assert.equal(leaked.includes("Failed to uninstall"), false);
+});
+
 test("selectHosts picks a subset; onProgress reports global and host phases", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "baton-home-"));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));

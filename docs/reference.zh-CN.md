@@ -34,7 +34,7 @@
 npx @speculoai/baton install
 ```
 
-这条命令会把 `baton` 装成全局命令，并把插件装进你选中的 agent。在 TTY 下，`install` / `update` / `uninstall` 会走简短交互（安装时多选、进度、✓/✗）；脚本请继续解析 stdout 上的 JSON。`--only <agent>` 可重复（`claude`、`codex`、`cursor`、`agy`、`gemini`），`--force` 重装，`--dry-run` 只打印命令。以后更新：
+这条命令会把 `baton` 装成全局命令，并把插件装进你选中的 agent。在 TTY 下，`install` / `update` / `uninstall` 会走简短交互（安装时多选、进度、✓/✗），**不再**额外打印 JSON，看退出码即可。脚本 / 非 TTY 仍会在 stdout 输出一个 JSON 对象。`--only <agent>` 可重复（`claude`、`codex`、`cursor`、`agy`、`gemini`），`--force` 重装，`--dry-run` 只打印命令。以后更新：
 
 ```bash
 npx @speculoai/baton@latest update
