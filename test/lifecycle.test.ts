@@ -7,9 +7,11 @@ import { once } from "node:events";
 import { sandbox, exec, cli, sleep } from "./helpers.ts";
 import type { TaskMeta } from "../src/types.ts";
 
-test("start returns within 1s; supervisor still writes success after the parent process is SIGKILLed", async (t) => {
+test("start returns before the worker finishes; supervisor still writes success after the parent process is SIGKILLed", async (t) => {
   const s = sandbox(t);
-  s.env.FAKE_SLEEP = "0.5";
+  // Worker sleeps 2s; start must return sooner (proves it does not await the worker).
+  // Budget allows cold-start of start-parent + waiting for supervisor_pid (up to ~750ms).
+  s.env.FAKE_SLEEP = "2";
   const parent = spawn(process.execPath, [path.join(import.meta.dirname, "fake-cli/start-parent.ts")], { cwd: s.cwd, env: s.env, stdio: ["ignore", "pipe", "pipe"] });
   t.after(() => parent.kill("SIGKILL"));
   let text = "";
@@ -20,7 +22,7 @@ test("start returns within 1s; supervisor still writes success after the parent 
     parent.on("error", reject);
     parent.on("exit", (code) => { if (!text) reject(new Error(`parent exited ${code}`)); });
   });
-  assert.ok(performance.now() - startedAt < 1000);
+  assert.ok(performance.now() - startedAt < 1500);
   assert.equal(started.status, "running");
   parent.kill("SIGKILL");
   await once(parent, "exit");
