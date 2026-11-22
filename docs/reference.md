@@ -34,7 +34,7 @@ The full manual: every install path, flag, status, and calling convention. For t
 npx @speculoai/baton install
 ```
 
-This installs the `baton` command globally and the plugin into the agent CLIs you select. `--only <agent>` is repeatable (`claude`, `codex`, `cursor`, `agy`, `gemini`), `--force` reinstalls, and `--dry-run` prints the commands. Update everything later with:
+This installs the `baton` command globally and the plugin into the agent CLIs you select. In a TTY, `install` / `update` / `uninstall` show a short interactive flow (multi-select on install, progress, ✓/✗); scripts should keep parsing the JSON object on stdout. `--only <agent>` is repeatable (`claude`, `codex`, `cursor`, `agy`, `gemini`), `--force` reinstalls, and `--dry-run` prints the commands. Update everything later with:
 
 ```bash
 npx @speculoai/baton@latest update
