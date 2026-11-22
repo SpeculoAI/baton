@@ -142,7 +142,7 @@ test("project install runs npm, re-detects, then initializes from the template w
   const { run, calls } = fakeRun(root, { ops: [{ action: "write", kind: "file", feature: "rules", path: "AGENTS.md" }] });
   const { prompt, seen } = prompter({ install: "project", confirm: true });
   const res = await rulesInit({ cwd: root, agents: ["claude", "codex"], env, run, prompt });
-  assert.equal(res.status, "generated", res.detail);
+  assert.equal(res.status, "generated", res.detail ?? "");
   assert.deepEqual(res.install, { choice: "project", ok: true, command: ["npm", "install", "-D", "rulesync"] });
   assert.deepEqual(calls.slice(0, 2), ["npm install -D rulesync", "rulesync init --silent"]);
   assert.equal(seen.sources, undefined, "no rule files → template without asking");
