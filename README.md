@@ -62,7 +62,7 @@ The host starts the job, checks on it in short steps, passes Codex's "A or B?" t
 npx @speculoai/baton install
 ```
 
-It finds the agent CLIs on your machine, asks which ones should get the plugin, and installs the global `baton` command. Requires Node ≥ 20.17 and at least one supported agent CLI that is already logged in.
+It finds the agent CLIs on your machine, asks which ones should get the plugin, and installs the global `baton` command. It then offers to set up [rulesync](https://github.com/dyoshikawa/rulesync) for the current project (optional; rerun any time with `baton rules init`). Requires Node ≥ 20.17 and at least one supported agent CLI that is already logged in.
 
 Check which workers Baton can see:
 
@@ -113,6 +113,7 @@ If no target is named, the task goes to `codex`, or to `claude` when you are alr
 | `baton reply` | Continues the same conversation when the worker asks a question or you want a follow-up. |
 | `baton cancel` / `ls` / `prune` | Stops a job, lists jobs, or deletes old ones. |
 | `baton worktree add/ls/rm` | Gives a job its own git worktree so it doesn't touch your checkout. |
+| `baton rules init` | Installs and initializes rulesync for the current project, previewing changes before writing. |
 | `baton mcp` | Runs the same operations as an MCP server for hosts that can't run shell commands. |
 
 Every command prints exactly one JSON object, so the host agent can read it reliably. See the [full flag list and statuses](docs/reference.md#command-line).

@@ -62,7 +62,7 @@
 npx @speculoai/baton install
 ```
 
-它会找出本机装了哪些 Agent CLI，问你要给哪些装插件，并安装全局 `baton` 命令。需要 Node ≥ 20.17，以及至少一个已登录的受支持 Agent CLI。
+它会找出本机装了哪些 Agent CLI，问你要给哪些装插件，并安装全局 `baton` 命令。之后会推荐为当前项目配置 [rulesync](https://github.com/dyoshikawa/rulesync)（可选，以后可随时用 `baton rules init` 重跑）。需要 Node ≥ 20.17，以及至少一个已登录的受支持 Agent CLI。
 
 看看 Baton 能找到哪些执行者：
 
@@ -113,6 +113,7 @@ baton tail -f <task_id>
 | `baton reply` | 执行者提问、或者你想追加要求时，在同一个会话里接着说。 |
 | `baton cancel` / `ls` / `prune` | 停止任务、列出任务、清理旧任务。 |
 | `baton worktree add/ls/rm` | 给任务单独开一个 git worktree，不碰你的工作目录。 |
+| `baton rules init` | 为当前项目安装并初始化 rulesync，写入前先预览改动。 |
 | `baton mcp` | 以 MCP 服务器的形式提供同样的操作，给不能跑 shell 的宿主用。 |
 
 每个命令都只输出一个 JSON 对象，主控 Agent 读起来不会出错。全部参数和状态见[完整手册](docs/reference.zh-CN.md#命令行)。
