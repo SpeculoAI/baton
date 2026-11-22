@@ -1,0 +1,12 @@
+#!/bin/sh
+# Fake rulesync for baton tests. Behavior via env:
+#   FAKE_RULESYNC_EXIT   exit code (default 0)
+#   FAKE_RULESYNC_SLEEP  seconds to sleep before exiting
+#   FAKE_RULESYNC_ARGS   if set, write argv to this file
+#   FAKE_RULESYNC_TOUCH  if set, append a line to that path (for generate dirtied tests)
+#   FAKE_RULESYNC_STDERR text written to stderr
+if [ -n "$FAKE_RULESYNC_ARGS" ]; then printf '%s\n' "$@" > "$FAKE_RULESYNC_ARGS"; fi
+if [ -n "$FAKE_RULESYNC_TOUCH" ]; then printf 'touched\n' >> "$FAKE_RULESYNC_TOUCH"; fi
+if [ -n "$FAKE_RULESYNC_STDERR" ]; then printf '%s\n' "$FAKE_RULESYNC_STDERR" >&2; fi
+if [ -n "$FAKE_RULESYNC_SLEEP" ]; then /bin/sleep "$FAKE_RULESYNC_SLEEP"; fi
+exit "${FAKE_RULESYNC_EXIT:-0}"

@@ -2,6 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
+import { hasRulesyncSource, resolveRulesync, RULE_ENTRIES } from "./rules.ts";
+import { redact } from "./redact.ts";
 
 export type WorktreeConfig = {
   dir?: string;
@@ -9,6 +11,8 @@ export type WorktreeConfig = {
   copy: string[];
   symlink: string[];
   post_create: string[];
+  /** When false, skip rulesync generate in new worktrees. Default true. */
+  rulesync?: boolean;
 };
 
 export type WorktreeMeta = {
@@ -18,6 +22,13 @@ export type WorktreeMeta = {
   created_at: string;
 };
 
+export type WorktreeRulesResult = {
+  rulesync: "generated" | "skipped" | "error";
+  detail?: string;
+  missing: string[];
+  dirtied: string[];
+};
+
 export type WorktreeAddResult = {
   status: "ok";
   path: string;
@@ -25,6 +36,7 @@ export type WorktreeAddResult = {
   base: string;
   name: string;
   gitignore_updated: boolean;
+  rules?: WorktreeRulesResult;
 };
 
 export type WorktreeListItem = {
@@ -64,6 +76,7 @@ export function loadWorktreeConfig(repo: string): WorktreeConfig {
     copy: strings(section.copy),
     symlink: strings(section.symlink),
     post_create: strings(section.post_create),
+    rulesync: typeof section.rulesync === "boolean" ? section.rulesync : undefined,
   };
 }
 
@@ -165,7 +178,59 @@ export function addWorktree(
     cleanupWorktree(repo, worktreePath, branch);
     throw error;
   }
-  return { status: "ok", path: worktreePath, branch, base, name, gitignore_updated };
+  const rules = applyWorktreeRulesync(repo, worktreePath, cfg);
+  return { status: "ok", path: worktreePath, branch, base, name, gitignore_updated, rules };
+}
+
+function rootRuleEntries(dir: string): string[] {
+  const found: string[] = [];
+  for (const entry of RULE_ENTRIES) {
+    const full = path.join(dir, entry);
+    try {
+      const st = fs.statSync(full);
+      if (st.isDirectory()) {
+        if (fs.readdirSync(full).length) found.push(entry);
+      } else if (st.isFile()) {
+        found.push(entry);
+      }
+    } catch {
+      // absent
+    }
+  }
+  return found.sort();
+}
+
+function applyWorktreeRulesync(repo: string, worktreePath: string, cfg: WorktreeConfig): WorktreeRulesResult {
+  const missing = rootRuleEntries(repo).filter((entry) => !fs.existsSync(path.join(worktreePath, entry)));
+  if (cfg.rulesync === false) {
+    return { rulesync: "skipped", detail: "disabled in .baton.json", missing, dirtied: [] };
+  }
+  if (!hasRulesyncSource(worktreePath)) {
+    return { rulesync: "skipped", detail: "no .rulesync/ in worktree", missing, dirtied: [] };
+  }
+  const bin = resolveRulesync(worktreePath, repo);
+  if (!bin) {
+    return { rulesync: "skipped", detail: "rulesync not found in node_modules/.bin or PATH", missing, dirtied: [] };
+  }
+  const ran = spawnSync(bin, ["generate"], {
+    cwd: worktreePath,
+    encoding: "utf8",
+    env: { ...process.env, BATON_DELEGATION: "1" },
+    timeout: 60_000,
+  });
+  if ((ran.status ?? 1) !== 0) {
+    const detail = redact((ran.stderr || ran.stdout || `rulesync exited ${ran.status}`).trim()).slice(0, 200);
+    return { rulesync: "error", detail, missing: rootRuleEntries(repo).filter((entry) => !fs.existsSync(path.join(worktreePath, entry))), dirtied: [] };
+  }
+  const porcelain = git(worktreePath, ["status", "--porcelain", "--untracked-files=no"]);
+  const dirtied = porcelain.status === 0
+    ? porcelain.stdout.split("\n").map((line) => line.slice(3).trim()).filter(Boolean)
+    : [];
+  return {
+    rulesync: "generated",
+    missing: rootRuleEntries(repo).filter((entry) => !fs.existsSync(path.join(worktreePath, entry))),
+    dirtied,
+  };
 }
 
 export function listWorktrees(cwd: string): WorktreeListItem[] {

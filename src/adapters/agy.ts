@@ -15,6 +15,11 @@ function parse(line: string): any {
 export const agy: Adapter = {
   id: "agy",
   readonlyEnforcement: "agent-enforced",
+  // Verified 2026-11-21: AGENTS.md / GEMINI.md / .agents/rules (and legacy .agent/rules). No load gates surveyed.
+  rules: {
+    files: ["AGENTS.md", "GEMINI.md", ".agents/AGENTS.md", ".agents/GEMINI.md", ".agents/rules", ".agent/rules"],
+    rulesyncTarget: "antigravity-cli",
+  },
   resolve(env) {
     return which(["agy"], env);
   },

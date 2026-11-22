@@ -107,7 +107,7 @@ baton tail -f <task_id>
 
 | 命令 | 作用 |
 |---|---|
-| `baton start` | 启动任务。可选参数包括 `--effort`、`--mode readonly`、`--scope <glob>`、`--cwd <worktree>`。 |
+| `baton start` | 启动任务。可选参数包括 `--effort`、`--mode readonly`、`--scope <glob>`、`--rules check\|pointer\|off`、`--cwd <worktree>`。 |
 | `baton wait` / `status` | 等任务停下，或者看一眼当前状态。 |
 | `baton tail [-f]` | 以可读文本显示实时事件流。 |
 | `baton reply` | 执行者提问、或者你想追加要求时，在同一个会话里接着说。 |
@@ -144,6 +144,9 @@ baton tail -f <task_id>
 
 **`--scope` 算安全边界吗？**
 不算。它只能拦住 git 看得见的文件里的误改。要真正隔离，请把任务放进 `baton worktree`。
+
+**执行者会遵守我的项目规则 / 环境吗？**
+`baton status` 会报告 `rules.unseen`（目标原生不会加载的规则文件）；若你用了 [rulesync](https://github.com/dyoshikawa/rulesync)，还会报告生成配置是否同步。需要时加 `--rules pointer`，让执行者先去读那些文件。更稳妥的做法是维护共享的 `AGENTS.md`，并用 rulesync 把 MCP/skills/hooks 同步到各家 CLI。
 
 **Gemini CLI 能当执行者吗？**
 暂时不能，但可以当主控。

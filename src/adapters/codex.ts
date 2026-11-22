@@ -9,6 +9,15 @@ const AUTH = ["not logged in", "please log in", "authentication required", "code
 export const codex: Adapter = {
   id: "codex",
   readonlyEnforcement: "os-sandbox",
+  // Verified 2026-11-21/22: AGENTS.md (+ override). Project .codex/config.toml MCP/hooks need trust.
+  rules: {
+    files: ["AGENTS.md", "AGENTS.override.md"],
+    rulesyncTarget: "codexcli",
+    gates: {
+      mcp: "Project .codex/config.toml (where rulesync writes Codex MCP) loads only for trusted project paths; a baton worktree is a separate absolute path and does not inherit the main repo's trust_level.",
+      hooks: "Project hooks require persisted hook trust; codex exec has --dangerously-bypass-hook-trust (Baton does not pass it).",
+    },
+  },
   resolve(env) {
     return which(["codex"], env);
   },

@@ -11,7 +11,17 @@ import { redact } from "./redact.ts";
 import { isAlive, killGroup } from "./process.ts";
 import { gitSnapshot, snapshotToBaseline } from "./git.ts";
 import { normalizeScopeInput, scopePromptPrefix } from "./scope.ts";
-import type { Author, Effort, Enforcement, GitChanges, ScopeOnViolation, TaskMeta, TaskMode } from "./types.ts";
+import {
+  buildRulesyncReport,
+  discoverRules,
+  hasRulesyncSource,
+  readRulesyncConfig,
+  resolveRulesync,
+  rulesGitRoot,
+  rulesPointer,
+  unseenRules,
+} from "./rules.ts";
+import type { Author, Effort, Enforcement, GitChanges, RulesMode, RulesReport, ScopeOnViolation, TaskMeta, TaskMode } from "./types.ts";
 
 export type StartInput = {
   target: string;
@@ -26,6 +36,8 @@ export type StartInput = {
   scopeOnViolation?: ScopeOnViolation;
   mode?: TaskMode;
   allowWeak?: boolean;
+  /** Default check: discover rules without changing the prompt. */
+  rules?: RulesMode;
 };
 
 /** Resolve readonly enforcement; throws unless allowWeak when strength is none. */
@@ -85,12 +97,37 @@ export async function start(input: StartInput): Promise<StartResult> {
   const cwd = path.resolve(input.cwd || process.env.BATON_CWD || process.cwd());
   if (!fs.statSync(cwd).isDirectory()) throw new Error("cwd must be a directory.");
   if (!adapter.resolve(process.env)) return { status: "not_installed", summary: `${input.target} is not on PATH.` };
+  const rulesMode: RulesMode = input.rules ?? "check";
+  if (rulesMode !== "check" && rulesMode !== "pointer" && rulesMode !== "off") {
+    throw new Error("rules must be check, pointer, or off.");
+  }
   const scopeFields = normalizeScopeInput(input.scope, input.scopeOnViolation);
   let scope_baseline: TaskMeta["scope_baseline"];
   let readonly_baseline: TaskMeta["readonly_baseline"];
   let prompt = input.prompt;
   const needSnap = Boolean(scopeFields.scope?.length) || modeFields.mode === "readonly";
   const snap = needSnap ? gitSnapshot(cwd) : null;
+  let rules: RulesReport | undefined;
+  let pointer = "";
+  if (rulesMode !== "off") {
+    const found = discoverRules(cwd);
+    const unseen = unseenRules(found, adapter.rules);
+    pointer = rulesMode === "pointer" ? rulesPointer(unseen) : "";
+    rules = {
+      mode: rulesMode,
+      found,
+      unseen,
+      pointer_injected: Boolean(pointer),
+    };
+    const repoRoot = rulesGitRoot(cwd) ?? cwd;
+    if (hasRulesyncSource(repoRoot)) {
+      const bin = resolveRulesync(repoRoot);
+      const config = readRulesyncConfig(repoRoot);
+      rules.rulesync = buildRulesyncReport(config, adapter.rules, bin);
+    }
+  }
+  // Prefix order: scope, then rules pointer, then the user prompt (spec 3.5).
+  if (pointer) prompt = `${pointer}${prompt}`;
   if (scopeFields.scope?.length) {
     if (!snap?.head) throw new Error("With --scope, cwd must be a git repository (HEAD baseline required).");
     scope_baseline = snapshotToBaseline(snap);
@@ -108,6 +145,7 @@ export async function start(input: StartInput): Promise<StartResult> {
     heartbeat_at: null, last_event_at: null,
     ...scopeFields,
     scope_baseline,
+    rules,
   };
   writeMeta(meta);
   writeTurn(meta.task_id, { turn: 1, author: "host", prompt, files: input.files, status: "running" });

@@ -283,6 +283,7 @@ baton start --target <codex|claude|cursor|agy> [--prompt <text> | stdin] [--file
             [--model <id>] [--idle-timeout <秒>] [--max-duration <秒>] [--cwd <dir>]
             [--scope <glob> ...] [--scope-on-violation warn|fail]
             [--mode readonly|write] [--allow-weak]
+            [--rules check|pointer|off]
 baton status <id>
 baton wait <id>... [--for <秒> | --until-done]  # 默认 --for 50；--until-done 阻塞到任一任务离开 running
 baton tail <id> [-f] [--raw]          # 人读格式的事件；-f 跟到任务停下；--raw 输出 events.jsonl 原行
@@ -300,8 +301,20 @@ baton mcp                             # 启动 MCP 服务（stdio）
 - `--model <id>`（目前仅 Cursor）：按任务指定模型，写入 meta，`reply` 延续。Cursor 规则：仅 model → `--model <id>`；model+effort → `--model '<id>[effort=...]'`；若 id 已含档位（如 `grok-4.7-xhigh`）或已有括号再带 `--effort` 则报错。不会出现两个 `--model`。`status` 含 `model`（请求）与 `model_argv`（传给 CLI 的参数）；这不是 provider 确认的“实际模型”。
 - `--idle-timeout` 默认 600：连续这么久没有任何输出字节才停掉。`--max-duration` 默认不限。两者都按单轮计时，`reply` 开新一轮时重新计时。
 - **`--mode readonly|write`（默认 `write`）：** 映射到各家只读参数（Codex `--sandbox read-only`、Claude `--permission-mode plan`、Cursor `--mode ask`、Agy `--mode plan`）。写入 meta，`reply` 延续。每轮结束后若有净变更，会把干净的 `success` 升为 `readonly_violation`。无映射的目标默认拒绝，需显式 `--allow-weak`。**兼容性：** 新增终态 `readonly_violation`。
-- **Worktree 与任务解耦：** 先 `baton worktree add`，再 `baton start --cwd <path>`。默认目录 `.worktrees/`（会写入 `.gitignore`）；可选 `.baton.json` 配置 `copy` / `symlink` / `post_create`。软链 `node_modules` 在分支依赖不一致时可能互相污染，必要时改用 `post_create` 独立安装。
+- **Worktree 与任务解耦：** 先 `baton worktree add`，再 `baton start --cwd <path>`。默认目录 `.worktrees/`（会写入 `.gitignore`）；可选 `.baton.json` 配置 `copy` / `symlink` / `post_create` / `rulesync`（布尔，默认开启）。软链 `node_modules` 在分支依赖不一致时可能互相污染，必要时改用 `post_create` 独立安装。新 worktree 里若有 `.rulesync/` 且能找到 `rulesync`，`worktree add` 会在其中运行 `rulesync generate`，并在结果里报告 `rules.missing` / `rules.dirtied`。建议先在主仓库生成并提交 rulesync 输出，避免 worktree 一开始就脏。
 - **`--scope`（可选）：** 可重复，glob 相对任务 `cwd`。每轮结束后对照**任务起点净变更**（自 baseline HEAD 起的提交 ∪ 工作区 digest 差分）。`--scope-on-violation warn`（默认）保留原终态并写 `scope_violations` + `warning`；`fail` 会把干净的 `success` 升为 `scope_violation`。这是**防失误**，不是沙箱：忽略文件、仓外写入、共享 cwd 并发改动是已知盲区——建议与 worktree 叠用。带 `--scope` 时 cwd 必须是 git 仓库。**兼容性：** 新增终态 `scope_violation` 及可选 `scope_*` 字段。
+- **`--rules check|pointer|off`（默认 `check`）：** 从任务 `cwd` 向上扫到 git 根，发现项目规则文件，写入 `meta.rules`（`found`、`unseen`、`pointer_injected`）。`check` 不改执行者 prompt；`pointer` 在首轮 prompt 前插入英文“请先读这些文件”提示（仅针对目标原生不会加载的条目；`reply` 不再注入）；`off` 完全关闭。仓库有 `.rulesync/` 时还会写 `rules.rulesync`：读取 `rulesync.jsonc`（及 `rulesync.local.jsonc`），报告目标是否在配置内以及 `mcp`/`hooks` 加载关卡，再由 supervisor 运行整个项目的 `rulesync generate --check`（不传 `--targets`/`--features`），结果为 `in_sync` / `stale` / `error` / `skipped`。任何失败都不阻断任务。Baton 不会用 `npx` 安装 rulesync，也不会在用户主工作目录里写入 rulesync 生成物。
+
+### 各执行者原生规则文件与加载关卡（2026-11-21/22 核实）
+
+| 目标 | 原生项目规则 | rulesync id | Baton 会提示的加载关卡 |
+|---|---|---|---|
+| `claude` | `CLAUDE.md`、`.claude/CLAUDE.md`、`CLAUDE.local.md`（仅当这三者都不存在时才读 `AGENTS.md`） | `claudecode` | Baton 走 `-p`，项目 `.mcp.json` 按文档会直接加载，不写 mcp 关卡 |
+| `codex` | `AGENTS.md`、`AGENTS.override.md` | `codexcli` | 项目 `.codex/config.toml`（MCP）需要项目被信任；hooks 需要事先信任。baton worktree 是独立路径，不继承主仓库的 `trust_level` |
+| `cursor` | `AGENTS.md`、`CLAUDE.md`、`.cursor/rules`、`.cursorrules` | `cursor` | 项目 MCP 需要 `--approve-mcps`（Baton 只传了 `--trust`） |
+| `agy` | `AGENTS.md`、`GEMINI.md`、`.agents/*`、`.agent/rules` | `antigravity-cli` | 未调研 |
+
+**已知限制：** Baton 不读 `~/.codex/config.toml`，因此检测不到 Codex 的 `project_doc_fallback_filenames` 与显式 `trust_level`（即便你配置了回退读 `CLAUDE.md`，仍可能报告为 `unseen`）。可用 `codex debug prompt-input` 自查实际加载的指令。用户级全局规则（如 `~/.claude/CLAUDE.md`）不在本版范围。
 
 ### 状态与存活判定
 

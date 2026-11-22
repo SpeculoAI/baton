@@ -107,7 +107,7 @@ If no target is named, the task goes to `codex`, or to `claude` when you are alr
 
 | Command | What it does |
 |---|---|
-| `baton start` | Starts a job. Options include `--effort`, `--mode readonly`, `--scope <glob>`, and `--cwd <worktree>`. |
+| `baton start` | Starts a job. Options include `--effort`, `--mode readonly`, `--scope <glob>`, `--rules check\|pointer\|off`, and `--cwd <worktree>`. |
 | `baton wait` / `status` | Waits for the job to stop, or takes one look at it. |
 | `baton tail [-f]` | Shows the live event stream as readable text. |
 | `baton reply` | Continues the same conversation when the worker asks a question or you want a follow-up. |
@@ -144,6 +144,9 @@ The job keeps running. Open a new session and run `baton ls` or `baton status <i
 
 **Is `--scope` a security boundary?**
 No. It catches mistakes in files git can see. For real isolation, put the job in a `baton worktree`.
+
+**Will the worker follow my project rules / environment?**
+`baton status` reports `rules.unseen` (rule files the target does not load natively) and, if you use [rulesync](https://github.com/dyoshikawa/rulesync), whether generated configs are in sync. Pass `--rules pointer` to tell the worker to read unread rule files first. Prefer a shared `AGENTS.md` (and rulesync for MCP/skills/hooks across CLIs).
 
 **Can Gemini CLI be a worker?**
 Not yet. Gemini CLI works as a host.

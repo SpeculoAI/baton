@@ -5,6 +5,36 @@ export type Author = "host" | "human";
 export type ScopeOnViolation = "warn" | "fail";
 export type TaskMode = "readonly" | "write";
 export type Enforcement = "os-sandbox" | "agent-enforced" | "none";
+export type EnvFeature = "mcp" | "hooks";
+export type RulesMode = "check" | "pointer" | "off";
+export type RuleSupport = {
+  /** Rule paths relative to a directory level, e.g. "AGENTS.md", ".cursor/rules". */
+  files: string[];
+  /** Files read only when none of `unless` exists at the same level (Claude's AGENTS.md rule). */
+  conditional?: { file: string; unless: string[] }[];
+  /** rulesync target id; omit when rulesync has no matching target. */
+  rulesyncTarget?: string;
+  /** Why generated config for a feature may not load in Baton's non-interactive run. */
+  gates?: Partial<Record<EnvFeature, string>>;
+};
+export type RulesyncReport = {
+  /** pending: start() wrote config info; the supervisor has not run --check yet. */
+  status: "pending" | "in_sync" | "stale" | "error" | "skipped";
+  detail?: string;
+  /** null when rulesync.jsonc could not be parsed. */
+  target_configured: boolean | null;
+  /** Features rulesync.jsonc configures for this target; empty when unknown or not configured. */
+  features: string[];
+  /** Load-gate notes for configured features this target may not load (from Adapter.rules.gates). */
+  gates: string[];
+};
+export type RulesReport = {
+  mode: "check" | "pointer";
+  found: string[];
+  unseen: string[];
+  pointer_injected: boolean;
+  rulesync?: RulesyncReport;
+};
 export type ScopeBaseline = {
   head: string;
   /** Porcelain lines: path → full porcelain line */
@@ -45,6 +75,7 @@ export type TaskMeta = {
   scope_on_violation?: ScopeOnViolation;
   scope_violations?: string[];
   scope_baseline?: ScopeBaseline;
+  rules?: RulesReport;
 };
 export type EventData =
   | { type: "turn_started"; author: Author; prompt_preview: string }
@@ -69,6 +100,8 @@ export type Adapter = {
   resolve(env: NodeJS.ProcessEnv): string | null;
   /** Readonly enforcement strength; omit or return null when unsupported. */
   readonlyEnforcement?: Enforcement;
+  /** Native rule-file support and optional rulesync / load-gate metadata. */
+  rules?: RuleSupport;
   build(input: {
     bin: string;
     cwd: string;
