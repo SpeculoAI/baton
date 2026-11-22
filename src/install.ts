@@ -88,18 +88,13 @@ export const HOSTS: Host[] = [
   },
 ];
 
-export function parseChoice(line: string, count: number): number[] {
-  const text = line.trim().toLowerCase();
-  if (!text) return Array.from({ length: count }, (_, index) => index);
-  if (text === "q") return [];
-  const picked: number[] = [];
-  for (const part of text.split(/[,\s]+/).filter(Boolean)) {
-    if (!/^\d+$/.test(part)) throw new Error(`Unrecognized selection: ${part}`);
-    const number = Number(part);
-    if (number < 1 || number > count) throw new Error(`Selection out of range: ${part}`);
-    if (!picked.includes(number - 1)) picked.push(number - 1);
-  }
-  return picked;
+export type DetectedHost = { id: string; label: string };
+export type ProgressEvent =
+  | { type: "global"; phase: "start" | "done"; ok?: boolean; error?: string }
+  | { type: "host"; phase: "start" | "done"; id: string; ok?: boolean; note?: string; error?: string };
+
+export function detectedHosts(env: NodeJS.ProcessEnv = process.env): DetectedHost[] {
+  return HOSTS.filter((host) => which(host.bins, env)).map((host) => ({ id: host.id, label: host.label }));
 }
 
 export function commandsFor(id: string, action: Action, opts: { force?: boolean } = {}): Step[] {
@@ -196,20 +191,20 @@ export async function runInstall(input: {
   skipGlobal?: boolean;
   env?: NodeJS.ProcessEnv;
   home?: string;
-  tty?: boolean;
-  readLine?: () => Promise<string>;
+  /** When set (typically TTY install without `--only`), ask which detected hosts to use. Empty/null cancels. */
+  selectHosts?: (detected: DetectedHost[]) => Promise<string[] | null>;
+  onProgress?: (event: ProgressEvent) => void;
   spawn?: SpawnFn;
 }): Promise<{ exitCode: number; result: { action: Action; dry_run?: boolean; global?: { ok?: boolean; command?: string[]; error?: string }; hosts: Array<{ id: string; ok?: boolean; bin?: string; commands?: string[][]; note?: string; error?: string }>; missing?: string[] } }> {
   const env = input.env ?? process.env;
   const home = input.home ?? batonHome();
   let only = input.only;
-  if (input.action === "install" && !only?.length && input.tty) {
-    const detected = HOSTS.filter((host) => which(host.bins, env));
+  if (input.action === "install" && !only?.length && input.selectHosts) {
+    const detected = detectedHosts(env);
     if (!detected.length) return { exitCode: 0, result: { action: input.action, hosts: [] } };
-    process.stderr.write(`${detected.map((host, index) => `[${index + 1}] ${host.id}  ${host.label}`).join("\n")}\nPress Enter to select all, q to quit: `);
-    const picked = parseChoice(await input.readLine!(), detected.length);
-    if (!picked.length) return { exitCode: 0, result: { action: input.action, hosts: [] } };
-    only = picked.map((index) => detected[index]!.id);
+    const picked = await input.selectHosts(detected);
+    if (!picked?.length) return { exitCode: 0, result: { action: input.action, hosts: [] } };
+    only = picked;
   }
   const planned = planInstall({ action: input.action, only, force: input.force, skipGlobal: input.skipGlobal, env, recorded: readInstalled(home) });
   if (input.dryRun) {
@@ -219,13 +214,17 @@ export async function runInstall(input: {
     };
   }
   const spawn = input.spawn ?? ((command: string, args: string[]) => defaultSpawn(command, args, env));
+  const report = input.onProgress;
   let global: { ok: boolean; error?: string } | undefined;
   if (planned.global) {
+    report?.({ type: "global", phase: "start" });
     const ran = await spawn(planned.global.command[0]!, planned.global.command.slice(1));
     global = ran.status === 0 ? { ok: true } : { ok: false, error: failText(ran) };
+    report?.({ type: "global", phase: "done", ok: global.ok, ...(global.error ? { error: global.error } : {}) });
   }
   const hosts: HostResult[] = [];
   for (const host of planned.hosts) {
+    report?.({ type: "host", phase: "start", id: host.id });
     let error: string | undefined;
     let skipped = false;
     for (const step of commandsFor(host.id, input.action, { force: input.force })) {
@@ -236,7 +235,9 @@ export async function runInstall(input: {
       break;
     }
     const note = skipped ? "already installed, skipped" : host.note;
-    hosts.push({ id: host.id, ok: !error, ...(note ? { note } : {}), ...(error ? { error } : {}) });
+    const row: HostResult = { id: host.id, ok: !error, ...(note ? { note } : {}), ...(error ? { error } : {}) };
+    hosts.push(row);
+    report?.({ type: "host", phase: "done", id: host.id, ok: row.ok, ...(note ? { note } : {}), ...(error ? { error } : {}) });
   }
   if (input.action !== "update") {
     const recorded = new Set(readInstalled(home));

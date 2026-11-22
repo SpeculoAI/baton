@@ -100,22 +100,69 @@ async function main(): Promise<void> {
     if (positionals.length) throw new Error(`${command} takes no positional arguments.`);
     if (command !== "install" && values.force) throw new Error(`${command} does not accept --force.`);
     if (command === "uninstall" && values["skip-global"]) throw new Error("uninstall does not accept --skip-global.");
-    const interactive = command === "install" && !values.only?.length && Boolean(process.stdin.isTTY);
-    const readline = interactive ? await import("node:readline/promises") : null;
-    const rl = readline?.createInterface({ input: process.stdin, output: process.stderr });
-    try {
-      const ran = await runInstall({
-        action: command as Action,
-        only: values.only,
-        force: values.force,
-        skipGlobal: values["skip-global"],
-        dryRun: Boolean(values["dry-run"]),
-        tty: interactive,
-        readLine: rl ? () => rl.question("") : undefined,
-      });
-      result = ran.result;
-      if (ran.exitCode) process.exitCode = ran.exitCode;
-    } finally { rl?.close(); }
+    const action = command as Action;
+    const pretty = Boolean(process.stdin.isTTY);
+    const interactive = action === "install" && !values.only?.length && pretty;
+    const dryRun = Boolean(values["dry-run"]);
+    const ui = pretty ? await import("./install-ui.ts") : null;
+    if (ui) ui.beginAction(action);
+    let cancelled = false;
+    const spin = ui && !dryRun ? ui.createSpinner() : null;
+    let spinning = false;
+    const ran = await runInstall({
+      action,
+      only: values.only,
+      force: values.force,
+      skipGlobal: values["skip-global"],
+      dryRun,
+      selectHosts: interactive && ui
+        ? async (detected) => {
+            const picked = await ui.multiselectHosts(detected);
+            if (!picked) {
+              cancelled = true;
+              ui.cancelAction("Install cancelled.");
+              return null;
+            }
+            return picked;
+          }
+        : undefined,
+      onProgress: spin && ui
+        ? (event) => {
+            if (event.phase === "start") {
+              const msg = event.type === "global" ? "Installing global baton…" : `${action} ${event.id}…`;
+              if (!spinning) { spin.start(msg); spinning = true; }
+              else spin.message(msg);
+              return;
+            }
+            if (event.type === "global") {
+              if (event.ok) ui.logSuccess("global baton");
+              else ui.logError(`global: ${event.error ?? "failed"}`);
+              return;
+            }
+            if (event.ok) ui.logSuccess(`${event.id}${event.note ? ` — ${event.note}` : ""}`);
+            else ui.logError(`${event.id}: ${event.error ?? "failed"}`);
+          }
+        : undefined,
+    });
+    if (spinning) spin!.stop(ran.exitCode ? "Finished with errors" : "Done");
+    if (ui && !cancelled) {
+      if (dryRun) {
+        const lines: string[] = [];
+        if (ran.result.global && "command" in ran.result.global && ran.result.global.command) {
+          lines.push(`global: ${ran.result.global.command.join(" ")}`);
+        }
+        for (const host of ran.result.hosts) {
+          for (const args of host.commands ?? []) lines.push(`${host.id}: ${args.join(" ")}`);
+        }
+        if (ran.result.missing?.length) lines.push(`missing: ${ran.result.missing.join(", ")}`);
+        ui.notePlan("Dry run", lines);
+      } else if (ran.result.missing?.length) {
+        ui.logInfo(`missing: ${ran.result.missing.join(", ")}`);
+      }
+      ui.endAction(ui.summarizeResult(ran.result));
+    }
+    result = ran.result;
+    if (ran.exitCode) process.exitCode = ran.exitCode;
   } else throw new Error("Usage: baton version | agents | start | status | cancel | wait | tail | reply | ls | prune | worktree | install | update | uninstall | mcp");
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }

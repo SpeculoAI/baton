@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { exec } from "./helpers.ts";
-import { commandsFor, parseChoice, planInstall, readInstalled, REPO, runInstall, writeInstalled } from "../src/install.ts";
+import { commandsFor, planInstall, readInstalled, REPO, runInstall, writeInstalled } from "../src/install.ts";
 
 const cli = path.resolve(import.meta.dirname, "../src/cli.ts");
 
@@ -17,17 +17,6 @@ function bins(t: test.TestContext, names: string[]) {
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   return { dir, log };
 }
-
-test("parseChoice: Enter selects all, q quits, numbers allow multi-select, out-of-range errors", () => {
-  assert.deepEqual(parseChoice("", 3), [0, 1, 2]);
-  assert.deepEqual(parseChoice("  ", 2), [0, 1]);
-  assert.deepEqual(parseChoice("q", 3), []);
-  assert.deepEqual(parseChoice("1,3", 3), [0, 2]);
-  assert.deepEqual(parseChoice("2,2", 3), [1]);
-  assert.throws(() => parseChoice("0", 2), /out of range/i);
-  assert.throws(() => parseChoice("4", 2), /out of range/i);
-  assert.throws(() => parseChoice("a", 2), /unrecognized|unrecognised|invalid/i);
-});
 
 const argsOf = (id: string, action: "install" | "update" | "uninstall", opts?: { force?: boolean }) =>
   commandsFor(id, action, opts).map((step) => step.args);
@@ -174,15 +163,38 @@ test("an already-installed target counts as success and is recorded", async (t) 
   assert.deepEqual(readInstalled(home), ["gemini"]);
 });
 
-test("quitting with q does not run the install", async (t) => {
+test("cancelling host selection does not run the install", async (t) => {
   const { dir } = bins(t, ["claude"]);
   const ran = await runInstall({
     action: "install",
-    tty: true,
-    readLine: async () => "q",
+    selectHosts: async () => null,
     env: { PATH: dir },
     spawn() { throw new Error("should not run"); },
   });
   assert.equal(ran.exitCode, 0);
   assert.deepEqual(ran.result.hosts, []);
+});
+
+test("selectHosts picks a subset; onProgress reports global and host phases", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "baton-home-"));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const { dir } = bins(t, ["claude", "gemini"]);
+  const events: string[] = [];
+  const ran = await runInstall({
+    action: "install",
+    skipGlobal: true,
+    home,
+    env: { PATH: dir },
+    selectHosts: async (detected) => {
+      assert.deepEqual(detected.map((host) => host.id).sort(), ["claude", "gemini"]);
+      return ["gemini"];
+    },
+    onProgress: (event) => {
+      events.push(`${event.type}:${event.phase}:${"id" in event ? event.id : ""}${event.phase === "done" ? `:${event.ok}` : ""}`);
+    },
+    spawn: () => ({ status: 0 }),
+  });
+  assert.equal(ran.exitCode, 0);
+  assert.deepEqual(ran.result.hosts.map((host) => host.id), ["gemini"]);
+  assert.deepEqual(events, ["host:start:gemini", "host:done:gemini:true"]);
 });
