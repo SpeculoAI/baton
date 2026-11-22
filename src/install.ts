@@ -165,15 +165,17 @@ type SpawnResult = { status: number | null; stdout?: string; stderr?: string };
 type SpawnFn = (command: string, args: string[]) => SpawnResult | Promise<SpawnResult>;
 type HostResult = { id: string; ok: boolean; note?: string; error?: string };
 
-function defaultSpawn(command: string, args: string[], env: NodeJS.ProcessEnv): Promise<SpawnResult> {
+function defaultSpawn(command: string, args: string[], env: NodeJS.ProcessEnv, quiet = false): Promise<SpawnResult> {
   return new Promise((resolve) => {
     const child = spawn(command, args, { env, stdio: ["inherit", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     let settled = false;
     const finish = (result: SpawnResult) => { if (!settled) { settled = true; resolve(result); } };
-    child.stdout?.on("data", (chunk: Buffer) => { stdout += chunk; process.stderr.write(chunk); });
-    child.stderr?.on("data", (chunk: Buffer) => { stderr += chunk; process.stderr.write(chunk); });
+    // Soft migrate steps and TTY spinners must not live-tee: expected "Failed to uninstall old id"
+    // noise looks like a real install failure, and it desyncs clack cursor redraws.
+    child.stdout?.on("data", (chunk: Buffer) => { stdout += chunk; if (!quiet) process.stderr.write(chunk); });
+    child.stderr?.on("data", (chunk: Buffer) => { stderr += chunk; if (!quiet) process.stderr.write(chunk); });
     child.on("error", (error) => finish({ status: 1, stderr: error.message }));
     child.on("close", (status) => finish({ status, stdout, stderr }));
   });
@@ -195,6 +197,8 @@ export async function runInstall(input: {
   selectHosts?: (detected: DetectedHost[]) => Promise<string[] | null>;
   onProgress?: (event: ProgressEvent) => void;
   spawn?: SpawnFn;
+  /** Suppress live child logs (TTY spinner). Soft migrate steps are always quiet. */
+  quiet?: boolean;
 }): Promise<{ exitCode: number; result: { action: Action; dry_run?: boolean; global?: { ok?: boolean; command?: string[]; error?: string }; hosts: Array<{ id: string; ok?: boolean; bin?: string; commands?: string[][]; note?: string; error?: string }>; missing?: string[] } }> {
   const env = input.env ?? process.env;
   const home = input.home ?? batonHome();
@@ -213,12 +217,13 @@ export async function runInstall(input: {
       result: { action: input.action, dry_run: true, ...(planned.global ? { global: planned.global } : {}), hosts: planned.hosts, ...(planned.missing.length ? { missing: planned.missing } : {}) },
     };
   }
-  const spawn = input.spawn ?? ((command: string, args: string[]) => defaultSpawn(command, args, env));
+  const run = (command: string, args: string[], quiet: boolean) =>
+    input.spawn ? input.spawn(command, args) : defaultSpawn(command, args, env, quiet);
   const report = input.onProgress;
   let global: { ok: boolean; error?: string } | undefined;
   if (planned.global) {
     report?.({ type: "global", phase: "start" });
-    const ran = await spawn(planned.global.command[0]!, planned.global.command.slice(1));
+    const ran = await run(planned.global.command[0]!, planned.global.command.slice(1), Boolean(input.quiet));
     global = ran.status === 0 ? { ok: true } : { ok: false, error: failText(ran) };
     report?.({ type: "global", phase: "done", ok: global.ok, ...(global.error ? { error: global.error } : {}) });
   }
@@ -228,7 +233,8 @@ export async function runInstall(input: {
     let error: string | undefined;
     let skipped = false;
     for (const step of commandsFor(host.id, input.action, { force: input.force })) {
-      const ran = await spawn(host.bin, step.args);
+      // Soft steps (old-id migrate) often print "Failed to uninstall…" — hide that when overall install is fine.
+      const ran = await run(host.bin, step.args, Boolean(input.quiet) || Boolean(step.soft));
       if (ran.status === 0 || step.soft) continue;
       if (/already installed/i.test(`${ran.stdout || ""}\n${ran.stderr || ""}`)) { skipped = true; continue; }
       error = failText(ran);

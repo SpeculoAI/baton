@@ -119,6 +119,7 @@ async function main(): Promise<void> {
       force: values.force,
       skipGlobal: values["skip-global"],
       dryRun,
+      quiet: Boolean(spin),
       selectHosts: interactive && ui
         ? async (detected) => {
             const picked = await ui.multiselectHosts(detected);
@@ -138,13 +139,20 @@ async function main(): Promise<void> {
               else spin.message(msg);
               return;
             }
-            if (event.type === "global") {
-              if (event.ok) ui.logSuccess("global baton");
-              else ui.logError(`global: ${event.error ?? "failed"}`);
-              return;
+            const label = event.type === "global"
+              ? (event.ok ? "global baton" : `global: ${event.error ?? "failed"}`)
+              : (event.ok
+                ? `${event.id}${event.note ? ` — ${event.note}` : ""}`
+                : `${event.id}: ${event.error ?? "failed"}`);
+            if (spinning) {
+              if (event.ok) spin.stop(label);
+              else spin.error(label);
+              spinning = false;
+            } else if (event.ok) {
+              ui.logSuccess(label);
+            } else {
+              ui.logError(label);
             }
-            if (event.ok) ui.logSuccess(`${event.id}${event.note ? ` — ${event.note}` : ""}`);
-            else ui.logError(`${event.id}: ${event.error ?? "failed"}`);
           }
         : undefined,
     });
@@ -167,6 +175,9 @@ async function main(): Promise<void> {
     }
     result = ran.result;
     if (ran.exitCode) process.exitCode = ran.exitCode;
+    // TTY already showed the human summary; dumping JSON on top is noise. Scripts (non-TTY) still get JSON.
+    if (!pretty) process.stdout.write(`${JSON.stringify(result)}\n`);
+    return;
   } else throw new Error("Usage: baton version | agents | start | status | cancel | wait | tail | reply | ls | prune | worktree | install | update | uninstall | mcp");
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }
