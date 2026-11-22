@@ -1,10 +1,20 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { sandbox, cli } from "./helpers.ts";
+
+function gitInit(cwd: string) {
+  execFileSync("git", ["init"], { cwd });
+  execFileSync("git", ["config", "user.email", "t@example.com"], { cwd });
+  execFileSync("git", ["config", "user.name", "t"], { cwd });
+  fs.writeFileSync(path.join(cwd, "keep.txt"), "keep\n");
+  execFileSync("git", ["add", "keep.txt"], { cwd });
+  execFileSync("git", ["commit", "-m", "init"], { cwd });
+}
 
 async function connect(env: NodeJS.ProcessEnv): Promise<Client> {
   const client = new Client({ name: "test", version: "0" });
@@ -65,4 +75,31 @@ test("MCP delegate_task accepts rules=check and surfaces meta.rules", async (t) 
   const view = await call(client, "task_status", { task_id: started.task_id });
   assert.equal(view.rules?.mode, "check");
   assert.deepEqual(view.rules?.unseen, ["CLAUDE.md"]);
+});
+
+test("MCP delegate_task: dirty_worktree / allow_dirty / isolate", async (t) => {
+  const s = sandbox(t);
+  gitInit(s.cwd);
+  fs.writeFileSync(path.join(s.cwd, "keep.txt"), "dirty\n");
+  const client = await connect(s.env);
+  t.after(() => client.close());
+
+  const blocked = await call(client, "delegate_task", { target_agent: "codex", prompt: "hi", cwd: s.cwd });
+  assert.equal(blocked.status, "dirty_worktree");
+  assert.ok(blocked.dirty_paths.includes("keep.txt"));
+
+  const allowed = await call(client, "delegate_task", {
+    target_agent: "codex", prompt: "hi", cwd: s.cwd, allow_dirty: true,
+  });
+  assert.equal(allowed.status, "running");
+  assert.equal(allowed.allow_dirty, true);
+  await call(client, "task_wait", { task_ids: [allowed.task_id], wait_seconds: 10 });
+
+  const isolated = await call(client, "delegate_task", {
+    target_agent: "codex", prompt: "hi", cwd: s.cwd, isolate: true,
+  });
+  assert.equal(isolated.status, "running");
+  assert.ok(isolated.worktree?.path);
+  assert.match(isolated.worktree.branch, /^baton\/task-/);
+  await call(client, "task_wait", { task_ids: [isolated.task_id], wait_seconds: 10 });
 });

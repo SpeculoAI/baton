@@ -30,6 +30,7 @@ async function main(): Promise<void> {
       "idle-timeout": { type: "string" }, "max-duration": { type: "string" },
       scope: { type: "string", multiple: true }, "scope-on-violation": { type: "string" },
       mode: { type: "string" }, "allow-weak": { type: "boolean" },
+      isolate: { type: "boolean" }, "allow-dirty": { type: "boolean" },
       rules: { type: "string" },
     } });
     if (positionals.length) throw new Error("start takes no positional arguments.");
@@ -38,6 +39,7 @@ async function main(): Promise<void> {
       idleTimeout: values["idle-timeout"] === undefined ? undefined : Number(values["idle-timeout"]), maxDuration: values["max-duration"] === undefined ? undefined : Number(values["max-duration"]),
       scope: values.scope, scopeOnViolation: values["scope-on-violation"] as ScopeOnViolation | undefined,
       mode: values.mode as TaskMode | undefined, allowWeak: values["allow-weak"],
+      isolate: values.isolate, allowDirty: values["allow-dirty"],
       rules: values.rules as import("./types.ts").RulesMode | undefined,
     });
     if ((result as { status: string }).status !== "running") process.exitCode = 1;

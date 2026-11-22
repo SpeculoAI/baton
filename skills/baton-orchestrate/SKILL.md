@@ -91,17 +91,16 @@ Everything else: notify and keep going.
 
 ## Workspace isolation
 
-Prefer an isolated git worktree so the main session can keep editing elsewhere. **Opening a tree is separate from running a task:**
+For write jobs in a git repo, pass `--isolate` on each `baton start` so the job runs in a fresh worktree from `HEAD`. `status` / `wait` report `worktree.path` and `worktree.branch`. Changes stay uncommitted in that worktree; reviewing, committing, and merging are up to the user. Clean up with `baton worktree rm` when done. If `worktree.gitignore_updated` is true, remind them to commit `.gitignore`.
 
 ```
-baton worktree add [--name <id>] [--branch <name>] [--base <ref>]
-baton start --cwd <path> ...
+baton start --isolate --target <t> --prompt "..." ...
 baton worktree rm <name-or-path>   # only when clean / merged; does not cascade from task prune
 ```
 
-Prefer `baton worktree` over raw `git worktree add` (handles `.worktrees` ignore, copy/symlink/post_create from `.baton.json`). If isolation is unavailable, say so up front: the main session must not modify the shared tree until the run ends or is cancelled. Symlinking `node_modules` can cross-contaminate when branches diverge — prefer `post_create` install when unsure.
+`--isolate` uses the same `.baton.json` `copy` / `symlink` / `post_create` as `baton worktree add`. Manual `worktree add` then `start --cwd` still works; prefer `--isolate` for new jobs. In-place write on a dirty tree returns `dirty_worktree` — ask the host before `--allow-dirty`. If isolation is unavailable, say so up front: the main session must not modify the shared tree until the run ends or is cancelled. Symlinking `node_modules` can cross-contaminate when branches diverge — prefer `post_create` install when unsure.
 
-`--scope` is a **mistake fence** (post-check of net changes vs globs), not a security sandbox. Prefer stacking with worktree: shared cwd without a worktree can attribute other writers’ edits to the task.
+`--scope` is a **mistake fence** (post-check of net changes vs globs), not a security sandbox. Prefer stacking with `--isolate`: shared cwd without isolation can attribute other writers’ edits to the task.
 
 ## Review (project-owned gate + minimal default)
 
@@ -131,7 +130,7 @@ Rules:
 - Max 3 jobs running at once unless the host approves more
 - Use --effort low for mechanical subtasks; raise --idle-timeout for slow, silent models
 - For Cursor, pass --model <id> when the user names a model or the job needs a specific one; if the id already embeds a tier or brackets, do not also pass --effort
-- Prefer `baton worktree add` then `start --cwd <path>`; clean up with `worktree rm` when done
+- Prefer `start --isolate` per write job; clean up with `worktree rm` when done; on `dirty_worktree` ask before `--allow-dirty`
 - Path-disjoint ready jobs may run in parallel; overlapping paths stay serialized; pass declared paths as `--scope`
 - Review-only jobs: `--mode readonly`
 - Prefer background `wait <ids...> --until-done` when the host wakes on shell exit; else `wait <ids...> --for 50` repeating; never wait one job after another

@@ -136,6 +136,10 @@ export async function supervise(id: string): Promise<void> {
       mode: meta.mode ?? null,
     });
     meta.warning = spec.warning;
+    if (meta.mode !== "readonly" && !gitRepoRoot(meta.cwd)) {
+      const note = "cwd is not a git repository; changes cannot be tracked or reverted.";
+      meta.warning = meta.warning ? `${meta.warning}; ${note}` : note;
+    }
     if (spec.modelArg !== undefined) meta.model_argv = spec.modelArg;
     else delete meta.model_argv;
     if (spec.lastMessagePath) {

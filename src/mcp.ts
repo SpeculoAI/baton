@@ -35,6 +35,8 @@ export function createServer(): McpServer {
       scope_on_violation: z.enum(["warn", "fail"]).optional().describe("Out-of-scope policy; default warn."),
       mode: z.enum(["readonly", "write"]).optional().describe("Permission mode; default write. readonly maps to each CLI's read-only flags."),
       allow_weak: z.boolean().optional().describe("Explicitly allow --mode readonly only when the target cannot enforce read-only."),
+      isolate: z.boolean().optional().describe("Create a git worktree and run the write job there (default false)."),
+      allow_dirty: z.boolean().optional().describe("Allow in-place write on a dirty working tree (default false)."),
       rules: z.enum(["check", "pointer", "off"]).optional().describe("Project rules discovery; default check. pointer injects unread rule paths into the first-turn prompt."),
     },
   }, (args) => respond(() => start({
@@ -43,6 +45,7 @@ export function createServer(): McpServer {
     idleTimeout: args.idle_timeout_seconds, maxDuration: args.max_duration_seconds,
     scope: args.scope, scopeOnViolation: args.scope_on_violation as ScopeOnViolation | undefined,
     mode: args.mode as TaskMode | undefined, allowWeak: args.allow_weak,
+    isolate: args.isolate, allowDirty: args.allow_dirty,
     rules: args.rules as RulesMode | undefined,
   })));
   server.registerTool("task_status", {

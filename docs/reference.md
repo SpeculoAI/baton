@@ -282,7 +282,7 @@ baton agents
 baton start --target <codex|claude|cursor|agy> [--prompt <text> | stdin] [--file <p>...] [--effort low|medium|high|ultra]
             [--model <id>] [--idle-timeout <s>] [--max-duration <s>] [--cwd <dir>]
             [--scope <glob> ...] [--scope-on-violation warn|fail]
-            [--mode readonly|write] [--allow-weak]
+            [--mode readonly|write] [--allow-weak] [--isolate] [--allow-dirty]
             [--rules check|pointer|off]
 baton status <id>
 baton wait <id>... [--for <s> | --until-done]  # default --for 50; --until-done blocks until a job leaves running
@@ -301,8 +301,8 @@ baton mcp                            # start the MCP server (stdio)
 - `--model <id>` (Cursor only for now): sets the requested model, stored on the task and kept across `reply`. Cursor rules: model only → `--model <id>`; model+effort → `--model '<id>[effort=...]'`; if the id already embeds a tier (e.g. `grok-4.7-xhigh`) or brackets, combining `--effort` errors. Never emits two `--model` flags. `status` shows `model` (requested) and `model_argv` (passed to the CLI). That is not a provider-confirmed “actual model”.
 - `--idle-timeout` defaults to 600: the job stops only after that many seconds without a single output byte. `--max-duration` is unlimited by default. Both apply per turn and restart on `reply`.
 - **`--mode readonly|write` (default `write`):** maps to each CLI's read-only path (Codex `--sandbox read-only`, Claude `--permission-mode plan`, Cursor `--mode ask`, Agy `--mode plan`). Stored on the task and kept across `reply`. After each turn, dirty net changes upgrade a clean `success` to `readonly_violation`. Targets with no mapping fail unless `--allow-weak` is set. **Breaking note:** new terminal status `readonly_violation`.
-- **Worktrees are separate from tasks:** `baton worktree add`, then `baton start --cwd <path>`. Default root is `.worktrees/` (appended to `.gitignore` if needed). Optional `.baton.json` configures `copy` / `symlink` / `post_create` / `rulesync` (boolean, default on). Symlinking `node_modules` can cross-contaminate when branches diverge — prefer `post_create` installs when unsure. When the new worktree has `.rulesync/` and `rulesync` is on PATH (or in `node_modules/.bin`), `worktree add` runs `rulesync generate` there and reports `rules.missing` / `rules.dirtied` in the JSON result. Prefer generating and committing rulesync outputs in the main repo first so worktrees stay clean.
-- **`--scope` (optional):** repeatable globs relative to the task `cwd`. After each turn, Baton checks **task-baseline net changes** (commits since start HEAD ∪ working-tree digest diff) against those globs. `--scope-on-violation warn` (default) keeps the transport status and sets `scope_violations` + `warning`; `fail` upgrades a clean `success` to `scope_violation`. This is a **mistake fence**, not a sandbox: ignored paths, non-git writes, and concurrent edits on a shared cwd are blind spots — prefer combining with worktree. Requires a git repo when `--scope` is set. **Breaking note for clients:** new terminal status `scope_violation` (and optional `scope_*` meta fields).
+- **`--isolate` / `--allow-dirty` (write only):** `--isolate` creates a worktree named `task-<id8>` (branch `baton/task-<id8>`) from `HEAD`, runs the job there, and records `worktree.path` / `worktree.branch` / `worktree.source_cwd` on the task. `reply` continues in that tree; `ls` from the source directory still lists it. Changes stay uncommitted — Baton does not commit, merge, or open a PR. In-place write on a dirty tree (tracked or untracked, non-ignored) returns `dirty_worktree` with `dirty_paths` unless you pass `--allow-dirty`. Cannot combine with each other or with `--mode readonly`. Manual flow still works: `baton worktree add`, then `baton start --cwd <path>`. Default root is `.worktrees/` (appended to `.gitignore` if needed; see `worktree.gitignore_updated`). Optional `.baton.json` configures `copy` / `symlink` / `post_create` / `rulesync` (boolean, default on). Symlinking `node_modules` can cross-contaminate when branches diverge — prefer `post_create` installs when unsure. When the new worktree has `.rulesync/` and `rulesync` is on PATH (or in `node_modules/.bin`), `worktree add` / `--isolate` runs `rulesync generate` there and reports `rules.missing` / `rules.dirtied`. Prefer generating and committing rulesync outputs in the main repo first so worktrees stay clean.
+- **`--scope` (optional):** repeatable globs relative to the task `cwd`. After each turn, Baton checks **task-baseline net changes** (commits since start HEAD ∪ working-tree digest diff) against those globs. `--scope-on-violation warn` (default) keeps the transport status and sets `scope_violations` + `warning`; `fail` upgrades a clean `success` to `scope_violation`. This is a **mistake fence**, not a sandbox: ignored paths, non-git writes, and concurrent edits on a shared cwd are blind spots — prefer combining with `--isolate`. Requires a git repo when `--scope` is set. **Breaking note for clients:** new terminal status `scope_violation` (and optional `scope_*` meta fields).
 - **`--rules check|pointer|off` (default `check`):** discovers project rule files from the task `cwd` up to the git root and records them on `meta.rules` (`found`, `unseen`, `pointer_injected`). `check` does not change the worker prompt. `pointer` prepends an English “read these files” block for entries the target does not load natively (first turn only; `reply` does not reinject). `off` skips discovery entirely. When the repo has `.rulesync/`, Baton also reports a `rules.rulesync` object: it reads `rulesync.jsonc` (+ `rulesync.local.jsonc`), notes whether the target’s rulesync id is configured and any load-gate notes for `mcp`/`hooks`, then the supervisor runs `rulesync generate --check` (whole project, no `--targets`/`--features`) and sets `status` to `in_sync` / `stale` / `error` / `skipped`. Failures never block the task. Baton never installs rulesync via `npx` and never writes rulesync outputs into the user’s main working tree.
 
 ### Native rule files and load gates (verified 2026-11-21/22)
@@ -328,6 +328,7 @@ baton mcp                            # start the MCP server (stdio)
 | `failed` / `timed_out` / `cancelled` | Terminal; cannot be replied to |
 | `not_authenticated` / `quota_exceeded` | The target CLI is not logged in / out of quota |
 | `not_installed` | Returned by `start`; the target is not on `PATH` |
+| `dirty_worktree` | Returned by `start`; in-place write refused on a dirty tree — see `dirty_paths`; use `--isolate` or `--allow-dirty` |
 
 `liveness` while `running`:
 
@@ -356,7 +357,7 @@ MCP is a thin shell over the same logic. It keeps no task state, so restarting M
 | Tool | Command |
 |---|---|
 | `list_agents` | `agents` |
-| `delegate_task` | `start` (`target_agent`, `prompt`, `files`, `reasoning_effort`, `idle_timeout_seconds`, `max_duration_seconds`, `cwd`) |
+| `delegate_task` | `start` (`target_agent`, `prompt`, `files`, `reasoning_effort`, `idle_timeout_seconds`, `max_duration_seconds`, `cwd`, `scope`, `scope_on_violation`, `mode`, `allow_weak`, `isolate`, `allow_dirty`, `rules`) |
 | `task_status` | `status` |
 | `task_wait` | `wait` (`task_ids`, `wait_seconds` default 50, max 55; sends a progress notification every 15 seconds) |
 | `task_reply` | `reply` (`task_id`, `prompt`, `as`) |
@@ -402,6 +403,15 @@ Any output line a parser does not recognize is kept as a `raw` event, never drop
 3. **Credential redaction**: text written to events and summaries is redacted before truncation; full raw logs stay under `raw/`, protected by `0600`.
 4. **Id validation**: every task id is checked to be a UUID before it is used in a path.
 5. **`--scope` is not a security boundary**: it only post-checks git-visible net changes. `.gitignore`d files, writes outside the repo, concurrent shared-cwd edits, and orphaned supervisors (check skipped) are known blind spots.
+6. **Dirty-tree guard**: in-place `--mode write` in a git repo refuses when the working tree has uncommitted changes (`dirty_worktree`). Use `--isolate` or `--allow-dirty`.
+7. **Write-mode auto-approval** (unchanged; this is what each worker is allowed to do once a write job starts):
+
+| Worker | Write-mode flags | Effect |
+|---|---|---|
+| Codex | `--approve-for-me` | Workspace-write sandbox; edits and commands run without asking |
+| Claude Code | `--permission-mode acceptEdits --permission-prompts none` | File edits are accepted automatically |
+| Cursor | `--force --trust` | Commands and edits run without confirmation |
+| Antigravity | `--mode accept-edits` | Edits are accepted automatically |
 
 ---
 
@@ -430,6 +440,12 @@ npm run typecheck
 Integration tests use fake CLIs in `test/fake-cli/` and a temporary `BATON_HOME`. They cover: a task finishing after its parent is killed, idle and total timeouts, cancel killing the whole group, orphan detection after the supervisor dies, needs_input → reply on the same session, bounded wait, tail, ls/prune, and reading tasks after an MCP restart. Adapter tests use real output samples from each CLI.
 
 ---
+
+## Upgrading from 0.4.x
+
+- **Breaking:** in-place `--mode write` on a dirty git working tree now returns `dirty_worktree` and exits non-zero. Pass `--isolate` (run in a new worktree from `HEAD`) or `--allow-dirty` to proceed. Readonly jobs are unchanged.
+- New flags / MCP params: `--isolate` / `isolate`, `--allow-dirty` / `allow_dirty`. Skills default write jobs in a git repo to `--isolate`.
+- Isolated jobs record `worktree` on the task; changes stay uncommitted — Baton does not auto-commit or merge.
 
 ## Upgrading from 0.3.x
 

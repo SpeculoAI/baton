@@ -42,16 +42,17 @@ If not named, use `codex`. If the current session is already Codex, use `claude`
 ## Start
 
 ```
-baton start --target <t> --prompt "<self-contained task>" [--file <path>...] [--effort low|medium|high|ultra] [--model <id>] [--idle-timeout <s>] [--max-duration <s>] [--cwd <dir>] [--scope <glob>...] [--scope-on-violation warn|fail] [--mode readonly|write] [--rules check|pointer|off]
+baton start --target <t> --prompt "<self-contained task>" [--file <path>...] [--effort low|medium|high|ultra] [--model <id>] [--idle-timeout <s>] [--max-duration <s>] [--cwd <dir>] [--scope <glob>...] [--scope-on-violation warn|fail] [--mode readonly|write] [--isolate] [--allow-dirty] [--rules check|pointer|off]
 ```
 
 - The prompt states done criteria and which files to look at. Long prompts can come on stdin instead of `--prompt`.
 - `--effort low` suits mechanical subtasks; it maps to each CLI's native flag.
 - `--model <id>` (Cursor only for now): per-task model; kept across `reply`. With `--effort`, Cursor gets `--model '<id>[effort=...]'`. If the id already embeds a tier (e.g. `grok-4.7-xhigh`) or brackets, do not also pass `--effort`. Non-Cursor targets error on `--model`.
 - `--idle-timeout` (default 600) stops the job only after that many seconds with no output at all. There is no total time cap unless you pass `--max-duration`. Raise `--idle-timeout` for models that think silently for a long time.
-- Optional isolation: `baton worktree add` first, then pass that path as `--cwd`. Opening a worktree is not tied to the task; clean up later with `baton worktree rm`.
-- Optional `--scope`: post-check mistake fence (not a sandbox); prefer with worktree.
-- Review / read-only jobs: pass `--mode readonly` (default `write`). Kept across `reply`. Dirty tree after a readonly turn becomes `readonly_violation`.
+- **Write jobs in a git repo: use `--isolate` by default.** It creates a worktree from `HEAD` (so the worker does **not** see uncommitted edits), runs there, and records `worktree.path` / `worktree.branch`. Tell the user which you picked and why. Skip `--isolate` only when the user asked for in-place, or the task is a small, explicitly scoped edit on a clean tree. Manual `baton worktree add` then `start --cwd` still works; prefer `--isolate` for new work.
+- In-place write on a dirty tree returns `dirty_worktree` with `dirty_paths`. Relay the paths and ask the user to choose `--isolate` or `--allow-dirty`. Do **not** pick `--allow-dirty` on your own.
+- Optional `--scope`: post-check mistake fence (not a sandbox); prefer with `--isolate`.
+- Review / read-only jobs: pass `--mode readonly` (default `write`). Kept across `reply`. Dirty tree after a readonly turn becomes `readonly_violation`. Never combine `--isolate` / `--allow-dirty` with readonly.
 - After `status` / `wait`, if `rules.unseen` is non-empty, `rules.rulesync.status` is `stale`, `target_configured` is `false`, or `gates` is non-empty, tell the user (optionally suggest `--rules pointer` or running `rulesync generate`).
 - It returns at once with `task_id` and `status: "running"`. Keep the `task_id`. Tell the user they can watch live with `baton tail -f <task_id>`.
 
@@ -79,7 +80,8 @@ While `running`, read `liveness`:
 
 ## After it stops
 
-- `success`: if `scope_violations` is non-empty (warn policy), treat as **not** done — `baton reply` to revert/move those paths; do not switch vendor. Otherwise tell the user `summary` and the turn's `git_changes`; do not redo those edits.
+- `success`: if `scope_violations` is non-empty (warn policy), treat as **not** done — `baton reply` to revert/move those paths; do not switch vendor. Otherwise tell the user `summary` and the turn's `git_changes`; do not redo those edits. If the job used `--isolate`, also tell them `worktree.path` and `worktree.branch`: changes are **uncommitted** in that worktree; reviewing, committing, and merging stay with the user; clean up with `baton worktree rm` when done. If `worktree.gitignore_updated` is true, remind them to commit `.gitignore`.
+- `dirty_worktree`: in-place write refused. Relay `dirty_paths` and ask the user to choose `--isolate` or `--allow-dirty`; do not choose `--allow-dirty` yourself.
 - `scope_violation`: out-of-scope edits under `--scope-on-violation fail`. `baton reply` asking to restore those paths; do not switch vendor.
 - `readonly_violation`: `--mode readonly` but the tree changed. `baton reply` asking to restore; do not switch vendor.
 - `needs_input`: the worker asked `decision.question` with `decision.options`. Ask the user unchanged and wait. Then:

@@ -81,6 +81,20 @@ test("skills: --until-done and --mode readonly; --for 50 is still kept", () => {
   }
 });
 
+test("skills: --isolate and dirty_worktree guidance (#51)", () => {
+  const rescue = read("baton-rescue");
+  const orchestrate = read("baton-orchestrate");
+  for (const text of [rescue, orchestrate]) {
+    assert.match(text, /--isolate/);
+    assert.match(text, /dirty_worktree/);
+  }
+  assert.match(rescue, /--allow-dirty/);
+  assert.match(rescue, /Do \*\*not\*\* pick `--allow-dirty` on your own|do not choose `--allow-dirty` yourself/i);
+  assert.match(rescue, /uncommitted/i);
+  assert.match(rescue, /worktree\.gitignore_updated|gitignore_updated/);
+  assert.match(orchestrate, /start --isolate/);
+});
+
 test("setup: Node >= 20.17; installs the global package when the command is missing", () => {
   const setup = read("setup");
   assert.match(setup, /Node\.js >= 20\.17/);

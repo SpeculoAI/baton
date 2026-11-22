@@ -108,8 +108,9 @@ export function assertNotNestedWorktree(cwd: string): void {
   const dir = git(cwd, ["rev-parse", "--git-dir"]);
   const common = git(cwd, ["rev-parse", "--git-common-dir"]);
   if (dir.status !== 0 || common.status !== 0) throw new Error("Current directory is not a git repository.");
-  const gitDir = path.resolve(cwd, dir.stdout.trim());
-  const gitCommon = path.resolve(cwd, common.stdout.trim());
+  // realpath: on macOS /var vs /private/var must not look like a linked worktree.
+  const gitDir = fs.realpathSync(path.resolve(cwd, dir.stdout.trim()));
+  const gitCommon = fs.realpathSync(path.resolve(cwd, common.stdout.trim()));
   if (gitDir === gitCommon) return;
   const superproject = git(cwd, ["rev-parse", "--show-superproject-working-tree"]);
   if (superproject.status === 0 && superproject.stdout.trim()) return;
@@ -120,6 +121,30 @@ export function resolveRepoRoot(cwd: string): string {
   const ran = git(cwd, ["rev-parse", "--show-toplevel"]);
   if (ran.status !== 0) throw new Error("Current directory is not a git repository.");
   return ran.stdout.trim();
+}
+
+/**
+ * Paths the dirty-tree guard should ignore when `cwd` is inside a Baton-managed
+ * linked worktree (has `.baton-worktree.json` and git-dir ≠ common-dir).
+ * Empty when not in such a worktree — so a stray `.baton-worktree.json` in the
+ * main checkout still counts as dirty.
+ */
+export function batonWorktreeExemptPaths(cwd: string): Set<string> {
+  const dir = git(cwd, ["rev-parse", "--git-dir"]);
+  const common = git(cwd, ["rev-parse", "--git-common-dir"]);
+  if (dir.status !== 0 || common.status !== 0) return new Set();
+  const gitDir = fs.realpathSync(path.resolve(cwd, dir.stdout.trim()));
+  const gitCommon = fs.realpathSync(path.resolve(cwd, common.stdout.trim()));
+  if (gitDir === gitCommon) return new Set(); // main checkout
+  const top = git(cwd, ["rev-parse", "--show-toplevel"]);
+  if (top.status !== 0) return new Set();
+  const worktreeRoot = top.stdout.trim();
+  if (!fs.existsSync(path.join(worktreeRoot, META_NAME))) return new Set();
+  const exempt = new Set<string>([META_NAME]);
+  const mainRepo = path.dirname(gitCommon);
+  const cfg = loadWorktreeConfig(mainRepo);
+  for (const entry of [...cfg.copy, ...cfg.symlink]) exempt.add(entry);
+  return exempt;
 }
 
 function defaultBase(repo: string, configured?: string): string {

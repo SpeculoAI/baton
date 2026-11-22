@@ -9,7 +9,7 @@ import { readMeta, writeMeta, writeTurn, readTurn, appendEvent, taskDir, lockTas
 import { setTimeout as sleep } from "node:timers/promises";
 import { redact } from "./redact.ts";
 import { isAlive, killGroup } from "./process.ts";
-import { gitSnapshot, snapshotToBaseline } from "./git.ts";
+import { dirtyPaths, gitRepoRoot, gitSnapshot, snapshotToBaseline } from "./git.ts";
 import { normalizeScopeInput, scopePromptPrefix } from "./scope.ts";
 import {
   buildRulesyncReport,
@@ -21,6 +21,7 @@ import {
   rulesPointer,
   unseenRules,
 } from "./rules.ts";
+import { addWorktree, assertNotNestedWorktree, batonWorktreeExemptPaths, resolveRepoRoot } from "./worktree.ts";
 import type { Author, Effort, Enforcement, GitChanges, RulesMode, RulesReport, ScopeOnViolation, TaskMeta, TaskMode } from "./types.ts";
 
 export type StartInput = {
@@ -36,8 +37,31 @@ export type StartInput = {
   scopeOnViolation?: ScopeOnViolation;
   mode?: TaskMode;
   allowWeak?: boolean;
+  isolate?: boolean;
+  allowDirty?: boolean;
   /** Default check: discover rules without changing the prompt. */
   rules?: RulesMode;
+};
+
+const DIRTY_PATHS_CAP = 50;
+
+/** Validate --isolate / --allow-dirty against mode. Throws on invalid combos. */
+export function resolveWriteSafety(
+  mode: TaskMode | undefined,
+  isolate: boolean | undefined,
+  allowDirty: boolean | undefined,
+): void {
+  if (mode === "readonly" && (isolate || allowDirty)) {
+    throw new Error("--isolate and --allow-dirty are only for --mode write.");
+  }
+  if (isolate && allowDirty) throw new Error("--isolate and --allow-dirty cannot be combined.");
+}
+
+export type DirtyWorktreeResult = {
+  status: "dirty_worktree";
+  summary: string;
+  dirty_paths: string[];
+  dirty_paths_truncated?: boolean;
 };
 
 /** Resolve readonly enforcement; throws unless allowWeak when strength is none. */
@@ -57,7 +81,7 @@ export function resolveReadonlyEnforcement(
   if (allowWeak && enforcement !== "none") throw new Error(`${adapter.id} has a read-only mapping; --allow-weak is not needed.`);
   return { mode: "readonly", enforcement };
 }
-export type StartResult = TaskMeta | { status: "failed" | "not_installed"; summary: string };
+export type StartResult = TaskMeta | { status: "failed" | "not_installed"; summary: string } | DirtyWorktreeResult;
 
 function positive(value: number, name: string): number {
   if (!Number.isFinite(value) || value <= 0) throw new Error(`${name} must be a positive number.`);
@@ -94,6 +118,7 @@ export async function start(input: StartInput): Promise<StartResult> {
     if (resolved) model_argv = resolved;
   }
   const modeFields = resolveReadonlyEnforcement(adapter, input.mode, input.allowWeak);
+  resolveWriteSafety(input.mode, input.isolate, input.allowDirty);
   const cwd = path.resolve(input.cwd || process.env.BATON_CWD || process.cwd());
   if (!fs.statSync(cwd).isDirectory()) throw new Error("cwd must be a directory.");
   if (!adapter.resolve(process.env)) return { status: "not_installed", summary: `${input.target} is not on PATH.` };
@@ -102,15 +127,67 @@ export async function start(input: StartInput): Promise<StartResult> {
     throw new Error("rules must be check, pointer, or off.");
   }
   const scopeFields = normalizeScopeInput(input.scope, input.scopeOnViolation);
+  const writeMode = !modeFields.mode || modeFields.mode === "write";
+  // Dirty-tree guard: in-place write only. --isolate skips this.
+  if (writeMode && !input.isolate && !input.allowDirty) {
+    const dirty = dirtyPaths(cwd);
+    if (dirty) {
+      const exempt = batonWorktreeExemptPaths(cwd);
+      const filtered = dirty.filter((p) => !exempt.has(p));
+      if (filtered.length) {
+        const truncated = filtered.length > DIRTY_PATHS_CAP;
+        return {
+          status: "dirty_worktree",
+          summary: "Working tree has uncommitted changes; refuse in-place write. Use --isolate (starts from HEAD, ignores uncommitted changes) or --allow-dirty to proceed.",
+          dirty_paths: truncated ? filtered.slice(0, DIRTY_PATHS_CAP) : filtered,
+          ...(truncated ? { dirty_paths_truncated: true } : {}),
+        };
+      }
+    }
+  }
+
+  const task_id = randomUUID();
+  const source_cwd = cwd;
+  let taskCwd = cwd;
+  let worktree: TaskMeta["worktree"];
+  if (input.isolate) {
+    if (!gitRepoRoot(cwd)) throw new Error("--isolate requires a git repository.");
+    try {
+      assertNotNestedWorktree(cwd);
+    } catch (error) {
+      throw new Error(`${(error as Error).message} Drop --isolate or run from the main checkout.`);
+    }
+    const repo = resolveRepoRoot(cwd);
+    const short = task_id.replace(/-/g, "").slice(0, 8);
+    const name = `task-${short}`;
+    const added = addWorktree(cwd, { name, branch: `baton/${name}`, base: "HEAD" });
+    const realCwd = fs.realpathSync(cwd);
+    const realRepo = fs.realpathSync(repo);
+    const rel = path.relative(realRepo, realCwd);
+    if (rel.startsWith("..") || path.isAbsolute(rel)) {
+      throw new Error("--isolate cwd must be inside the repository.");
+    }
+    taskCwd = rel ? path.join(added.path, rel) : added.path;
+    if (!fs.existsSync(taskCwd) || !fs.statSync(taskCwd).isDirectory()) {
+      throw new Error(`--isolate could not map cwd into worktree: ${rel || "."}`);
+    }
+    worktree = {
+      path: added.path,
+      branch: added.branch,
+      source_cwd,
+      gitignore_updated: added.gitignore_updated,
+    };
+  }
+
   let scope_baseline: TaskMeta["scope_baseline"];
   let readonly_baseline: TaskMeta["readonly_baseline"];
   let prompt = input.prompt;
   const needSnap = Boolean(scopeFields.scope?.length) || modeFields.mode === "readonly";
-  const snap = needSnap ? gitSnapshot(cwd) : null;
+  const snap = needSnap ? gitSnapshot(taskCwd) : null;
   let rules: RulesReport | undefined;
   let pointer = "";
   if (rulesMode !== "off") {
-    const found = discoverRules(cwd);
+    const found = discoverRules(taskCwd);
     const unseen = unseenRules(found, adapter.rules);
     pointer = rulesMode === "pointer" ? rulesPointer(unseen) : "";
     rules = {
@@ -119,7 +196,7 @@ export async function start(input: StartInput): Promise<StartResult> {
       unseen,
       pointer_injected: Boolean(pointer),
     };
-    const repoRoot = rulesGitRoot(cwd) ?? cwd;
+    const repoRoot = rulesGitRoot(taskCwd) ?? taskCwd;
     if (hasRulesyncSource(repoRoot)) {
       const bin = resolveRulesync(repoRoot);
       const config = readRulesyncConfig(repoRoot);
@@ -136,7 +213,7 @@ export async function start(input: StartInput): Promise<StartResult> {
   if (modeFields.mode === "readonly" && snap?.head) readonly_baseline = snapshotToBaseline(snap);
   const now = new Date().toISOString();
   const meta: TaskMeta = {
-    task_id: randomUUID(), target: adapter.id, cwd, created_at: now, updated_at: now,
+    task_id, target: adapter.id, cwd: taskCwd, created_at: now, updated_at: now,
     status: "running", turn: 1, session_id: null, reasoning_effort: input.reasoningEffort,
     model, model_argv,
     ...modeFields,
@@ -146,6 +223,8 @@ export async function start(input: StartInput): Promise<StartResult> {
     ...scopeFields,
     scope_baseline,
     rules,
+    ...(input.allowDirty ? { allow_dirty: true } : {}),
+    ...(worktree ? { worktree } : {}),
   };
   writeMeta(meta);
   writeTurn(meta.task_id, { turn: 1, author: "host", prompt, files: input.files, status: "running" });
@@ -266,7 +345,18 @@ export async function reply(id: string, prompt: string, author: Author = "host")
 }
 
 export function ls(all = false, cwd = process.cwd()): TaskView[] {
-  return listTasks().filter((meta) => all || meta.cwd === path.resolve(cwd)).map((meta) => status(meta.task_id))
+  const here = path.resolve(cwd);
+  let hereReal = here;
+  try { hereReal = fs.realpathSync(here); } catch { /* keep resolved */ }
+  return listTasks().filter((meta) => {
+    if (all) return true;
+    if (meta.cwd === here || meta.worktree?.source_cwd === here) return true;
+    try {
+      if (fs.realpathSync(meta.cwd) === hereReal) return true;
+      if (meta.worktree?.source_cwd && fs.realpathSync(meta.worktree.source_cwd) === hereReal) return true;
+    } catch { /* missing path */ }
+    return false;
+  }).map((meta) => status(meta.task_id))
     .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at));
 }
 
