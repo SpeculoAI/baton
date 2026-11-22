@@ -21,6 +21,13 @@ function contentText(content: unknown): string {
 export const claude: Adapter = {
   id: "claude",
   readonlyEnforcement: "agent-enforced",
+  // Verified 2026-11-21/22: CLAUDE.md hierarchy; AGENTS.md only when none of those three exist.
+  // Baton uses -p, which loads project .mcp.json without an approval prompt (no mcp gate).
+  rules: {
+    files: ["CLAUDE.md", ".claude/CLAUDE.md", "CLAUDE.local.md"],
+    conditional: [{ file: "AGENTS.md", unless: ["CLAUDE.md", ".claude/CLAUDE.md", "CLAUDE.local.md"] }],
+    rulesyncTarget: "claudecode",
+  },
   resolve(env) {
     return which(["claude"], env);
   },

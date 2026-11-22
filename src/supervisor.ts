@@ -6,6 +6,7 @@ import { getAdapter } from "./adapters/index.ts";
 import { buildPrompt, interpret } from "./contract.ts";
 import { baselineToSnapshot, gitChanges, gitRepoRoot, gitSnapshot, pathsSinceBaseline } from "./git.ts";
 import { applyScopePolicy, findScopeViolations, isDirUnderCwd, relativizeToTaskCwd } from "./scope.ts";
+import { resolveRulesync, rulesGitRoot, rulesyncCheck } from "./rules.ts";
 import { appendEvent, readMeta, writeMeta, readTurn, writeTurn, taskDir, lockTask } from "./store.ts";
 import { redact } from "./redact.ts";
 import { killGroup } from "./process.ts";
@@ -88,6 +89,27 @@ export async function supervise(id: string): Promise<void> {
   };
   emit({ type: "turn_started", author: turn.author, prompt_preview: redact(turn.prompt).slice(0, 200) });
   const heartbeat = setInterval(() => { meta.heartbeat_at = new Date().toISOString(); save(); }, 10_000);
+  // rulesync --check before the idle timer so its duration does not count against the worker.
+  if (meta.turn === 1 && meta.rules?.rulesync?.status === "pending") {
+    const repoRoot = rulesGitRoot(meta.cwd) ?? meta.cwd;
+    const rulesyncBin = resolveRulesync(repoRoot);
+    if (rulesyncBin) {
+      const checked = await rulesyncCheck(rulesyncBin, repoRoot);
+      meta.rules.rulesync = {
+        ...meta.rules.rulesync,
+        status: checked.status,
+        detail: checked.detail,
+      };
+      save();
+    } else {
+      meta.rules.rulesync = {
+        ...meta.rules.rulesync,
+        status: "skipped",
+        detail: "rulesync not found in node_modules/.bin or PATH",
+      };
+      save();
+    }
+  }
   const before = gitSnapshot(meta.cwd);
   let stdout = "";
   let stderr = "";

@@ -73,4 +73,4 @@ npm test          # typecheck + all tests; uses fake CLIs, spends no model quota
 npm run build     # emits dist/
 ```
 
-Everything in the repository is English. `test/english.test.ts` enforces this, except for the two Chinese manuals.
+Everything in the repository is English, except for the two Chinese manuals. This is a convention, not a check.

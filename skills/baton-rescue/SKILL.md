@@ -42,7 +42,7 @@ If not named, use `codex`. If the current session is already Codex, use `claude`
 ## Start
 
 ```
-baton start --target <t> --prompt "<self-contained task>" [--file <path>...] [--effort low|medium|high|ultra] [--model <id>] [--idle-timeout <s>] [--max-duration <s>] [--cwd <dir>] [--scope <glob>...] [--scope-on-violation warn|fail] [--mode readonly|write]
+baton start --target <t> --prompt "<self-contained task>" [--file <path>...] [--effort low|medium|high|ultra] [--model <id>] [--idle-timeout <s>] [--max-duration <s>] [--cwd <dir>] [--scope <glob>...] [--scope-on-violation warn|fail] [--mode readonly|write] [--rules check|pointer|off]
 ```
 
 - The prompt states done criteria and which files to look at. Long prompts can come on stdin instead of `--prompt`.
@@ -52,6 +52,7 @@ baton start --target <t> --prompt "<self-contained task>" [--file <path>...] [--
 - Optional isolation: `baton worktree add` first, then pass that path as `--cwd`. Opening a worktree is not tied to the task; clean up later with `baton worktree rm`.
 - Optional `--scope`: post-check mistake fence (not a sandbox); prefer with worktree.
 - Review / read-only jobs: pass `--mode readonly` (default `write`). Kept across `reply`. Dirty tree after a readonly turn becomes `readonly_violation`.
+- After `status` / `wait`, if `rules.unseen` is non-empty, `rules.rulesync.status` is `stale`, `target_configured` is `false`, or `gates` is non-empty, tell the user (optionally suggest `--rules pointer` or running `rulesync generate`).
 - It returns at once with `task_id` and `status: "running"`. Keep the `task_id`. Tell the user they can watch live with `baton tail -f <task_id>`.
 
 ## Wait

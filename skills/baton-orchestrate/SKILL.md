@@ -107,6 +107,7 @@ Prefer `baton worktree` over raw `git worktree add` (handles `.worktrees` ignore
 
 Baton only reserves the slot after each job ends. Transport `success` stays “turn finished”; acceptance is a separate orchestrator conclusion.
 
+- If `rules.unseen` is non-empty, `rules.rulesync.status` is `stale`, `target_configured` is `false`, or `gates` is non-empty, tell the user before treating the job as reviewed.
 - **Project rules present** (`.agents/`, OpenSpec, Speckit, custom checks): follow them strictly. Do not replace them with a lighter default.
 - **No project rules:** still run a **minimal task-matched verification** — check the job’s stated deliverables and key behavior with the smallest sufficient existing checks (read the diff, spot-check expected files/behavior). Do **not** invent a full CI suite or spawn a reviewer agent by default.
 - If you cannot verify an item: list it as unverified; do not claim accepted; dependents that need acceptance wait.

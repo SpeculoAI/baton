@@ -196,6 +196,60 @@ test("a failing post_create cleans up the half-built worktree", () => {
   }
 });
 
+test("worktree rulesync: generate / skip / error / missing / dirtied", () => {
+  const fakeCli = path.join(import.meta.dirname, "fake-cli");
+  const prevPath = process.env.PATH;
+  process.env.PATH = `${fakeCli}${path.delimiter}${prevPath || ""}`;
+  const { cwd, git, cleanup } = tempRepo();
+  try {
+    mkdirSync(path.join(cwd, ".rulesync"));
+    writeFileSync(path.join(cwd, ".rulesync", ".keep"), "");
+    writeFileSync(path.join(cwd, "rulesync.jsonc"), `{ "targets": ["codexcli"], "features": ["rules"] }`);
+    writeFileSync(path.join(cwd, "CLAUDE.local.md"), "local\n");
+    writeFileSync(path.join(cwd, ".gitignore"), "CLAUDE.local.md\n");
+    git(["add", "-A"]);
+    git(["commit", "-m", "rulesync seed"]);
+
+    process.env.FAKE_RULESYNC_EXIT = "0";
+    const generated = addWorktree(cwd, { name: "rs-ok" });
+    assert.equal(generated.rules?.rulesync, "generated");
+    assert.ok(generated.rules?.missing.includes("CLAUDE.local.md"));
+
+    writeFileSync(path.join(cwd, ".baton.json"), JSON.stringify({ worktree: { rulesync: false } }));
+    const skipped = addWorktree(cwd, { name: "rs-off" });
+    assert.equal(skipped.rules?.rulesync, "skipped");
+
+    writeFileSync(path.join(cwd, ".baton.json"), JSON.stringify({ worktree: { copy: ["CLAUDE.local.md"] } }));
+    process.env.FAKE_RULESYNC_EXIT = "0";
+    const copied = addWorktree(cwd, { name: "rs-copy" });
+    assert.equal(copied.rules?.rulesync, "generated");
+    assert.ok(!copied.rules?.missing.includes("CLAUDE.local.md"));
+
+    process.env.FAKE_RULESYNC_EXIT = "3";
+    process.env.FAKE_RULESYNC_STDERR = "nope";
+    const failed = addWorktree(cwd, { name: "rs-err" });
+    assert.equal(failed.rules?.rulesync, "error");
+    assert.match(failed.rules?.detail ?? "", /nope|exited/);
+    assert.ok(existsSync(failed.path));
+
+    delete process.env.FAKE_RULESYNC_EXIT;
+    delete process.env.FAKE_RULESYNC_STDERR;
+    process.env.FAKE_RULESYNC_TOUCH = path.join(cwd, "README.md"); // wrong — touch must be inside worktree
+    // Recreate with touch relative: fake script appends to absolute path we set after add starts — use a hook via env that points at worktree file after creation is hard.
+    // Instead: make fake rewrite README by writing into cwd of generate (worktree): use FAKE_RULESYNC_TOUCH=README.md relative.
+    process.env.FAKE_RULESYNC_TOUCH = "README.md";
+    const dirty = addWorktree(cwd, { name: "rs-dirty" });
+    assert.equal(dirty.rules?.rulesync, "generated");
+    assert.ok(dirty.rules?.dirtied.some((p) => p.includes("README.md")));
+  } finally {
+    delete process.env.FAKE_RULESYNC_EXIT;
+    delete process.env.FAKE_RULESYNC_STDERR;
+    delete process.env.FAKE_RULESYNC_TOUCH;
+    process.env.PATH = prevPath;
+    cleanup();
+  }
+});
+
 test("smoke test: CLI worktree add/ls/rm and start --cwd", async () => {
   const { cwd, cleanup } = tempRepo();
   const { exec, cli, sleep } = await import("./helpers.ts");

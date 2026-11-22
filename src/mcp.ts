@@ -3,7 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { agents, cancel, ls, reply, start, status, wait } from "./tasks.ts";
 import { redact } from "./redact.ts";
-import type { Author, Effort, ScopeOnViolation, TaskMode } from "./types.ts";
+import type { Author, Effort, RulesMode, ScopeOnViolation, TaskMode } from "./types.ts";
 
 const MAX_WAIT_SECONDS = 55;
 const PROGRESS_MS = 15_000;
@@ -35,6 +35,7 @@ export function createServer(): McpServer {
       scope_on_violation: z.enum(["warn", "fail"]).optional().describe("Out-of-scope policy; default warn."),
       mode: z.enum(["readonly", "write"]).optional().describe("Permission mode; default write. readonly maps to each CLI's read-only flags."),
       allow_weak: z.boolean().optional().describe("Explicitly allow --mode readonly only when the target cannot enforce read-only."),
+      rules: z.enum(["check", "pointer", "off"]).optional().describe("Project rules discovery; default check. pointer injects unread rule paths into the first-turn prompt."),
     },
   }, (args) => respond(() => start({
     target: args.target_agent, prompt: args.prompt, files: args.files, cwd: args.cwd,
@@ -42,6 +43,7 @@ export function createServer(): McpServer {
     idleTimeout: args.idle_timeout_seconds, maxDuration: args.max_duration_seconds,
     scope: args.scope, scopeOnViolation: args.scope_on_violation as ScopeOnViolation | undefined,
     mode: args.mode as TaskMode | undefined, allowWeak: args.allow_weak,
+    rules: args.rules as RulesMode | undefined,
   })));
   server.registerTool("task_status", {
     description: "Get a task's current status. While running, includes liveness (active/quiet/orphaned) and quiet_for_s.",

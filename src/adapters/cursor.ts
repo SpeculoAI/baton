@@ -33,6 +33,14 @@ export function resolveCursorModelArg(
 export const cursor: Adapter = {
   id: "cursor",
   readonlyEnforcement: "agent-enforced",
+  // Verified 2026-11-21: AGENTS.md, CLAUDE.md, .cursor/rules/*.mdc, .cursorrules. --approve-mcps defaults false.
+  rules: {
+    files: ["AGENTS.md", "CLAUDE.md", ".cursor/rules", ".cursorrules"],
+    rulesyncTarget: "cursor",
+    gates: {
+      mcp: "Project MCP servers need --approve-mcps; Baton only passes --trust, so project MCP may not load.",
+    },
+  },
   resolve(env) {
     // The cursor-agent name does not collide with the IDE's `cursor` and is matched before any other `agent` on PATH.
     return which(["cursor-agent", "agent"], env);

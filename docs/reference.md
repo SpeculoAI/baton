@@ -283,6 +283,7 @@ baton start --target <codex|claude|cursor|agy> [--prompt <text> | stdin] [--file
             [--model <id>] [--idle-timeout <s>] [--max-duration <s>] [--cwd <dir>]
             [--scope <glob> ...] [--scope-on-violation warn|fail]
             [--mode readonly|write] [--allow-weak]
+            [--rules check|pointer|off]
 baton status <id>
 baton wait <id>... [--for <s> | --until-done]  # default --for 50; --until-done blocks until a job leaves running
 baton tail <id> [-f] [--raw]         # readable events; -f follows until the job stops; --raw prints events.jsonl lines
@@ -300,8 +301,20 @@ baton mcp                            # start the MCP server (stdio)
 - `--model <id>` (Cursor only for now): sets the requested model, stored on the task and kept across `reply`. Cursor rules: model only → `--model <id>`; model+effort → `--model '<id>[effort=...]'`; if the id already embeds a tier (e.g. `grok-4.7-xhigh`) or brackets, combining `--effort` errors. Never emits two `--model` flags. `status` shows `model` (requested) and `model_argv` (passed to the CLI). That is not a provider-confirmed “actual model”.
 - `--idle-timeout` defaults to 600: the job stops only after that many seconds without a single output byte. `--max-duration` is unlimited by default. Both apply per turn and restart on `reply`.
 - **`--mode readonly|write` (default `write`):** maps to each CLI's read-only path (Codex `--sandbox read-only`, Claude `--permission-mode plan`, Cursor `--mode ask`, Agy `--mode plan`). Stored on the task and kept across `reply`. After each turn, dirty net changes upgrade a clean `success` to `readonly_violation`. Targets with no mapping fail unless `--allow-weak` is set. **Breaking note:** new terminal status `readonly_violation`.
-- **Worktrees are separate from tasks:** `baton worktree add`, then `baton start --cwd <path>`. Default root is `.worktrees/` (appended to `.gitignore` if needed). Optional `.baton.json` configures `copy` / `symlink` / `post_create`. Symlinking `node_modules` can cross-contaminate when branches diverge — prefer `post_create` installs when unsure.
+- **Worktrees are separate from tasks:** `baton worktree add`, then `baton start --cwd <path>`. Default root is `.worktrees/` (appended to `.gitignore` if needed). Optional `.baton.json` configures `copy` / `symlink` / `post_create` / `rulesync` (boolean, default on). Symlinking `node_modules` can cross-contaminate when branches diverge — prefer `post_create` installs when unsure. When the new worktree has `.rulesync/` and `rulesync` is on PATH (or in `node_modules/.bin`), `worktree add` runs `rulesync generate` there and reports `rules.missing` / `rules.dirtied` in the JSON result. Prefer generating and committing rulesync outputs in the main repo first so worktrees stay clean.
 - **`--scope` (optional):** repeatable globs relative to the task `cwd`. After each turn, Baton checks **task-baseline net changes** (commits since start HEAD ∪ working-tree digest diff) against those globs. `--scope-on-violation warn` (default) keeps the transport status and sets `scope_violations` + `warning`; `fail` upgrades a clean `success` to `scope_violation`. This is a **mistake fence**, not a sandbox: ignored paths, non-git writes, and concurrent edits on a shared cwd are blind spots — prefer combining with worktree. Requires a git repo when `--scope` is set. **Breaking note for clients:** new terminal status `scope_violation` (and optional `scope_*` meta fields).
+- **`--rules check|pointer|off` (default `check`):** discovers project rule files from the task `cwd` up to the git root and records them on `meta.rules` (`found`, `unseen`, `pointer_injected`). `check` does not change the worker prompt. `pointer` prepends an English “read these files” block for entries the target does not load natively (first turn only; `reply` does not reinject). `off` skips discovery entirely. When the repo has `.rulesync/`, Baton also reports a `rules.rulesync` object: it reads `rulesync.jsonc` (+ `rulesync.local.jsonc`), notes whether the target’s rulesync id is configured and any load-gate notes for `mcp`/`hooks`, then the supervisor runs `rulesync generate --check` (whole project, no `--targets`/`--features`) and sets `status` to `in_sync` / `stale` / `error` / `skipped`. Failures never block the task. Baton never installs rulesync via `npx` and never writes rulesync outputs into the user’s main working tree.
+
+### Native rule files and load gates (verified 2026-11-21/22)
+
+| Target | Native project rules | rulesync id | Load gates Baton reports |
+|---|---|---|---|
+| `claude` | `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md` (and `AGENTS.md` only when none of those exist) | `claudecode` | none for MCP under Baton’s `-p` path (project `.mcp.json` loads without an approval prompt) |
+| `codex` | `AGENTS.md`, `AGENTS.override.md` | `codexcli` | project `.codex/config.toml` MCP needs a trusted project path; hooks need persisted hook trust. A baton worktree is a separate path and does not inherit the main repo’s `trust_level`. |
+| `cursor` | `AGENTS.md`, `CLAUDE.md`, `.cursor/rules`, `.cursorrules` | `cursor` | project MCP needs `--approve-mcps` (Baton only passes `--trust`) |
+| `agy` | `AGENTS.md`, `GEMINI.md`, `.agents/*`, `.agent/rules` | `antigravity-cli` | none surveyed |
+
+**Known limits:** Baton does not read `~/.codex/config.toml`, so Codex `project_doc_fallback_filenames` and explicit `trust_level` are not detected (`CLAUDE.md` may be reported as `unseen` even if you configured a fallback). Self-check loaded Codex instructions with `codex debug prompt-input`. User-global rules (`~/.claude/CLAUDE.md`, etc.) are out of scope.
 
 ### Statuses and liveness
 

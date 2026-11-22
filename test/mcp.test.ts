@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { sandbox, cli } from "./helpers.ts";
@@ -48,4 +50,19 @@ test("MCP thin shell: tool list, dispatch, bounded wait, reply, list, cancel; al
 
   const bad = await call(client, "task_status", { task_id: "../x" });
   assert.equal(bad.status, "failed");
+});
+
+test("MCP delegate_task accepts rules=check and surfaces meta.rules", async (t) => {
+  const s = sandbox(t);
+  const client = await connect(s.env);
+  t.after(() => client.close());
+  fs.writeFileSync(path.join(s.cwd, "CLAUDE.md"), "# rules\n");
+  const started = await call(client, "delegate_task", {
+    target_agent: "codex", prompt: "hi", cwd: s.cwd, rules: "check",
+  });
+  assert.equal(started.status, "running");
+  await call(client, "task_wait", { task_ids: [started.task_id], wait_seconds: 10 });
+  const view = await call(client, "task_status", { task_id: started.task_id });
+  assert.equal(view.rules?.mode, "check");
+  assert.deepEqual(view.rules?.unseen, ["CLAUDE.md"]);
 });

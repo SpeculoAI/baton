@@ -7,6 +7,7 @@ import { execFileSync } from "node:child_process";
 import { codex } from "../src/adapters/codex.ts";
 import { which, authHit } from "../src/adapters/common.ts";
 import { getAdapter } from "../src/adapters/index.ts";
+import { unseenRules } from "../src/rules.ts";
 
 test("codex fixture parses messages, commands, file changes and failures; unknown lines are not dropped", () => {
   const lines = fs.readFileSync(new URL("fixtures/codex.stream.jsonl", import.meta.url), "utf8").trim().split("\n");
@@ -135,4 +136,26 @@ test("fake CLI resolves via PATH, outputs per fixture and supports exit codes", 
   assert.throws(() => execFileSync(bin!, [], { env: { ...env, FAKE_EXIT: "3" }, input: "prompt" }), (error: unknown) => (error as { status: number }).status === 3);
   assert.equal(which(["missing"], env), null);
   assert.ok(authHit("NOT LOGGED IN", ["not logged in"]));
+});
+
+test("adapter rules: coverage matrix and rulesyncTarget / gates", () => {
+  const claude = getAdapter("claude")!;
+  const codexA = getAdapter("codex")!;
+  const cursor = getAdapter("cursor")!;
+  const agy = getAdapter("agy")!;
+  assert.equal(claude.rules?.rulesyncTarget, "claudecode");
+  assert.equal(codexA.rules?.rulesyncTarget, "codexcli");
+  assert.equal(cursor.rules?.rulesyncTarget, "cursor");
+  assert.equal(agy.rules?.rulesyncTarget, "antigravity-cli");
+  assert.match(cursor.rules?.gates?.mcp ?? "", /--approve-mcps/);
+  assert.match(codexA.rules?.gates?.mcp ?? "", /trust/i);
+  assert.match(codexA.rules?.gates?.hooks ?? "", /hook/i);
+  assert.equal(claude.rules?.gates?.mcp, undefined);
+
+  assert.deepEqual(unseenRules(["CLAUDE.md"], codexA.rules), ["CLAUDE.md"]);
+  assert.deepEqual(unseenRules(["CLAUDE.md"], agy.rules), ["CLAUDE.md"]);
+  assert.deepEqual(unseenRules(["CLAUDE.md"], claude.rules), []);
+  assert.deepEqual(unseenRules(["CLAUDE.md"], cursor.rules), []);
+  assert.deepEqual(unseenRules(["AGENTS.md"], claude.rules), []);
+  assert.deepEqual(unseenRules(["AGENTS.md", "CLAUDE.md"], claude.rules), ["AGENTS.md"]);
 });
