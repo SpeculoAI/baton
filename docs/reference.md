@@ -42,6 +42,23 @@ npx @speculoai/baton@latest update
 
 Remove the plugin from those CLIs with `npx @speculoai/baton uninstall`. That leaves the global command; remove it with `npm uninstall -g @speculoai/baton`.
 
+### rulesync setup (optional)
+
+After the plugins install in a TTY (no `--only`, no `--dry-run`), `install` recommends [rulesync](https://github.com/dyoshikawa/rulesync) so your agents share one set of rules, MCP servers, skills and hooks. Baton never depends on it. The same flow runs on its own with:
+
+```bash
+baton rules init [--install project|global|skip] [--source claudecode|codexcli|cursor | --template]
+                 [--targets <agent>[,<agent>]] [--yes] [--dry-run]
+```
+
+1. If rulesync is not found (project `node_modules/.bin`, then PATH), choose: install into the project (`npm i -D rulesync`, only when the git root has a `package.json`), globally (`npm i -g rulesync`), or skip. Baton checks again after npm and stops with the reason if rulesync is still missing.
+2. Outside a git repo it only installs. If `.rulesync/` already exists it reports that and stops.
+3. With existing rule files (`CLAUDE.md`, `AGENTS.md`, `.cursor/rules`) you pick one to import, or start from an empty template. Baton strips rulesync's template samples (a Codex `:danger-full-access` profile, demo MCP servers, a sample hook) and drops empty MCP/hooks sources so they do not blank your existing files. `CLAUDE.local.md` is never imported.
+4. When `rulesync.jsonc` is absent Baton writes one: `targets` from your agents (`claude`→`claudecode`, `codex`→`codexcli`, `cursor`→`cursor`, `agy`→`antigravity-cli`), `features` `rules, mcp, subagents, skills, hooks` (not `permissions`, which rewrites Codex approval settings), and `delete: false`.
+5. Baton previews `rulesync generate` grouped as overwrite / delete / changed settings / create, marking files that are not in git or have uncommitted changes, and applies it only after you confirm (or `--yes`). Declining keeps `.rulesync/` and `rulesync.jsonc` so you can edit them and run `npx rulesync generate` yourself.
+
+Non-TTY runs never prompt: pass `--install` when rulesync is missing and `--source`/`--template` when rule files exist (otherwise `status: "needs_input"`, exit 1); without `--yes` the result is `status: "previewed"`. `install --rulesync project|global|skip` answers the install question up front and also enables the step in non-TTY runs; its result appears under `rulesync` and never changes the install exit code.
+
 The per-host commands below are the same steps, run by hand.
 
 ### Prerequisites

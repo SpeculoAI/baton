@@ -4,8 +4,15 @@ import { parseArgs } from "node:util";
 import { agents, start, status, cancel, wait, reply, ls, prune } from "./tasks.ts";
 import { addWorktree, listWorktrees, removeWorktree } from "./worktree.ts";
 import { redact } from "./redact.ts";
-import { runInstall, type Action } from "./install.ts";
+import { detectedHosts, runInstall, type Action } from "./install.ts";
+import { mappedAgents, rulesInit, type InstallChoice, type RulesInitResult } from "./rulesync-setup.ts";
 import type { Author, Effort, ScopeOnViolation, TaskMode } from "./types.ts";
+
+function installChoice(value: string | undefined, flag: string): InstallChoice | undefined {
+  if (value === undefined) return undefined;
+  if (value === "project" || value === "global" || value === "skip") return value;
+  throw new Error(`${flag} must be project, global or skip.`);
+}
 
 async function main(): Promise<void> {
   const [command, ...args] = process.argv.slice(2);
@@ -93,17 +100,52 @@ async function main(): Promise<void> {
     } else {
       throw new Error("Usage: baton worktree add|ls|rm");
     }
+  } else if (command === "rules") {
+    const [action, ...rest] = args;
+    if (action !== "init") throw new Error("Usage: baton rules init");
+    const { values, positionals } = parseArgs({
+      args: rest, allowPositionals: true,
+      options: {
+        install: { type: "string" }, source: { type: "string" }, template: { type: "boolean" },
+        targets: { type: "string", multiple: true }, yes: { type: "boolean" }, "dry-run": { type: "boolean" },
+      },
+    });
+    if (positionals.length) throw new Error("rules init takes no positional arguments.");
+    if (values.source && values.template) throw new Error("--source and --template cannot be used together.");
+    const install = installChoice(values.install, "--install");
+    const known = mappedAgents();
+    const requested = (values.targets ?? []).flatMap((item) => item.split(",")).map((item) => item.trim()).filter(Boolean);
+    for (const id of requested) if (!known.includes(id)) throw new Error(`Unknown agent: ${id} (expected ${known.join(", ")})`);
+    const agentIds = requested.length ? requested : detectedHosts().map((host) => host.id).filter((id) => known.includes(id));
+    const dryRun = Boolean(values["dry-run"]);
+    const ui = process.stdin.isTTY ? await import("./install-ui.ts") : null;
+    ui?.beginAction("rules init");
+    const res = await rulesInit({
+      cwd: process.cwd(), agents: agentIds, install, dryRun, yes: values.yes,
+      source: values.template ? { kind: "template" } : values.source ? { kind: "import", target: values.source } : undefined,
+      prompt: ui && !dryRun ? ui.rulesPrompter() : undefined,
+    });
+    if (res.status === "failed" || res.status === "needs_input") process.exitCode = 1;
+    if (ui) {
+      ui.showRulesResult(res);
+      ui.endAction(process.exitCode ? "Finished with errors" : "Done");
+      return;
+    }
+    result = res;
   } else if (command === "install" || command === "update" || command === "uninstall") {
     const { values, positionals } = parseArgs({
       args, allowPositionals: true,
       options: {
         only: { type: "string", multiple: true }, force: { type: "boolean" },
         "dry-run": { type: "boolean" }, "skip-global": { type: "boolean" },
+        rulesync: { type: "string" },
       },
     });
     if (positionals.length) throw new Error(`${command} takes no positional arguments.`);
     if (command !== "install" && values.force) throw new Error(`${command} does not accept --force.`);
     if (command === "uninstall" && values["skip-global"]) throw new Error("uninstall does not accept --skip-global.");
+    if (command !== "install" && values.rulesync !== undefined) throw new Error(`${command} does not accept --rulesync.`);
+    const rulesyncChoice = installChoice(values.rulesync, "--rulesync");
     const action = command as Action;
     const pretty = Boolean(process.stdin.isTTY);
     const interactive = action === "install" && !values.only?.length && pretty;
@@ -157,6 +199,19 @@ async function main(): Promise<void> {
         : undefined,
     });
     if (spinning) spin!.stop(ran.exitCode ? "Finished with errors" : "Done");
+    let rulesync: RulesInitResult | undefined;
+    const installedAgents = ran.result.hosts.filter((host) => host.ok).map((host) => host.id);
+    if (action === "install" && !dryRun && !cancelled && installedAgents.length && (rulesyncChoice || interactive)) {
+      try {
+        rulesync = await rulesInit({
+          cwd: process.cwd(), agents: installedAgents, install: rulesyncChoice,
+          prompt: interactive && ui ? ui.rulesPrompter() : undefined,
+        });
+      } catch (error) {
+        rulesync = { status: "failed", detail: redact((error as Error).message) };
+      }
+      ui?.showRulesResult(rulesync);
+    }
     if (ui && !cancelled) {
       if (dryRun) {
         const lines: string[] = [];
@@ -173,12 +228,12 @@ async function main(): Promise<void> {
       }
       ui.endAction(ui.summarizeResult(ran.result));
     }
-    result = ran.result;
+    result = rulesync ? { ...ran.result, rulesync } : ran.result;
     if (ran.exitCode) process.exitCode = ran.exitCode;
     // TTY already showed the human summary; dumping JSON on top is noise. Scripts (non-TTY) still get JSON.
     if (!pretty) process.stdout.write(`${JSON.stringify(result)}\n`);
     return;
-  } else throw new Error("Usage: baton version | agents | start | status | cancel | wait | tail | reply | ls | prune | worktree | install | update | uninstall | mcp");
+  } else throw new Error("Usage: baton version | agents | start | status | cancel | wait | tail | reply | ls | prune | worktree | rules | install | update | uninstall | mcp");
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }
 

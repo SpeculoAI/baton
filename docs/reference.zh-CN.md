@@ -42,6 +42,23 @@ npx @speculoai/baton@latest update
 
 用 `npx @speculoai/baton uninstall` 从这些 CLI 里卸掉插件。全局命令不会被删，需要的话用 `npm uninstall -g @speculoai/baton`。
 
+### rulesync 初始化（可选）
+
+在 TTY 下插件装完后（未带 `--only`、`--dry-run`），`install` 会推荐安装 [rulesync](https://github.com/dyoshikawa/rulesync)，让各个 agent 共用同一套规则、MCP、skills 和 hooks。Baton 不依赖它。同一流程也可以单独运行：
+
+```bash
+baton rules init [--install project|global|skip] [--source claudecode|codexcli|cursor | --template]
+                 [--targets <agent>[,<agent>]] [--yes] [--dry-run]
+```
+
+1. 找不到 rulesync 时（先查项目 `node_modules/.bin`，再查 PATH）让你选择：装到项目（`npm i -D rulesync`，仅当 git 根目录有 `package.json`）、全局（`npm i -g rulesync`）或跳过。npm 执行完会再检测一次，仍找不到就说明原因并结束。
+2. 不在 git 仓库时只安装不初始化；已有 `.rulesync/` 时提示已初始化并结束。
+3. 已有规则文件（`CLAUDE.md`、`AGENTS.md`、`.cursor/rules`）时，选择从其中一个导入，或从空模板开始。Baton 会清掉 rulesync 模板自带的示例（Codex `:danger-full-access` 配置、示例 MCP 服务器、示例 hook），并删掉内容为空的 MCP/hooks 源文件，避免把你已有的文件清空。`CLAUDE.local.md` 不会被导入。
+4. 没有 `rulesync.jsonc` 时由 Baton 写入：`targets` 取自你的 agent（`claude`→`claudecode`、`codex`→`codexcli`、`cursor`→`cursor`、`agy`→`antigravity-cli`），`features` 为 `rules, mcp, subagents, skills, hooks`（不含 `permissions`，它会改写 Codex 的审批设置），`delete: false`。
+5. 生成前先预览 `rulesync generate`，按覆盖 / 删除 / 修改设置项 / 新建分组，并标出未纳入 git 或有未提交改动的文件；确认后（或 `--yes`）才执行。取消时保留 `.rulesync/` 和 `rulesync.jsonc`，你可以修改后自己运行 `npx rulesync generate`。
+
+非 TTY 下从不提问：缺 rulesync 时需传 `--install`，已有规则文件时需传 `--source` 或 `--template`（否则返回 `status: "needs_input"`，退出码 1）；不带 `--yes` 时结果为 `status: "previewed"`。`install --rulesync project|global|skip` 预先回答安装问题，并让非 TTY 的 install 也执行这一步；结果放在 `rulesync` 字段里，不影响 install 的退出码。
+
 下面各家的命令是同一套步骤，供手动安装。
 
 ### 前置要求
