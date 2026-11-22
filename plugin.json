@@ -1,6 +1,6 @@
 {
   "name": "baton",
   "displayName": "Baton",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "Hand a bounded coding task to another local agent CLI, then continue the same session when it needs a decision."
 }
