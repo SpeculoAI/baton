@@ -355,6 +355,8 @@ baton mcp                            # start the MCP server (stdio)
 | `quiet` | Supervisor alive but silent for more than 60 seconds (usually thinking) |
 | `orphaned` | Supervisor gone or heartbeat older than 30 seconds; the next read kills leftover processes and records `failed` |
 
+If `stop_reason` is already `idle` or `max_duration`, that read finalizes as `timed_out` with summary `Timed out: idle.` or `Timed out: max_duration.`. `cancelled` finalizes as `cancelled` / `Cancelled.`, and the view has no `liveness`. With no `stop_reason`, it still records `failed`.
+
 ### Questions and follow-up turns (needs_input / reply)
 
 Baton appends an output contract to every prompt: ask with a `BATON_DECISION` block when a choice is needed, finish with a `BATON_RESULT` block. When the worker asks, the task moves to `needs_input` and the worker process exits normally.

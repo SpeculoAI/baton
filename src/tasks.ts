@@ -5,7 +5,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { adapters, getAdapter } from "./adapters/index.ts";
 import { resolveCursorModelArg } from "./adapters/cursor.ts";
-import { readMeta, writeMeta, writeTurn, readTurn, appendEvent, taskDir, lockTask, listTasks } from "./store.ts";
+import { readMeta, writeMeta, writeTurn, readTurn, appendEvent, hasTurnEnded, taskDir, lockTask, listTasks } from "./store.ts";
 import { setTimeout as sleep } from "node:timers/promises";
 import { redact } from "./redact.ts";
 import { isAlive, killGroup } from "./process.ts";
@@ -272,14 +272,18 @@ export function status(id: string): TaskView {
       }
     }
     killGroup(meta.child_pid);
-    meta.status = "failed";
-    meta.summary = "supervisor exited unexpectedly";
+    const reason = meta.stop_reason;
+    const decided = reason === "idle" || reason === "max_duration" || reason === "cancelled";
+    meta.status = decided ? (reason === "cancelled" ? "cancelled" : "timed_out") : "failed";
+    meta.summary = decided ? (reason === "cancelled" ? "Cancelled." : `Timed out: ${reason}.`) : "supervisor exited unexpectedly";
+    delete meta.stop_reason;
     meta.updated_at = new Date().toISOString();
-    try { const turn = readTurn(id, meta.turn); writeTurn(id, { ...turn, status: "failed", summary: meta.summary }); } catch (error) {
+    try { const turn = readTurn(id, meta.turn); writeTurn(id, { ...turn, status: meta.status, summary: meta.summary }); } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
-    appendEvent(id, { ts: meta.updated_at, turn: meta.turn, type: "turn_ended", status: "failed", exit_code: null });
+    if (!hasTurnEnded(id, meta.turn)) appendEvent(id, { ts: meta.updated_at, turn: meta.turn, type: "turn_ended", status: meta.status, exit_code: null });
     writeMeta(meta);
+    if (decided) return finished(meta);
     return { ...meta, liveness: "orphaned", quiet_for_s: quiet };
   } finally { release(); }
 }

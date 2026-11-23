@@ -47,6 +47,20 @@ export function readMeta(id: string): TaskMeta | null {
   }
 }
 
+export function hasTurnEnded(id: string, turn: number): boolean {
+  let text: string;
+  try { text = fs.readFileSync(path.join(taskDir(id), "events.jsonl"), "utf8"); } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+  for (const line of text.split("\n")) {
+    if (!line) continue;
+    const event = JSON.parse(line) as BatonEvent;
+    if (event.type === "turn_ended" && event.turn === turn) return true;
+  }
+  return false;
+}
+
 export function appendEvent(id: string, event: BatonEvent): void {
   const safe = Object.fromEntries(Object.entries(event).map(([key, value]) => [key, typeof value === "string" ? redact(value) : value]));
   fs.appendFileSync(path.join(ensureTask(id), "events.jsonl"), `${JSON.stringify(safe)}\n`, { mode: 0o600 });

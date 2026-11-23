@@ -84,9 +84,39 @@ test("idle and max_duration kill the whole process group; cancel also terminates
     if (mode === "cancel") assert.equal((await s.run("cancel", started.task_id)).status, "cancelled");
     const done = await s.until(started.task_id);
     assert.equal(done.status, mode === "cancel" ? "cancelled" : "timed_out");
-    if (mode !== "cancel") assert.match(done.summary!, new RegExp(mode));
+    assert.equal(done.summary, mode === "cancel" ? "Cancelled." : `Timed out: ${mode}.`);
+    assert.equal(done.stop_reason, undefined);
     await assertProcessGone(grandchild);
-    assert.equal(s.events(started.task_id).at(-1)?.type, "turn_ended");
+    assert.equal(s.events(started.task_id).filter((event) => event.type === "turn_ended").length, 1);
+  }
+});
+
+test("supervisor exit after stop_reason still finalizes as that stop, once", async (t) => {
+  const s = sandbox(t);
+  s.env.BATON_CRASH_AFTER_STOP_PERSIST = "1";
+  s.env.FAKE_HANG = "1";
+  for (const mode of ["idle", "max_duration", "cancel"] as const) {
+    const pidFile = path.join(s.home, `${mode}-crash.pid`);
+    s.env.FAKE_CHILD_PID_FILE = pidFile;
+    const args = mode === "idle" ? ["--idle-timeout", "0.4"] : mode === "max_duration" ? ["--max-duration", "0.4"] : [];
+    const started = await s.run("start", "--target", "codex", "--prompt", "hi", ...args);
+    await s.until(started.task_id, (m) => !!m.child_pid && fs.existsSync(pidFile));
+    const grandchild = Number(fs.readFileSync(pidFile, "utf8"));
+    const done = mode === "cancel"
+      ? await s.run("cancel", started.task_id)
+      : await s.run("wait", started.task_id, "--until-done");
+    const terminal = mode === "cancel" ? "cancelled" : "timed_out";
+    assert.equal(done.status, terminal);
+    assert.equal(done.summary, mode === "cancel" ? "Cancelled." : `Timed out: ${mode}.`);
+    assert.equal(done.liveness, undefined);
+    assert.equal(s.meta(started.task_id).stop_reason, undefined);
+    const ended = s.events(started.task_id).filter((event) => event.type === "turn_ended");
+    assert.equal(ended.length, 1);
+    assert.equal(ended[0].status, terminal);
+    assert.equal(ended[0].exit_code, null);
+    assert.equal((await s.run("status", started.task_id)).status, terminal);
+    assert.equal(s.events(started.task_id).filter((event) => event.type === "turn_ended").length, 1);
+    await assertProcessGone(grandchild);
   }
 });
 
@@ -159,6 +189,36 @@ test("alive but long without events is quiet; expired heartbeat is treated as or
   meta.heartbeat_at = new Date(Date.now() - 31_000).toISOString();
   writeMeta(meta);
   assert.equal(status(id).liveness, "orphaned");
+});
+
+test("orphaned task with stop_reason finalizes as that stop, once, and without liveness", async (t) => {
+  const s = sandbox(t);
+  const { status } = await import("../src/tasks.ts");
+  const oldHome = process.env.BATON_HOME;
+  process.env.BATON_HOME = s.home;
+  t.after(() => { if (oldHome === undefined) delete process.env.BATON_HOME; else process.env.BATON_HOME = oldHome; });
+  const { writeMeta } = await import("../src/store.ts");
+  const cases = [
+    ["idle", "timed_out", "Timed out: idle.", "11111111-1111-4111-8111-111111111112"],
+    ["max_duration", "timed_out", "Timed out: max_duration.", "11111111-1111-4111-8111-111111111113"],
+    ["cancelled", "cancelled", "Cancelled.", "11111111-1111-4111-8111-111111111114"],
+  ] as const;
+  for (const [reason, terminal, summary, id] of cases) {
+    const now = new Date().toISOString();
+    const meta: TaskMeta = { task_id: id, target: "codex", cwd: s.cwd, created_at: now, updated_at: now, status: "running", turn: 1, session_id: null, idle_timeout_s: 600, max_duration_s: null, supervisor_pid: 2147483000, child_pid: null, heartbeat_at: new Date(Date.now() - 31_000).toISOString(), last_event_at: now, stop_reason: reason };
+    writeMeta(meta);
+    const view = status(id);
+    assert.equal(view.status, terminal);
+    assert.equal(view.summary, summary);
+    assert.equal(view.liveness, undefined);
+    assert.equal(view.stop_reason, undefined);
+    const ended = s.events(id).filter((event) => event.type === "turn_ended");
+    assert.equal(ended.length, 1);
+    assert.equal(ended[0].status, terminal);
+    assert.equal(ended[0].exit_code, null);
+    assert.equal(status(id).status, terminal);
+    assert.equal(s.events(id).filter((event) => event.type === "turn_ended").length, 1);
+  }
 });
 
 test("needs_input → reply continues the same session, records human/host author and raw input, and restarts the timeout", async (t) => {

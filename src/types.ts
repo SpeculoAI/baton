@@ -66,6 +66,8 @@ export type TaskMeta = {
   max_duration_s: number | null;
   supervisor_pid: number | null;
   child_pid: number | null;
+  /** 已决定 stop、终态尚未写盘时存在。终态写入时删除。 */
+  stop_reason?: "idle" | "max_duration" | "cancelled";
   heartbeat_at: string | null;
   last_event_at: string | null;
   decision?: { question: string; options: string[] };
