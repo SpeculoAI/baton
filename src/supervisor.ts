@@ -7,7 +7,7 @@ import { buildPrompt, interpret } from "./contract.ts";
 import { baselineToSnapshot, gitChanges, gitRepoRoot, gitSnapshot, pathsSinceBaseline } from "./git.ts";
 import { applyScopePolicy, findScopeViolations, isDirUnderCwd, relativizeToTaskCwd } from "./scope.ts";
 import { resolveRulesync, rulesGitRoot, rulesyncCheck } from "./rules.ts";
-import { appendEvent, readMeta, writeMeta, readTurn, writeTurn, taskDir, lockTask } from "./store.ts";
+import { appendEvent, hasTurnEnded, readMeta, writeMeta, readTurn, writeTurn, taskDir, lockTask } from "./store.ts";
 import { redact } from "./redact.ts";
 import { killGroup } from "./process.ts";
 import type { EventData, TaskStatus } from "./types.ts";
@@ -67,9 +67,15 @@ export async function supervise(id: string): Promise<void> {
   if (!meta || meta.status !== "running" || meta.supervisor_pid !== null) { release(); return; }
   let childPid: number | null = null;
   let stopped: "idle" | "max_duration" | "cancelled" | null = null;
-  const stop = (reason: typeof stopped) => {
-    if (!stopped) stopped = reason;
-    killGroup(childPid);
+  const stop = (reason: "idle" | "max_duration" | "cancelled") => {
+    if (!stopped) {
+      stopped = reason;
+      meta.stop_reason = reason;
+      meta.updated_at = new Date().toISOString();
+      writeMeta(meta);
+    }
+    try { killGroup(childPid); } catch { /* 决定已落盘；杀进程失败留待孤儿收尾 */ }
+    if (process.env.BATON_CRASH_AFTER_STOP_PERSIST === "1") process.exit(1);
   };
   const cancel = () => stop("cancelled");
   process.on("SIGTERM", cancel);
@@ -272,9 +278,11 @@ export async function supervise(id: string): Promise<void> {
       }
     }
   }
+  delete meta.stop_reason;
   turn.status = final;
   turn.summary = meta.summary;
   writeTurn(id, turn);
-  emit({ type: "turn_ended", status: final, exit_code: code });
+  if (hasTurnEnded(id, meta.turn)) save();
+  else emit({ type: "turn_ended", status: final, exit_code: code });
   process.off("SIGTERM", cancel);
 }

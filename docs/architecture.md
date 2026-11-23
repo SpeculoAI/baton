@@ -43,7 +43,7 @@ Task ids are UUIDs; every id is validated before it is used in a path. Directori
 | `failed` / `timed_out` / `cancelled` | Terminal |
 | `not_authenticated` / `quota_exceeded` / `not_installed` | Target CLI problem |
 
-While `running`, `liveness` is `active` (output within 60s), `quiet` (alive but silent), or `orphaned` (supervisor gone; the next read finalizes as `failed`).
+While `running`, `liveness` is `active` (output within 60s), `quiet` (alive but silent), or `orphaned` (supervisor gone; the next read finalizes as `failed`). If that meta already has `stop_reason` `idle` or `max_duration`, the read finalizes as `timed_out` with summary `Timed out: idle.` or `Timed out: max_duration.`. `stop_reason` `cancelled` finalizes as `cancelled` / `Cancelled.`. With no `stop_reason`, it still finalizes as `failed`.
 
 ## Workers and hosts
 

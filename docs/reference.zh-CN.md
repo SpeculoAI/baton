@@ -355,6 +355,8 @@ baton mcp                             # 启动 MCP 服务（stdio）
 | `quiet` | 守护进程活着，但超过 60 秒没有输出（通常是在思考） |
 | `orphaned` | 守护进程没了或心跳超过 30 秒未更新；下一次读会杀掉残留子进程并补写 `failed` |
 
+若已有 `stop_reason` 为 `idle` 或 `max_duration`，这次读取收成 `timed_out`，摘要为 `Timed out: idle.` 或 `Timed out: max_duration.`。`cancelled` 收成 `cancelled` / `Cancelled.`，返回视图不带 `liveness`。没有 `stop_reason` 时仍补写 `failed`。
+
 ### 停下提问与续轮 (needs_input / reply)
 
 派工时 baton 会在 prompt 末尾附上输出约定：需要选择时用 `BATON_DECISION` 块提问，做完时用 `BATON_RESULT` 块总结。子 CLI 提问后任务进入 `needs_input`，进程正常退出。
