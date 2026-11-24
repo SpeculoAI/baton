@@ -88,18 +88,27 @@ function positive(value: number, name: string): number {
   return value;
 }
 
+// Node boot + module load takes ~150ms idle but >1s on a busy machine; a slow start is not a failure.
+// Stay under the 30s no-supervisor orphan window in orphaned().
+const SUPERVISOR_READY_MS = 15_000;
+
 async function launch(id: string): Promise<void> {
   const child = spawn(process.execPath, [path.join(import.meta.dirname, `cli${path.extname(import.meta.filename)}`), "_supervise", id], { detached: true, stdio: "ignore", env: process.env });
   await once(child, "spawn");
+  let exited = false;
+  child.once("exit", () => { exited = true; });
   child.unref();
-  const deadline = Date.now() + 750;
-  while (Date.now() < deadline) {
-    if (readMeta(id)?.supervisor_pid === child.pid) return;
+  // supervisor_pid is never cleared, so a supervisor that claimed the task and already finished still counts as ready.
+  const ready = () => readMeta(id)?.supervisor_pid === child.pid;
+  const deadline = Date.now() + SUPERVISOR_READY_MS;
+  while (!exited && Date.now() < deadline) {
+    if (ready()) return;
     await sleep(10);
   }
+  if (ready()) return;
   child.kill("SIGKILL");
   killGroup(readMeta(id)?.child_pid ?? null);
-  throw new Error("supervisor not ready.");
+  throw new Error(exited ? "supervisor exited before it was ready." : "supervisor not ready.");
 }
 
 export async function start(input: StartInput): Promise<StartResult> {
@@ -268,7 +277,9 @@ export function status(id: string): TaskView {
     // The heartbeat may just be a slow write; check the pid again. If the heartbeat is stale and the process is still alive, stop the writer first, then take over.
     if (isAlive(meta.supervisor_pid)) {
       try { process.kill(meta.supervisor_pid!, "SIGKILL"); } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+        // EPERM: the pid now belongs to another user's process (reuse); it is not our writer, so recovery goes on.
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code !== "ESRCH" && code !== "EPERM") throw error;
       }
     }
     killGroup(meta.child_pid);

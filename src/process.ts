@@ -9,6 +9,8 @@ export function isAlive(pid: number | null): boolean {
 export function killGroup(pid: number | null): void {
   if (!pid || !Number.isSafeInteger(pid) || pid <= 1) return;
   try { process.kill(-pid, "SIGKILL"); } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+    // macOS returns EPERM for a group whose members have all exited but are not reaped yet (zombies); nothing is left to kill.
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== "ESRCH" && code !== "EPERM") throw error;
   }
 }

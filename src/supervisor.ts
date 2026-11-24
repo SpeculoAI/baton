@@ -61,6 +61,10 @@ function failureSummary(stdout: string, stderr: string) {
 }
 
 export async function supervise(id: string): Promise<void> {
+  // Test hook: simulate a slow ("<ms>") or crashing ("exit") supervisor start.
+  const hook = process.env.BATON_TEST_SUPERVISE_START;
+  if (hook === "exit") process.exit(1);
+  if (hook) await new Promise((resolve) => setTimeout(resolve, Number(hook)));
   const release = lockTask(id);
   if (!release) return;
   const meta = readMeta(id);
