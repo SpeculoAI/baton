@@ -292,7 +292,7 @@ Say something like "rescue this refactor to Codex" and the host runs `baton star
 
 ### Command line
 
-Every command prints exactly one JSON object (except `tail`) and exits non-zero on error. `baton` is the global command from `@speculoai/baton`.
+Every command prints exactly one JSON object (except `tail` and `result`) and exits non-zero on error. `baton` is the global command from `@speculoai/baton`.
 
 ```bash
 baton agents
@@ -303,6 +303,7 @@ baton start --target <codex|claude|cursor|agy> [--prompt <text> | stdin] [--file
             [--rules check|pointer|off]
 baton status <id>
 baton wait <id>... [--for <s> | --until-done]  # default --for 50; --until-done blocks until a job leaves running
+baton result <id> [--turn <n>]       # plain text: the agent's full final message of a finished turn (default latest), no transcript
 baton tail <id> [-f] [--raw]         # readable events; -f follows until the job stops; --raw prints events.jsonl lines
 baton reply <id> [--prompt <text> | stdin] [--as host|human]   # also after scope_violation / readonly_violation
 baton cancel <id>
@@ -379,6 +380,7 @@ MCP is a thin shell over the same logic. It keeps no task state, so restarting M
 | `delegate_task` | `start` (`target_agent`, `prompt`, `files`, `reasoning_effort`, `idle_timeout_seconds`, `max_duration_seconds`, `cwd`, `scope`, `scope_on_violation`, `mode`, `allow_weak`, `isolate`, `allow_dirty`, `rules`) |
 | `task_status` | `status` |
 | `task_wait` | `wait` (`task_ids`, `wait_seconds` default 50, max 55; sends a progress notification every 15 seconds) |
+| `task_result` | `result` (`task_id`, `turn`; returns JSON with `final_message`) |
 | `task_reply` | `reply` (`task_id`, `prompt`, `as`) |
 | `task_cancel` | `cancel` |
 | `task_list` | `ls` (`all`, `cwd`) |

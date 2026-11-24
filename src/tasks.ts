@@ -22,7 +22,7 @@ import {
   unseenRules,
 } from "./rules.ts";
 import { addWorktree, assertNotNestedWorktree, batonWorktreeExemptPaths, resolveRepoRoot } from "./worktree.ts";
-import type { Author, Effort, Enforcement, GitChanges, RulesMode, RulesReport, ScopeOnViolation, TaskMeta, TaskMode } from "./types.ts";
+import type { Author, Effort, Enforcement, GitChanges, RulesMode, RulesReport, ScopeOnViolation, TaskMeta, TaskMode, TaskStatus } from "./types.ts";
 
 export type StartInput = {
   target: string;
@@ -304,6 +304,17 @@ export async function cancel(id: string): Promise<TaskView> {
     await sleep(20);
   }
   throw new Error("Cancellation not yet confirmed; retry status.");
+}
+
+/** The agent's full last message of a finished turn (default: the latest turn). */
+export function result(id: string, turnNo?: number): { task_id: string; turn: number; status: TaskStatus; final_message: string } {
+  const meta = status(id);
+  const n = turnNo ?? meta.turn;
+  if (!Number.isInteger(n) || n < 1 || n > meta.turn) throw new Error(`turn must be an integer from 1 to ${meta.turn}.`);
+  const turn = readTurn(id, n);
+  if (turn.status === "running") throw new Error(`Turn ${n} is still running; wait for it first.`);
+  if (!turn.final_message) throw new Error(`Turn ${n} has no recorded final message (older baton, or the agent sent none); use baton tail.`);
+  return { task_id: id, turn: n, status: turn.status, final_message: turn.final_message };
 }
 
 export async function wait(ids: string[], seconds = 50): Promise<TaskView | { status: "running"; tasks: TaskView[] }> {

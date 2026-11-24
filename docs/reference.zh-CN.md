@@ -292,7 +292,7 @@ baton agents
 
 ### 命令行
 
-所有命令都只输出一个 JSON 对象（`tail` 除外），出错时退出码非 0。`baton` 是 `@speculoai/baton` 提供的全局命令。
+所有命令都只输出一个 JSON 对象（`tail` 和 `result` 除外），出错时退出码非 0。`baton` 是 `@speculoai/baton` 提供的全局命令。
 
 ```bash
 baton agents
@@ -303,6 +303,7 @@ baton start --target <codex|claude|cursor|agy> [--prompt <text> | stdin] [--file
             [--rules check|pointer|off]
 baton status <id>
 baton wait <id>... [--for <秒> | --until-done]  # 默认 --for 50；--until-done 阻塞到任一任务离开 running
+baton result <id> [--turn <n>]        # 纯文本：已结束轮次（默认最新）agent 的完整最终回答，不含过程记录
 baton tail <id> [-f] [--raw]          # 人读格式的事件；-f 跟到任务停下；--raw 输出 events.jsonl 原行
 baton reply <id> [--prompt <text> | stdin] [--as host|human]   # scope_violation / readonly_violation 后也可续轮
 baton cancel <id>
@@ -379,6 +380,7 @@ MCP 是同一套逻辑的薄壳，进程里不存任何任务状态，重启 MCP
 | `delegate_task` | `start`（参数 `target_agent`、`prompt`、`files`、`reasoning_effort`、`idle_timeout_seconds`、`max_duration_seconds`、`cwd`、`scope`、`scope_on_violation`、`mode`、`allow_weak`、`isolate`、`allow_dirty`、`rules`） |
 | `task_status` | `status` |
 | `task_wait` | `wait`（参数 `task_ids`、`wait_seconds`，默认 50，上限 55；等待期间每 15 秒发一次进度通知） |
+| `task_result` | `result`（参数 `task_id`、`turn`；返回含 `final_message` 的 JSON） |
 | `task_reply` | `reply`（参数 `task_id`、`prompt`、`as`） |
 | `task_cancel` | `cancel` |
 | `task_list` | `ls`（参数 `all`、`cwd`） |

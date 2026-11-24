@@ -281,6 +281,7 @@ export async function supervise(id: string): Promise<void> {
   delete meta.stop_reason;
   turn.status = final;
   turn.summary = meta.summary;
+  if (message.trim()) turn.final_message = redact(message.trim());
   writeTurn(id, turn);
   if (hasTurnEnded(id, meta.turn)) save();
   else emit({ type: "turn_ended", status: final, exit_code: code });

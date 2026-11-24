@@ -115,3 +115,22 @@ test("terminal status/wait include git_changes of the current turn", async (t) =
   assert.equal(done.git_changes?.files_changed, 0);
   assert.deepEqual((await s.run<Record<string, any>>("status", started.task_id)).git_changes, done.git_changes);
 });
+
+test("result prints only the final message of a finished turn; summary stays one line", async (t) => {
+  const s = sandbox(t);
+  const body = "## Findings\n1. token=abc123 leaked in a.ts\n2. fine otherwise";
+  fs.writeFileSync(s.fixture, [
+    JSON.stringify({ type: "thread.started", thread_id: "t1" }),
+    JSON.stringify({ type: "item.completed", item: { type: "command_execution", command: "cat a.ts", aggregated_output: "x".repeat(5000), exit_code: 0 } }),
+    JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: `${body}\n\nBATON_RESULT\nsummary: reviewed\nBATON_END` } }),
+  ].join("\n") + "\n");
+  const task = await s.run("start", "--target", "codex", "--prompt", "review");
+  const done = await s.until(task.task_id);
+  assert.equal(done.summary, "reviewed");
+  const out = (await exec(process.execPath, [cli, "result", task.task_id], { cwd: s.cwd, env: s.env })).stdout;
+  assert.match(out, /^## Findings\n/);
+  assert.match(out, /summary: reviewed/);
+  assert.doesNotMatch(out, /abc123|xxxxx/); // redacted; no tool output
+  assert.equal((await exec(process.execPath, [cli, "result", task.task_id, "--turn", "1"], { cwd: s.cwd, env: s.env })).stdout, out);
+  await assert.rejects(exec(process.execPath, [cli, "result", task.task_id, "--turn", "2"], { cwd: s.cwd, env: s.env }), (err: { stdout: string }) => /from 1 to 1/.test(err.stdout));
+});

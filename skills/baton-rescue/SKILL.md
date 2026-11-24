@@ -80,7 +80,7 @@ While `running`, read `liveness`:
 
 ## After it stops
 
-- `success`: if `scope_violations` is non-empty (warn policy), treat as **not** done — `baton reply` to revert/move those paths; do not switch vendor. Otherwise tell the user `summary` and the turn's `git_changes`; do not redo those edits. If the job used `--isolate`, also tell them `worktree.path` and `worktree.branch`: changes are **uncommitted** in that worktree; reviewing, committing, and merging stay with the user; clean up with `baton worktree rm` when done. If `worktree.gitignore_updated` is true, remind them to commit `.gitignore`.
+- `success`: if `scope_violations` is non-empty (warn policy), treat as **not** done — `baton reply` to revert/move those paths; do not switch vendor. Otherwise tell the user `summary` and the turn's `git_changes` (`summary` is one line; for the full answer — e.g. review findings — run `baton result <task_id>`, not `tail`); do not redo those edits. If the job used `--isolate`, also tell them `worktree.path` and `worktree.branch`: changes are **uncommitted** in that worktree; reviewing, committing, and merging stay with the user; clean up with `baton worktree rm` when done. If `worktree.gitignore_updated` is true, remind them to commit `.gitignore`.
 - `dirty_worktree`: in-place write refused. Relay `dirty_paths` and ask the user to choose `--isolate` or `--allow-dirty`; do not choose `--allow-dirty` yourself.
 - `scope_violation`: out-of-scope edits under `--scope-on-violation fail`. `baton reply` asking to restore those paths; do not switch vendor.
 - `readonly_violation`: `--mode readonly` but the tree changed. `baton reply` asking to restore; do not switch vendor.
@@ -99,6 +99,7 @@ While `running`, read `liveness`:
 ## Other commands
 
 - `baton status <task_id>`: one look, no waiting.
+- `baton result <task_id> [--turn <n>]`: plain-text full final message of a finished turn (default latest); no tool-call transcript.
 - `baton tail <task_id> [-f] [--raw]`: readable event log; `-f` follows until the job stops.
 - `baton cancel <task_id>`: stop it (kills the whole process group). Use when the user wants to stop.
 - `baton ls [--all]`: jobs for this directory (or all), newest first.

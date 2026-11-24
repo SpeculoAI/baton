@@ -70,7 +70,7 @@ test("rescue: --model + scope_violation terminal state; orchestrate brief covers
   assert.match(rescue, /success`, `needs_input`, `scope_violation`, or `readonly_violation/);
   assert.match(orchestrate, /--model <id>/);
   assert.match(orchestrate, /worktree/);
-  assert.match(orchestrate, /agents, start, wait, status, tail, reply, cancel, ls, worktree/);
+  assert.match(orchestrate, /agents, start, wait, status, result, tail, reply, cancel, ls, worktree/);
 });
 
 test("skills: --until-done and --mode readonly; --for 50 is still kept", () => {
