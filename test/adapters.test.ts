@@ -111,6 +111,21 @@ test("codex build keeps fresh/resume and the four effort-level arguments", () =>
   assert.equal(getAdapter("constructor"), null);
 });
 
+test("codex build: --model becomes -m on fresh and resume; absent model adds nothing", () => {
+  for (const sessionId of [null, "thread-9"]) {
+    const spec = codex.build({ bin: "/b", cwd: "/w", prompt: "p", sessionId, reasoningEffort: "high", model: "gpt-6.2-sol" });
+    const i = spec.args.indexOf("-m");
+    assert.ok(i > 0 && spec.args[i + 1] === "gpt-6.2-sol");
+    assert.equal(spec.args.filter((a) => a === "-m").length, 1);
+    assert.equal(spec.modelArg, "gpt-6.2-sol");
+    assert.ok(spec.args.includes(`model_reasoning_effort="high"`));
+    if (sessionId) assert.equal(spec.args.at(-2), sessionId);
+  }
+  const none = codex.build({ bin: "/b", cwd: "/w", prompt: "p", sessionId: null, reasoningEffort: null, model: null });
+  assert.equal(none.args.includes("-m"), false);
+  assert.equal(none.modelArg, undefined);
+});
+
 test("readonly mode: argv mapping for all four; codex resume still has no sandbox/approve", () => {
   const input = { bin: "/b", cwd: "/w", prompt: "p", sessionId: null as string | null, reasoningEffort: null as null, mode: "readonly" as const };
   assert.deepEqual(codex.build(input).args.slice(0, 8), ["exec", "--json", "--color", "never", "--sandbox", "read-only", "--skip-git-repo-check", "--cd"]);

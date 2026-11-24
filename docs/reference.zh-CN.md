@@ -316,7 +316,7 @@ baton mcp                             # 启动 MCP 服务（stdio）
 ```
 
 - `--effort` 映射到各家原生参数：Codex `-c model_reasoning_effort=...`；Claude/Agy `--effort`（`ultra` 映射为 `max`）。Cursor 没有独立的 effort 参数（`cursor-agent` 拒绝 `<id>[effort=...]`），`--target cursor --effort` 会在 `start` 时直接报错；请改选名称自带档位的模型（`cursor-agent --list-models`，如 `gpt-5.3-codex-high`）。
-- `--model <id>`（目前仅 Cursor）：按任务指定模型，写入 meta，`reply` 延续。Cursor 原样传 `--model <id>`；与 `--effort` 同时使用会报错。`status` 含 `model`（请求）与 `model_argv`（传给 CLI 的参数）；这不是 provider 确认的“实际模型”。
+- `--model <id>`（Cursor 与 Codex；Claude/Agy 会报错）：按任务指定模型，写入 meta，`reply` 延续。Codex 在 `exec` 和 `exec resume` 上都传 `-m <id>`（可与 `--effort` 同用）。Cursor 原样传 `--model <id>`；与 `--effort` 同时使用会报错。`status` 含 `model`（请求）与 `model_argv`（传给 CLI 的参数）；这不是 provider 确认的“实际模型”。
 - `--idle-timeout` 默认 600：连续这么久没有任何输出字节才停掉。`--max-duration` 默认不限。两者都按单轮计时，`reply` 开新一轮时重新计时。
 - **`--mode readonly|write`（默认 `write`）：** 映射到各家只读参数（Codex `--sandbox read-only`、Claude `--permission-mode plan`、Cursor `--mode ask`、Agy `--mode plan`）。写入 meta，`reply` 延续。每轮结束后若有净变更，会把干净的 `success` 升为 `readonly_violation`。无映射的目标默认拒绝，需显式 `--allow-weak`。**兼容性：** 新增终态 `readonly_violation`。
 - **`--isolate` / `--allow-dirty`（仅 write）：** `--isolate` 从 `HEAD` 创建名为 `task-<id8>` 的 worktree（分支 `baton/task-<id8>`），在其中运行任务，并把 `worktree.path` / `worktree.branch` / `worktree.source_cwd` 记入任务。`reply` 在同一 worktree 继续；从源目录执行 `ls` 仍能看到该任务。改动保持未提交——Baton 不自动 commit、merge 或开 PR。在脏工作区上原地 write 会返回 `dirty_worktree` 与 `dirty_paths`，除非传入 `--allow-dirty`。两者不能并用，也不能与 `--mode readonly` 并用。手动流程仍可用：先 `baton worktree add`，再 `baton start --cwd <path>`。默认目录 `.worktrees/`（必要时写入 `.gitignore`，见 `worktree.gitignore_updated`）；可选 `.baton.json` 配置 `copy` / `symlink` / `post_create` / `rulesync`（布尔，默认开启）。软链 `node_modules` 在分支依赖不一致时可能互相污染，必要时改用 `post_create` 独立安装。新 worktree 里若有 `.rulesync/` 且能找到 `rulesync`，`worktree add` / `--isolate` 会在其中运行 `rulesync generate`，并报告 `rules.missing` / `rules.dirtied`。建议先在主仓库生成并提交 rulesync 输出，避免 worktree 一开始就脏。
@@ -377,7 +377,7 @@ MCP 是同一套逻辑的薄壳，进程里不存任何任务状态，重启 MCP
 | 工具 | 对应命令 |
 |---|---|
 | `list_agents` | `agents` |
-| `delegate_task` | `start`（参数 `target_agent`、`prompt`、`files`、`reasoning_effort`、`idle_timeout_seconds`、`max_duration_seconds`、`cwd`、`scope`、`scope_on_violation`、`mode`、`allow_weak`、`isolate`、`allow_dirty`、`rules`） |
+| `delegate_task` | `start`（参数 `target_agent`、`prompt`、`files`、`reasoning_effort`、`model`、`idle_timeout_seconds`、`max_duration_seconds`、`cwd`、`scope`、`scope_on_violation`、`mode`、`allow_weak`、`isolate`、`allow_dirty`、`rules`） |
 | `task_status` | `status` |
 | `task_wait` | `wait`（参数 `task_ids`、`wait_seconds`，默认 50，上限 55；等待期间每 15 秒发一次进度通知） |
 | `task_result` | `result`（参数 `task_id`、`turn`；返回含 `final_message` 的 JSON） |

@@ -111,8 +111,8 @@ export async function start(input: StartInput): Promise<StartResult> {
   const max = input.maxDuration == null ? null : positive(input.maxDuration, "max_duration");
   if (input.reasoningEffort && !["low", "medium", "high", "ultra"].includes(input.reasoningEffort)) throw new Error("Unknown effort.");
   const model = input.model?.trim() || undefined;
-  if (model && adapter.id !== "cursor") throw new Error(`${adapter.id} does not support --model yet (cursor only).`);
-  let model_argv: string | undefined;
+  if (model && adapter.id !== "cursor" && adapter.id !== "codex") throw new Error(`${adapter.id} does not support --model yet (cursor and codex only).`);
+  let model_argv: string | undefined = adapter.id === "codex" ? model : undefined;
   if (adapter.id === "cursor") {
     const resolved = resolveCursorModelArg(model, input.reasoningEffort ?? null);
     if (resolved) model_argv = resolved;

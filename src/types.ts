@@ -52,7 +52,7 @@ export type TaskMeta = {
   turn: number;
   session_id: string | null;
   reasoning_effort?: Effort;
-  /** Requested model id (Cursor `--model`); reply keeps this. */
+  /** Requested model id (Cursor `--model`, Codex `-m`); reply keeps this. */
   model?: string;
   /** Last argv value passed as `--model` (requested, not provider-confirmed). */
   model_argv?: string;

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import path from "node:path";
 import { sandbox } from "./helpers.ts";
 
 function cursorFixture(homeFixture: string) {
@@ -32,13 +33,32 @@ test("cursor --model is written to meta; reply continues it; argv has a single -
   await s.until(started.task_id);
 });
 
-test("--model on a non-cursor target is rejected", async (t) => {
+test("codex --model is written to meta and kept across reply", async (t) => {
+  const s = sandbox(t);
+  const started = await s.run("start", "--target", "codex", "--prompt", "hi", "--model", "gpt-6.2-sol", "--effort", "high");
+  assert.equal(started.model, "gpt-6.2-sol");
+  assert.equal(started.model_argv, "gpt-6.2-sol");
+  const done = await s.until(started.task_id);
+  assert.equal(done.status, "success");
+  assert.equal(done.model_argv, "gpt-6.2-sol");
+  const argsFile = path.join(s.home, "args.txt");
+  s.env.FAKE_ARGS_FILE = argsFile;
+  await s.run("reply", started.task_id, "--prompt", "more");
+  const again = await s.until(started.task_id, (m) => m.turn === 2 && m.status !== "running");
+  const argv = fs.readFileSync(argsFile, "utf8").split("\n");
+  assert.deepEqual(argv.slice(0, 2), ["exec", "resume"]);
+  assert.equal(argv[argv.indexOf("-m") + 1], "gpt-6.2-sol");
+  assert.equal(again.model, "gpt-6.2-sol");
+  assert.equal(again.model_argv, "gpt-6.2-sol");
+});
+
+test("--model on a target without model support is rejected", async (t) => {
   const s = sandbox(t);
   await assert.rejects(
-    () => s.run("start", "--target", "codex", "--prompt", "hi", "--model", "grok-4.7-xhigh"),
+    () => s.run("start", "--target", "claude", "--prompt", "hi", "--model", "grok-4.7-xhigh"),
     (err: NodeJS.ErrnoException & { stdout?: string }) => {
       const body = JSON.parse(err.stdout || "{}") as { summary?: string };
-      assert.match(body.summary || "", /not support --model|cursor/i);
+      assert.match(body.summary || "", /not support --model/i);
       return true;
     },
   );

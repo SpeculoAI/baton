@@ -27,7 +27,7 @@ export function createServer(): McpServer {
       prompt: z.string(),
       files: z.array(z.string()).optional(),
       reasoning_effort: z.enum(["low", "medium", "high", "ultra"]).optional(),
-      model: z.string().optional().describe("Per-task model (cursor only for now; stored in meta and carried over by reply)."),
+      model: z.string().optional().describe("Per-task model (cursor and codex; stored in meta and carried over by reply)."),
       idle_timeout_seconds: z.number().optional().describe("Stop after this long with no output at all; default 600."),
       max_duration_seconds: z.number().optional().describe("Maximum total duration per turn; default unlimited."),
       cwd: z.string().optional(),
