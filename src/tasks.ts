@@ -22,7 +22,7 @@ import {
   unseenRules,
 } from "./rules.ts";
 import { addWorktree, assertNotNestedWorktree, batonWorktreeExemptPaths, resolveRepoRoot } from "./worktree.ts";
-import type { Author, Effort, Enforcement, GitChanges, RulesMode, RulesReport, ScopeOnViolation, TaskMeta, TaskMode } from "./types.ts";
+import type { Author, Effort, Enforcement, GitChanges, RulesMode, RulesReport, ScopeOnViolation, TaskMeta, TaskMode, TaskStatus } from "./types.ts";
 
 export type StartInput = {
   target: string;
@@ -88,18 +88,27 @@ function positive(value: number, name: string): number {
   return value;
 }
 
+// Node boot + module load takes ~150ms idle but >1s on a busy machine; a slow start is not a failure.
+// Stay under the 30s no-supervisor orphan window in orphaned().
+const SUPERVISOR_READY_MS = 15_000;
+
 async function launch(id: string): Promise<void> {
   const child = spawn(process.execPath, [path.join(import.meta.dirname, `cli${path.extname(import.meta.filename)}`), "_supervise", id], { detached: true, stdio: "ignore", env: process.env });
   await once(child, "spawn");
+  let exited = false;
+  child.once("exit", () => { exited = true; });
   child.unref();
-  const deadline = Date.now() + 750;
-  while (Date.now() < deadline) {
-    if (readMeta(id)?.supervisor_pid === child.pid) return;
+  // supervisor_pid is never cleared, so a supervisor that claimed the task and already finished still counts as ready.
+  const ready = () => readMeta(id)?.supervisor_pid === child.pid;
+  const deadline = Date.now() + SUPERVISOR_READY_MS;
+  while (!exited && Date.now() < deadline) {
+    if (ready()) return;
     await sleep(10);
   }
+  if (ready()) return;
   child.kill("SIGKILL");
   killGroup(readMeta(id)?.child_pid ?? null);
-  throw new Error("supervisor not ready.");
+  throw new Error(exited ? "supervisor exited before it was ready." : "supervisor not ready.");
 }
 
 export async function start(input: StartInput): Promise<StartResult> {
@@ -111,8 +120,8 @@ export async function start(input: StartInput): Promise<StartResult> {
   const max = input.maxDuration == null ? null : positive(input.maxDuration, "max_duration");
   if (input.reasoningEffort && !["low", "medium", "high", "ultra"].includes(input.reasoningEffort)) throw new Error("Unknown effort.");
   const model = input.model?.trim() || undefined;
-  if (model && adapter.id !== "cursor") throw new Error(`${adapter.id} does not support --model yet (cursor only).`);
-  let model_argv: string | undefined;
+  if (model && adapter.id !== "cursor" && adapter.id !== "codex") throw new Error(`${adapter.id} does not support --model yet (cursor and codex only).`);
+  let model_argv: string | undefined = adapter.id === "codex" ? model : undefined;
   if (adapter.id === "cursor") {
     const resolved = resolveCursorModelArg(model, input.reasoningEffort ?? null);
     if (resolved) model_argv = resolved;
@@ -268,7 +277,9 @@ export function status(id: string): TaskView {
     // The heartbeat may just be a slow write; check the pid again. If the heartbeat is stale and the process is still alive, stop the writer first, then take over.
     if (isAlive(meta.supervisor_pid)) {
       try { process.kill(meta.supervisor_pid!, "SIGKILL"); } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+        // EPERM: the pid now belongs to another user's process (reuse); it is not our writer, so recovery goes on.
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code !== "ESRCH" && code !== "EPERM") throw error;
       }
     }
     killGroup(meta.child_pid);
@@ -304,6 +315,17 @@ export async function cancel(id: string): Promise<TaskView> {
     await sleep(20);
   }
   throw new Error("Cancellation not yet confirmed; retry status.");
+}
+
+/** The agent's full last message of a finished turn (default: the latest turn). */
+export function result(id: string, turnNo?: number): { task_id: string; turn: number; status: TaskStatus; final_message: string } {
+  const meta = status(id);
+  const n = turnNo ?? meta.turn;
+  if (!Number.isInteger(n) || n < 1 || n > meta.turn) throw new Error(`turn must be an integer from 1 to ${meta.turn}.`);
+  const turn = readTurn(id, n);
+  if (turn.status === "running") throw new Error(`Turn ${n} is still running; wait for it first.`);
+  if (!turn.final_message) throw new Error(`Turn ${n} has no recorded final message (older baton, or the agent sent none); use baton tail.`);
+  return { task_id: id, turn: n, status: turn.status, final_message: turn.final_message };
 }
 
 export async function wait(ids: string[], seconds = 50): Promise<TaskView | { status: "running"; tasks: TaskView[] }> {

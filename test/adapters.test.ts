@@ -45,8 +45,8 @@ test("cursor real stream-json: session, tools, messages; thinking deltas emit no
   assert.deepEqual(events[2], { ...events[2], name: "shell", ok: true, detail: "cat a.txt" });
   const last = events.at(-1);
   assert.equal(last?.type === "message" && last.text, "hi");
-  assert.deepEqual(cursor.build({ bin: "c", cwd: "/w", prompt: "p", sessionId: "s1", reasoningEffort: "low", model: null }).args,
-    ["--print", "--force", "--trust", "--output-format", "stream-json", "--workspace", "/w", "--model", "auto[effort=low]", "--resume", "s1", "p"]);
+  assert.deepEqual(cursor.build({ bin: "c", cwd: "/w", prompt: "p", sessionId: "s1", reasoningEffort: null, model: null }).args,
+    ["--print", "--force", "--trust", "--output-format", "stream-json", "--workspace", "/w", "--resume", "s1", "p"]);
   assert.deepEqual(cursor.build({ bin: "c", cwd: "/w", prompt: "p", sessionId: null, reasoningEffort: null, model: "grok-4.7-xhigh" }).args,
     ["--print", "--force", "--trust", "--output-format", "stream-json", "--workspace", "/w", "--model", "grok-4.7-xhigh", "p"]);
 });
@@ -109,6 +109,21 @@ test("codex build keeps fresh/resume and the four effort-level arguments", () =>
   assert.equal(getAdapter("missing"), null);
   assert.equal(getAdapter("__proto__"), null);
   assert.equal(getAdapter("constructor"), null);
+});
+
+test("codex build: --model becomes -m on fresh and resume; absent model adds nothing", () => {
+  for (const sessionId of [null, "thread-9"]) {
+    const spec = codex.build({ bin: "/b", cwd: "/w", prompt: "p", sessionId, reasoningEffort: "high", model: "gpt-6.2-sol" });
+    const i = spec.args.indexOf("-m");
+    assert.ok(i > 0 && spec.args[i + 1] === "gpt-6.2-sol");
+    assert.equal(spec.args.filter((a) => a === "-m").length, 1);
+    assert.equal(spec.modelArg, "gpt-6.2-sol");
+    assert.ok(spec.args.includes(`model_reasoning_effort="high"`));
+    if (sessionId) assert.equal(spec.args.at(-2), sessionId);
+  }
+  const none = codex.build({ bin: "/b", cwd: "/w", prompt: "p", sessionId: null, reasoningEffort: null, model: null });
+  assert.equal(none.args.includes("-m"), false);
+  assert.equal(none.modelArg, undefined);
 });
 
 test("readonly mode: argv mapping for all four; codex resume still has no sandbox/approve", () => {

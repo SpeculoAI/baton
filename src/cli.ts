@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import { parseArgs } from "node:util";
-import { agents, start, status, cancel, wait, reply, ls, prune } from "./tasks.ts";
+import { agents, start, status, cancel, wait, reply, ls, prune, result as turnResult } from "./tasks.ts";
 import { addWorktree, listWorktrees, removeWorktree } from "./worktree.ts";
 import { redact } from "./redact.ts";
 import { detectedHosts, runInstall, type Action } from "./install.ts";
@@ -65,6 +65,12 @@ async function main(): Promise<void> {
     });
     if (values["until-done"] && values.for !== undefined) throw new Error("--until-done and --for cannot be used together.");
     result = await wait(positionals, values["until-done"] ? Infinity : values.for === undefined ? 50 : Number(values.for));
+  } else if (command === "result") {
+    const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { turn: { type: "string" } } });
+    if (positionals.length !== 1) throw new Error("result requires one task_id.");
+    // Plain text, like tail: the point is to read the answer without JSON escaping or the full transcript.
+    process.stdout.write(`${turnResult(positionals[0], values.turn === undefined ? undefined : Number(values.turn)).final_message}\n`);
+    return;
   } else if (command === "tail") {
     const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { follow: { type: "boolean", short: "f" }, raw: { type: "boolean" } } });
     if (positionals.length !== 1) throw new Error("tail requires one task_id.");
@@ -233,7 +239,7 @@ async function main(): Promise<void> {
     // TTY already showed the human summary; dumping JSON on top is noise. Scripts (non-TTY) still get JSON.
     if (!pretty) process.stdout.write(`${JSON.stringify(result)}\n`);
     return;
-  } else throw new Error("Usage: baton version | agents | start | status | cancel | wait | tail | reply | ls | prune | worktree | rules | install | update | uninstall | mcp");
+  } else throw new Error("Usage: baton version | agents | start | status | cancel | wait | result | tail | reply | ls | prune | worktree | rules | install | update | uninstall | mcp");
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }
 

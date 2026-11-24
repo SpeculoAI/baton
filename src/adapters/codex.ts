@@ -21,9 +21,14 @@ export const codex: Adapter = {
   resolve(env) {
     return which(["codex"], env);
   },
-  build({ bin, cwd, prompt, sessionId, reasoningEffort, mode }) {
+  build({ bin, cwd, prompt, sessionId, reasoningEffort, model, mode }) {
     const lastMessagePath = path.join(os.tmpdir(), `baton-codex-${process.pid}-${Date.now()}.txt`);
-    const effortArgs = reasoningEffort ? ["-c", `model_reasoning_effort="${reasoningEffort}"`] : [];
+    // `-m` is accepted by both `exec` and `exec resume` (codex-cli 0.171.0).
+    const modelArg = model?.trim() || undefined;
+    const optionArgs = [
+      ...(modelArg ? ["-m", modelArg] : []),
+      ...(reasoningEffort ? ["-c", `model_reasoning_effort="${reasoningEffort}"`] : []),
+    ];
     const readonly = mode === "readonly";
     // `exec resume` does not accept --cd/--color/--sandbox. The first write turn uses --approve-for-me (workspace-write; do not add --sandbox).
     if (sessionId) {
@@ -36,12 +41,13 @@ export const codex: Adapter = {
           "--skip-git-repo-check",
           "--output-last-message",
           lastMessagePath,
-          ...effortArgs,
+          ...optionArgs,
           sessionId,
           "-",
         ],
         stdin: prompt,
         lastMessagePath,
+        modelArg,
       };
     }
     return {
@@ -57,11 +63,12 @@ export const codex: Adapter = {
         cwd,
         "--output-last-message",
         lastMessagePath,
-        ...effortArgs,
+        ...optionArgs,
         "-",
       ],
       stdin: prompt,
       lastMessagePath,
+      modelArg,
     };
   },
   sessionIdFrom(line) {

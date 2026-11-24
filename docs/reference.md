@@ -292,7 +292,7 @@ Say something like "rescue this refactor to Codex" and the host runs `baton star
 
 ### Command line
 
-Every command prints exactly one JSON object (except `tail`) and exits non-zero on error. `baton` is the global command from `@speculoai/baton`.
+Every command prints exactly one JSON object (except `tail` and `result`) and exits non-zero on error. `baton` is the global command from `@speculoai/baton`.
 
 ```bash
 baton agents
@@ -303,6 +303,7 @@ baton start --target <codex|claude|cursor|agy> [--prompt <text> | stdin] [--file
             [--rules check|pointer|off]
 baton status <id>
 baton wait <id>... [--for <s> | --until-done]  # default --for 50; --until-done blocks until a job leaves running
+baton result <id> [--turn <n>]       # plain text: the agent's full final message of a finished turn (default latest), no transcript
 baton tail <id> [-f] [--raw]         # readable events; -f follows until the job stops; --raw prints events.jsonl lines
 baton reply <id> [--prompt <text> | stdin] [--as host|human]   # also after scope_violation / readonly_violation
 baton cancel <id>
@@ -314,10 +315,11 @@ baton worktree rm <name-or-path>     # refuses dirty/unmerged trees; remove + de
 baton mcp                            # start the MCP server (stdio)
 ```
 
-- `--effort` maps to each CLI's native flag: Codex `-c model_reasoning_effort=...`; Claude/Agy `--effort` (`ultra` becomes `max`); Cursor alone → `--model auto[effort=...]`.
-- `--model <id>` (Cursor only for now): sets the requested model, stored on the task and kept across `reply`. Cursor rules: model only → `--model <id>`; model+effort → `--model '<id>[effort=...]'`; if the id already embeds a tier (e.g. `grok-4.7-xhigh`) or brackets, combining `--effort` errors. Never emits two `--model` flags. `status` shows `model` (requested) and `model_argv` (passed to the CLI). That is not a provider-confirmed “actual model”.
+- `--effort` maps to each CLI's native flag: Codex `-c model_reasoning_effort=...`; Claude/Agy `--effort` (`ultra` becomes `max`). Cursor has no separate effort setting (`cursor-agent` rejects `<id>[effort=...]`), so `--target cursor --effort` fails at `start`; pick a model id that embeds the tier instead (`cursor-agent --list-models`, e.g. `gpt-5.3-codex-high`).
+- `--model <id>` (Cursor and Codex; Claude/Agy error): sets the requested model, stored on the task and kept across `reply`. Codex gets `-m <id>` on both `exec` and `exec resume` (combines with `--effort`). Cursor passes the id unchanged as `--model <id>`; combining it with `--effort` errors. `status` shows `model` (requested) and `model_argv` (passed to the CLI). That is not a provider-confirmed “actual model”.
 - `--idle-timeout` defaults to 600: the job stops only after that many seconds without a single output byte. `--max-duration` is unlimited by default. Both apply per turn and restart on `reply`.
 - **`--mode readonly|write` (default `write`):** maps to each CLI's read-only path (Codex `--sandbox read-only`, Claude `--permission-mode plan`, Cursor `--mode ask`, Agy `--mode plan`). Stored on the task and kept across `reply`. After each turn, dirty net changes upgrade a clean `success` to `readonly_violation`. Targets with no mapping fail unless `--allow-weak` is set. **Breaking note:** new terminal status `readonly_violation`.
+  - **macOS + Codex readonly:** Codex's own Seatbelt sandbox blocks `/tmp`, so Apple's `/usr/bin/git` shim prints `couldn't create cache file '/tmp/xcrun_db-…' (errno=Operation not permitted)` and spends ~2 s per call re-resolving the toolchain. The git command still exits 0 with correct output. Baton cannot change Codex's sandbox profile; to avoid the noise, make sure the worker's PATH finds a real git first (Homebrew `/opt/homebrew/bin/git`, or the directory of `xcrun -f git`).
 - **`--isolate` / `--allow-dirty` (write only):** `--isolate` creates a worktree named `task-<id8>` (branch `baton/task-<id8>`) from `HEAD`, runs the job there, and records `worktree.path` / `worktree.branch` / `worktree.source_cwd` on the task. `reply` continues in that tree; `ls` from the source directory still lists it. Changes stay uncommitted — Baton does not commit, merge, or open a PR. In-place write on a dirty tree (tracked or untracked, non-ignored) returns `dirty_worktree` with `dirty_paths` unless you pass `--allow-dirty`. Cannot combine with each other or with `--mode readonly`. Manual flow still works: `baton worktree add`, then `baton start --cwd <path>`. Default root is `.worktrees/` (appended to `.gitignore` if needed; see `worktree.gitignore_updated`). Optional `.baton.json` configures `copy` / `symlink` / `post_create` / `rulesync` (boolean, default on). Symlinking `node_modules` can cross-contaminate when branches diverge — prefer `post_create` installs when unsure. When the new worktree has `.rulesync/` and `rulesync` is on PATH (or in `node_modules/.bin`), `worktree add` / `--isolate` runs `rulesync generate` there and reports `rules.missing` / `rules.dirtied`. Prefer generating and committing rulesync outputs in the main repo first so worktrees stay clean.
 - **`--scope` (optional):** repeatable globs relative to the task `cwd`. After each turn, Baton checks **task-baseline net changes** (commits since start HEAD ∪ working-tree digest diff) against those globs. `--scope-on-violation warn` (default) keeps the transport status and sets `scope_violations` + `warning`; `fail` upgrades a clean `success` to `scope_violation`. This is a **mistake fence**, not a sandbox: ignored paths, non-git writes, and concurrent edits on a shared cwd are blind spots — prefer combining with `--isolate`. Requires a git repo when `--scope` is set. **Breaking note for clients:** new terminal status `scope_violation` (and optional `scope_*` meta fields).
 - **`--rules check|pointer|off` (default `check`):** discovers project rule files from the task `cwd` up to the git root and records them on `meta.rules` (`found`, `unseen`, `pointer_injected`). `check` does not change the worker prompt. `pointer` prepends an English “read these files” block for entries the target does not load natively (first turn only; `reply` does not reinject). `off` skips discovery entirely. When the repo has `.rulesync/`, Baton also reports a `rules.rulesync` object: it reads `rulesync.jsonc` (+ `rulesync.local.jsonc`), notes whether the target’s rulesync id is configured and any load-gate notes for `mcp`/`hooks`, then the supervisor runs `rulesync generate --check` (whole project, no `--targets`/`--features`) and sets `status` to `in_sync` / `stale` / `error` / `skipped`. Failures never block the task. Baton never installs rulesync via `npx` and never writes rulesync outputs into the user’s main working tree.
@@ -376,9 +378,10 @@ MCP is a thin shell over the same logic. It keeps no task state, so restarting M
 | Tool | Command |
 |---|---|
 | `list_agents` | `agents` |
-| `delegate_task` | `start` (`target_agent`, `prompt`, `files`, `reasoning_effort`, `idle_timeout_seconds`, `max_duration_seconds`, `cwd`, `scope`, `scope_on_violation`, `mode`, `allow_weak`, `isolate`, `allow_dirty`, `rules`) |
+| `delegate_task` | `start` (`target_agent`, `prompt`, `files`, `reasoning_effort`, `model`, `idle_timeout_seconds`, `max_duration_seconds`, `cwd`, `scope`, `scope_on_violation`, `mode`, `allow_weak`, `isolate`, `allow_dirty`, `rules`) |
 | `task_status` | `status` |
 | `task_wait` | `wait` (`task_ids`, `wait_seconds` default 50, max 55; sends a progress notification every 15 seconds) |
+| `task_result` | `result` (`task_id`, `turn`; returns JSON with `final_message`) |
 | `task_reply` | `reply` (`task_id`, `prompt`, `as`) |
 | `task_cancel` | `cancel` |
 | `task_list` | `ls` (`all`, `cwd`) |

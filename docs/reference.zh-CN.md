@@ -292,7 +292,7 @@ baton agents
 
 ### 命令行
 
-所有命令都只输出一个 JSON 对象（`tail` 除外），出错时退出码非 0。`baton` 是 `@speculoai/baton` 提供的全局命令。
+所有命令都只输出一个 JSON 对象（`tail` 和 `result` 除外），出错时退出码非 0。`baton` 是 `@speculoai/baton` 提供的全局命令。
 
 ```bash
 baton agents
@@ -303,6 +303,7 @@ baton start --target <codex|claude|cursor|agy> [--prompt <text> | stdin] [--file
             [--rules check|pointer|off]
 baton status <id>
 baton wait <id>... [--for <秒> | --until-done]  # 默认 --for 50；--until-done 阻塞到任一任务离开 running
+baton result <id> [--turn <n>]        # 纯文本：已结束轮次（默认最新）agent 的完整最终回答，不含过程记录
 baton tail <id> [-f] [--raw]          # 人读格式的事件；-f 跟到任务停下；--raw 输出 events.jsonl 原行
 baton reply <id> [--prompt <text> | stdin] [--as host|human]   # scope_violation / readonly_violation 后也可续轮
 baton cancel <id>
@@ -314,10 +315,11 @@ baton worktree rm <name-or-path>      # 脏或未合并则拒绝；干净则 rem
 baton mcp                             # 启动 MCP 服务（stdio）
 ```
 
-- `--effort` 映射到各家原生参数：Codex `-c model_reasoning_effort=...`；Claude/Agy `--effort`（`ultra` 映射为 `max`）；Cursor 仅 effort 时 → `--model auto[effort=...]`。
-- `--model <id>`（目前仅 Cursor）：按任务指定模型，写入 meta，`reply` 延续。Cursor 规则：仅 model → `--model <id>`；model+effort → `--model '<id>[effort=...]'`；若 id 已含档位（如 `grok-4.7-xhigh`）或已有括号再带 `--effort` 则报错。不会出现两个 `--model`。`status` 含 `model`（请求）与 `model_argv`（传给 CLI 的参数）；这不是 provider 确认的“实际模型”。
+- `--effort` 映射到各家原生参数：Codex `-c model_reasoning_effort=...`；Claude/Agy `--effort`（`ultra` 映射为 `max`）。Cursor 没有独立的 effort 参数（`cursor-agent` 拒绝 `<id>[effort=...]`），`--target cursor --effort` 会在 `start` 时直接报错；请改选名称自带档位的模型（`cursor-agent --list-models`，如 `gpt-5.3-codex-high`）。
+- `--model <id>`（Cursor 与 Codex；Claude/Agy 会报错）：按任务指定模型，写入 meta，`reply` 延续。Codex 在 `exec` 和 `exec resume` 上都传 `-m <id>`（可与 `--effort` 同用）。Cursor 原样传 `--model <id>`；与 `--effort` 同时使用会报错。`status` 含 `model`（请求）与 `model_argv`（传给 CLI 的参数）；这不是 provider 确认的“实际模型”。
 - `--idle-timeout` 默认 600：连续这么久没有任何输出字节才停掉。`--max-duration` 默认不限。两者都按单轮计时，`reply` 开新一轮时重新计时。
 - **`--mode readonly|write`（默认 `write`）：** 映射到各家只读参数（Codex `--sandbox read-only`、Claude `--permission-mode plan`、Cursor `--mode ask`、Agy `--mode plan`）。写入 meta，`reply` 延续。每轮结束后若有净变更，会把干净的 `success` 升为 `readonly_violation`。无映射的目标默认拒绝，需显式 `--allow-weak`。**兼容性：** 新增终态 `readonly_violation`。
+  - **macOS + Codex 只读：** Codex 自带的 Seatbelt 沙箱禁止写 `/tmp`，Apple 的 `/usr/bin/git` shim 会打印 `couldn't create cache file '/tmp/xcrun_db-…' (errno=Operation not permitted)`，且每次调用多花约 2 秒重新解析工具链。git 命令本身仍以 0 退出、输出正确。Baton 改不了 Codex 的沙箱规则；想去掉这些噪音，就让 worker 的 PATH 先找到真实的 git（Homebrew 的 `/opt/homebrew/bin/git`，或 `xcrun -f git` 所在目录）。
 - **`--isolate` / `--allow-dirty`（仅 write）：** `--isolate` 从 `HEAD` 创建名为 `task-<id8>` 的 worktree（分支 `baton/task-<id8>`），在其中运行任务，并把 `worktree.path` / `worktree.branch` / `worktree.source_cwd` 记入任务。`reply` 在同一 worktree 继续；从源目录执行 `ls` 仍能看到该任务。改动保持未提交——Baton 不自动 commit、merge 或开 PR。在脏工作区上原地 write 会返回 `dirty_worktree` 与 `dirty_paths`，除非传入 `--allow-dirty`。两者不能并用，也不能与 `--mode readonly` 并用。手动流程仍可用：先 `baton worktree add`，再 `baton start --cwd <path>`。默认目录 `.worktrees/`（必要时写入 `.gitignore`，见 `worktree.gitignore_updated`）；可选 `.baton.json` 配置 `copy` / `symlink` / `post_create` / `rulesync`（布尔，默认开启）。软链 `node_modules` 在分支依赖不一致时可能互相污染，必要时改用 `post_create` 独立安装。新 worktree 里若有 `.rulesync/` 且能找到 `rulesync`，`worktree add` / `--isolate` 会在其中运行 `rulesync generate`，并报告 `rules.missing` / `rules.dirtied`。建议先在主仓库生成并提交 rulesync 输出，避免 worktree 一开始就脏。
 - **`--scope`（可选）：** 可重复，glob 相对任务 `cwd`。每轮结束后对照**任务起点净变更**（自 baseline HEAD 起的提交 ∪ 工作区 digest 差分）。`--scope-on-violation warn`（默认）保留原终态并写 `scope_violations` + `warning`；`fail` 会把干净的 `success` 升为 `scope_violation`。这是**防失误**，不是沙箱：忽略文件、仓外写入、共享 cwd 并发改动是已知盲区——建议与 `--isolate` 叠用。带 `--scope` 时 cwd 必须是 git 仓库。**兼容性：** 新增终态 `scope_violation` 及可选 `scope_*` 字段。
 - **`--rules check|pointer|off`（默认 `check`）：** 从任务 `cwd` 向上扫到 git 根，发现项目规则文件，写入 `meta.rules`（`found`、`unseen`、`pointer_injected`）。`check` 不改执行者 prompt；`pointer` 在首轮 prompt 前插入英文“请先读这些文件”提示（仅针对目标原生不会加载的条目；`reply` 不再注入）；`off` 完全关闭。仓库有 `.rulesync/` 时还会写 `rules.rulesync`：读取 `rulesync.jsonc`（及 `rulesync.local.jsonc`），报告目标是否在配置内以及 `mcp`/`hooks` 加载关卡，再由 supervisor 运行整个项目的 `rulesync generate --check`（不传 `--targets`/`--features`），结果为 `in_sync` / `stale` / `error` / `skipped`。任何失败都不阻断任务。Baton 不会用 `npx` 安装 rulesync，也不会在用户主工作目录里写入 rulesync 生成物。
@@ -376,9 +378,10 @@ MCP 是同一套逻辑的薄壳，进程里不存任何任务状态，重启 MCP
 | 工具 | 对应命令 |
 |---|---|
 | `list_agents` | `agents` |
-| `delegate_task` | `start`（参数 `target_agent`、`prompt`、`files`、`reasoning_effort`、`idle_timeout_seconds`、`max_duration_seconds`、`cwd`、`scope`、`scope_on_violation`、`mode`、`allow_weak`、`isolate`、`allow_dirty`、`rules`） |
+| `delegate_task` | `start`（参数 `target_agent`、`prompt`、`files`、`reasoning_effort`、`model`、`idle_timeout_seconds`、`max_duration_seconds`、`cwd`、`scope`、`scope_on_violation`、`mode`、`allow_weak`、`isolate`、`allow_dirty`、`rules`） |
 | `task_status` | `status` |
 | `task_wait` | `wait`（参数 `task_ids`、`wait_seconds`，默认 50，上限 55；等待期间每 15 秒发一次进度通知） |
+| `task_result` | `result`（参数 `task_id`、`turn`；返回含 `final_message` 的 JSON） |
 | `task_reply` | `reply`（参数 `task_id`、`prompt`、`as`） |
 | `task_cancel` | `cancel` |
 | `task_list` | `ls`（参数 `all`、`cwd`） |

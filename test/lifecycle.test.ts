@@ -9,21 +9,20 @@ import type { TaskMeta } from "../src/types.ts";
 
 test("start returns before the worker finishes; supervisor still writes success after the parent process is SIGKILLed", async (t) => {
   const s = sandbox(t);
-  // Worker sleeps 2s; start must return sooner (proves it does not await the worker).
-  // Budget allows cold-start of start-parent + waiting for supervisor_pid (up to ~750ms).
+  // Worker sleeps 2s; start must return before it finishes (proves it does not await the worker).
+  // Checked by the task state on disk, not wall-clock time: cold starts take >1s on a busy machine.
   s.env.FAKE_SLEEP = "2";
   const parent = spawn(process.execPath, [path.join(import.meta.dirname, "fake-cli/start-parent.ts")], { cwd: s.cwd, env: s.env, stdio: ["ignore", "pipe", "pipe"] });
   t.after(() => parent.kill("SIGKILL"));
   let text = "";
-  const startedAt = performance.now();
   const started = await new Promise<TaskMeta>((resolve, reject) => {
     parent.stdout.on("data", (chunk) => { text += chunk; if (text.includes("\n")) resolve(JSON.parse(text.trim())); });
     parent.stderr.on("data", (chunk) => reject(new Error(String(chunk))));
     parent.on("error", reject);
     parent.on("exit", (code) => { if (!text) reject(new Error(`parent exited ${code}`)); });
   });
-  assert.ok(performance.now() - startedAt < 1500);
   assert.equal(started.status, "running");
+  assert.equal(s.meta(started.task_id).status, "running"); // the 2s worker has not finished yet
   parent.kill("SIGKILL");
   await once(parent, "exit");
   const done = await s.until(started.task_id);
@@ -73,15 +72,19 @@ test("idle and max_duration kill the whole process group; cancel also terminates
     const pidFile = path.join(s.home, `${mode}.pid`);
     s.env.FAKE_CHILD_PID_FILE = pidFile;
     s.env.FAKE_HANG = "1";
-    const args = mode === "idle" ? ["--idle-timeout", "0.4"] : mode === "max_duration" ? ["--max-duration", "0.4"] : [];
+    // 2s, not less: the worker shell must spawn the grandchild and write pidFile before the timer fires, even on a busy machine.
+    const args = mode === "idle" ? ["--idle-timeout", "2"] : mode === "max_duration" ? ["--max-duration", "2"] : [];
     const started = await s.run("start", "--target", "codex", "--prompt", "hi", ...args);
     await s.until(started.task_id, (m) => !!m.child_pid && fs.existsSync(pidFile));
     const grandchild = Number(fs.readFileSync(pidFile, "utf8"));
     assert.ok(grandchild > 1);
-    const active = await s.run("status", started.task_id);
-    assert.equal(active.liveness, "active");
-    assert.equal(typeof active.quiet_for_s, "number");
-    if (mode === "cancel") assert.equal((await s.run("cancel", started.task_id)).status, "cancelled");
+    if (mode === "cancel") {
+      // Only cancel mode is guaranteed still running here; a 0.4s timeout can fire before a cold `status` process starts.
+      const active = await s.run("status", started.task_id);
+      assert.equal(active.liveness, "active");
+      assert.equal(typeof active.quiet_for_s, "number");
+      assert.equal((await s.run("cancel", started.task_id)).status, "cancelled");
+    }
     const done = await s.until(started.task_id);
     assert.equal(done.status, mode === "cancel" ? "cancelled" : "timed_out");
     assert.equal(done.summary, mode === "cancel" ? "Cancelled." : `Timed out: ${mode}.`);
@@ -98,7 +101,8 @@ test("supervisor exit after stop_reason still finalizes as that stop, once", asy
   for (const mode of ["idle", "max_duration", "cancel"] as const) {
     const pidFile = path.join(s.home, `${mode}-crash.pid`);
     s.env.FAKE_CHILD_PID_FILE = pidFile;
-    const args = mode === "idle" ? ["--idle-timeout", "0.4"] : mode === "max_duration" ? ["--max-duration", "0.4"] : [];
+    // 2s, not less: the worker shell must spawn the grandchild and write pidFile before the timer fires, even on a busy machine.
+    const args = mode === "idle" ? ["--idle-timeout", "2"] : mode === "max_duration" ? ["--max-duration", "2"] : [];
     const started = await s.run("start", "--target", "codex", "--prompt", "hi", ...args);
     await s.until(started.task_id, (m) => !!m.child_pid && fs.existsSync(pidFile));
     const grandchild = Number(fs.readFileSync(pidFile, "utf8"));
@@ -343,4 +347,23 @@ test("when supervisor pid exists but heartbeat expired, kill the writer first, t
   assert.equal(recovered.status, "failed");
   await assertProcessGone(meta.supervisor_pid!);
   await assertProcessGone(meta.child_pid!);
+});
+
+test("a supervisor that is slow to start (busy machine) is not killed; start still returns running", async (t) => {
+  const s = sandbox(t);
+  s.env.BATON_TEST_SUPERVISE_START = "1500"; // past the old 750ms readiness deadline
+  const started = await s.run("start", "--target", "codex", "--prompt", "hi");
+  assert.equal(started.status, "running");
+  assert.equal((await s.until(started.task_id)).status, "success");
+});
+
+test("a supervisor that exits before it is ready fails start at once, not at the readiness cap", async (t) => {
+  const s = sandbox(t);
+  s.env.BATON_TEST_SUPERVISE_START = "exit";
+  const begin = performance.now();
+  await assert.rejects(s.run("start", "--target", "codex", "--prompt", "hi"), (err: { stdout: string }) => {
+    assert.match(JSON.parse(err.stdout).summary, /supervisor exited before it was ready/);
+    return true;
+  });
+  assert.ok(performance.now() - begin < 5000);
 });

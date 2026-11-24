@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { agents, cancel, ls, reply, start, status, wait } from "./tasks.ts";
+import { agents, cancel, ls, reply, result, start, status, wait } from "./tasks.ts";
 import { redact } from "./redact.ts";
 import type { Author, Effort, RulesMode, ScopeOnViolation, TaskMode } from "./types.ts";
 
@@ -27,7 +27,7 @@ export function createServer(): McpServer {
       prompt: z.string(),
       files: z.array(z.string()).optional(),
       reasoning_effort: z.enum(["low", "medium", "high", "ultra"]).optional(),
-      model: z.string().optional().describe("Per-task model (cursor only for now; stored in meta and carried over by reply)."),
+      model: z.string().optional().describe("Per-task model (cursor and codex; stored in meta and carried over by reply)."),
       idle_timeout_seconds: z.number().optional().describe("Stop after this long with no output at all; default 600."),
       max_duration_seconds: z.number().optional().describe("Maximum total duration per turn; default unlimited."),
       cwd: z.string().optional(),
@@ -66,6 +66,10 @@ export function createServer(): McpServer {
     }, PROGRESS_MS);
     try { return await wait(args.task_ids, seconds); } finally { if (timer) clearInterval(timer); }
   }));
+  server.registerTool("task_result", {
+    description: "Get the agent's full final message of a finished turn (default: the latest), without the tool-call transcript. task_status/task_wait only carry the one-line summary.",
+    inputSchema: { task_id: z.string(), turn: z.number().int().optional() },
+  }, (args) => respond(() => result(args.task_id, args.turn)));
   server.registerTool("task_reply", {
     description: "After a task stops at needs_input, success, scope_violation or readonly_violation, start the next turn in the same session. as=human means a human said it; default host. Returns busy while running.",
     inputSchema: { task_id: z.string(), prompt: z.string(), as: z.enum(["host", "human"]).optional() },

@@ -45,7 +45,7 @@ Do not use (prefer `baton-rescue` or stay in the host):
 
 1. `baton agents`; use only installed targets.
 2. Build the graph of bounded jobs (prompt, files, edges). Pick a target per job and say why in one sentence.
-3. `baton start` every job whose dependencies are satisfied and whose paths do not overlap another live job. Pass the job’s declared paths as repeated `--scope <glob>` (same data as the plan). Optional `--scope-on-violation warn|fail` (default `warn`). Review-only jobs: `--mode readonly`. For Cursor, pass `--model <id>` when the user names a model or the job needs a specific one. Default max 3 running at once; ask before going higher.
+3. `baton start` every job whose dependencies are satisfied and whose paths do not overlap another live job. Pass the job’s declared paths as repeated `--scope <glob>` (same data as the plan). Optional `--scope-on-violation warn|fail` (default `warn`). Review-only jobs: `--mode readonly`. For Cursor or Codex, pass `--model <id>` when the user names a model or the job needs a specific one. Default max 3 running at once; ask before going higher.
 4. Wait on all live jobs at once. If the host can run a background shell and wake this session when it exits, start once and end the current turn:
    ```
    baton wait <id1> <id2> <id3> --until-done
@@ -57,7 +57,7 @@ Do not use (prefer `baton-rescue` or stay in the host):
    It returns the first job that left `running`, or `{status: "running", tasks: [...]}` after 50 seconds. Repeat. Never wait on jobs one after another.
 5. When a job stops:
    - **`needs_input`:** pause dependents of that job; ask the user (through the host) `decision.question` and `decision.options` unchanged; then `baton reply <id> --as human --prompt "<answer>"`. Answer with the default `--as host` only when earlier user instructions already decide it.
-   - Transport `success` means **execution complete** (turn finished), not acceptance. Run Review (see below) before any pass/fail conclusion.
+   - Transport `success` means **execution complete** (turn finished), not acceptance. Run Review (see below) before any pass/fail conclusion. `summary` is one line; read the full answer with `baton result <id>` (not `tail`).
    - **`success` with non-empty `scope_violations`:** treat as **not** verified pass (warn policy). `baton reply` to revert/move out-of-scope files; counts toward the rework cap.
    - **`scope_violation` / `readonly_violation`:** same class as acceptance failure — **do not** failover to another vendor. `baton reply` asking to restore paths; counts as rework.
    - **Verified pass:** notify the host; mark the node done; start newly unblocked dependents.
@@ -122,14 +122,14 @@ Goal:
 <user goal verbatim>
 
 Rules:
-- Command: baton (agents, start, wait, status, tail, reply, cancel, ls, worktree)
+- Command: baton (agents, start, wait, status, result, tail, reply, cancel, ls, worktree)
 - Hold: dependency graph, task_id per job, results, rework counts
 - Do not implement worker coding tasks yourself
 - Do not require Speckit / OpenSpec / agent-skills; if the workspace has rules, copy them into worker prompts and use them for review; if not, still do minimal task-matched verification — never treat transport success as verified pass
 - Do not delegate to the CLI vendor this host session already is
 - Max 3 jobs running at once unless the host approves more
 - Use --effort low for mechanical subtasks; raise --idle-timeout for slow, silent models
-- For Cursor, pass --model <id> when the user names a model or the job needs a specific one; if the id already embeds a tier or brackets, do not also pass --effort
+- For Cursor or Codex, pass --model <id> when the user names a model or the job needs a specific one; never pass --effort to Cursor (it errors) — pick a tier-specific id from `cursor-agent --list-models` instead
 - Prefer `start --isolate` per write job; clean up with `worktree rm` when done; on `dirty_worktree` ask before `--allow-dirty`
 - Path-disjoint ready jobs may run in parallel; overlapping paths stay serialized; pass declared paths as `--scope`
 - Review-only jobs: `--mode readonly`

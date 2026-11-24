@@ -32,7 +32,7 @@ test("MCP thin shell: tool list, dispatch, bounded wait, reply, list, cancel; al
   let client = await connect(s.env);
   t.after(() => client.close());
   const names = (await client.listTools()).tools.map((tool) => tool.name).sort();
-  assert.deepEqual(names, ["delegate_task", "list_agents", "task_cancel", "task_list", "task_reply", "task_status", "task_wait"]);
+  assert.deepEqual(names, ["delegate_task", "list_agents", "task_cancel", "task_list", "task_reply", "task_result", "task_status", "task_wait"]);
   assert.ok((await call(client, "list_agents")).agents.some((a: any) => a.id === "codex" && a.installed));
 
   const started = await call(client, "delegate_task", { target_agent: "codex", prompt: "hi", cwd: s.cwd });
@@ -43,6 +43,8 @@ test("MCP thin shell: tool list, dispatch, bounded wait, reply, list, cancel; al
   const done = await call(client, "task_wait", { task_ids: [started.task_id], wait_seconds: 10 });
   assert.equal(done.status, "success");
   assert.equal((await call(client, "task_status", { task_id: started.task_id })).status, "success");
+  const final = await call(client, "task_result", { task_id: started.task_id });
+  assert.deepEqual(final, { task_id: started.task_id, turn: 1, status: "success", final_message: "BATON_RESULT\nsummary: ok\nBATON_END" });
 
   const again = await call(client, "task_reply", { task_id: started.task_id, prompt: "more", as: "human" });
   assert.equal(again.status, "running");

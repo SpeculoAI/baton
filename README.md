@@ -109,6 +109,7 @@ If no target is named, the task goes to `codex`, or to `claude` when you are alr
 |---|---|
 | `baton start` | Starts a job. Options include `--effort`, `--mode readonly`, `--scope <glob>`, `--rules check\|pointer\|off`, and `--cwd <worktree>`. |
 | `baton wait` / `status` | Waits for the job to stop, or takes one look at it. |
+| `baton result` | Prints the worker's full final answer, without the transcript. |
 | `baton tail [-f]` | Shows the live event stream as readable text. |
 | `baton reply` | Continues the same conversation when the worker asks a question or you want a follow-up. |
 | `baton cancel` / `ls` / `prune` | Stops a job, lists jobs, or deletes old ones. |

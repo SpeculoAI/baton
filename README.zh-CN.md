@@ -109,6 +109,7 @@ baton tail -f <task_id>
 |---|---|
 | `baton start` | 启动任务。可选参数包括 `--effort`、`--mode readonly`、`--scope <glob>`、`--rules check\|pointer\|off`、`--cwd <worktree>`。 |
 | `baton wait` / `status` | 等任务停下，或者看一眼当前状态。 |
+| `baton result` | 只打印 worker 的完整最终回答，不含过程记录。 |
 | `baton tail [-f]` | 以可读文本显示实时事件流。 |
 | `baton reply` | 执行者提问、或者你想追加要求时，在同一个会话里接着说。 |
 | `baton cancel` / `ls` / `prune` | 停止任务、列出任务、清理旧任务。 |
