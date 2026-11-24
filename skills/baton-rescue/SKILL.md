@@ -47,7 +47,7 @@ baton start --target <t> --prompt "<self-contained task>" [--file <path>...] [--
 
 - The prompt states done criteria and which files to look at. Long prompts can come on stdin instead of `--prompt`.
 - `--effort low` suits mechanical subtasks; it maps to each CLI's native flag.
-- `--model <id>` (Cursor only for now): per-task model; kept across `reply`. With `--effort`, Cursor gets `--model '<id>[effort=...]'`. If the id already embeds a tier (e.g. `grok-4.7-xhigh`) or brackets, do not also pass `--effort`. Non-Cursor targets error on `--model`.
+- `--model <id>` (Cursor only for now): per-task model; kept across `reply`. Cursor does not accept `--effort` at all (with or without `--model`): choose a tier-specific id from `cursor-agent --list-models` (e.g. `gpt-5.3-codex-high`) instead. Non-Cursor targets error on `--model`.
 - `--idle-timeout` (default 600) stops the job only after that many seconds with no output at all. There is no total time cap unless you pass `--max-duration`. Raise `--idle-timeout` for models that think silently for a long time.
 - **Write jobs in a git repo: use `--isolate` by default.** It creates a worktree from `HEAD` (so the worker does **not** see uncommitted edits), runs there, and records `worktree.path` / `worktree.branch`. Tell the user which you picked and why. Skip `--isolate` only when the user asked for in-place, or the task is a small, explicitly scoped edit on a clean tree. Manual `baton worktree add` then `start --cwd` still works; prefer `--isolate` for new work.
 - In-place write on a dirty tree returns `dirty_worktree` with `dirty_paths`. Relay the paths and ask the user to choose `--isolate` or `--allow-dirty`. Do **not** pick `--allow-dirty` on your own.

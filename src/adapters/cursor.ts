@@ -3,7 +3,6 @@ import { redact } from "../redact.ts";
 import { authHit, which } from "./common.ts";
 
 const AUTH = ["not authenticated", "please log in", "agent login"];
-const EMBEDDED_EFFORT = /-(low|medium|high|xhigh|ultra|max)(-fast)?$/i;
 
 function event(data: EventData): BatonEvent[] {
   return [{ ts: new Date().toISOString(), turn: 0, ...data }];
@@ -13,21 +12,18 @@ function parse(line: string): any {
   try { return JSON.parse(line); } catch { return null; }
 }
 
-/** Build the Cursor `--model` value. Never emits two competing model args. */
+/**
+ * Build the Cursor `--model` value.
+ * Verified 2026-11-23 (cursor-agent 2026.11.22): any `<id>[effort=…]` form is rejected ("Cannot use this model");
+ * the tier lives in the model id itself (e.g. gpt-5.3-codex-high), so `--effort` cannot be mapped.
+ */
 export function resolveCursorModelArg(
   model: string | null | undefined,
   effort: Effort | null | undefined,
 ): string | null {
+  if (effort) throw new Error("cursor does not support --effort; pick a model id that embeds the tier (see `cursor-agent --list-models`), e.g. --model gpt-5.3-codex-high.");
   const id = typeof model === "string" ? model.trim() : "";
-  const e = effort || null;
-  if (id && e) {
-    if (id.includes("[")) throw new Error("Model already has a parameter bracket; do not pass --effort.");
-    if (EMBEDDED_EFFORT.test(id)) throw new Error(`Model ${id} already includes an effort level; do not pass --effort.`);
-    return `${id}[effort=${e}]`;
-  }
-  if (id) return id;
-  if (e) return `auto[effort=${e}]`;
-  return null;
+  return id || null;
 }
 
 export const cursor: Adapter = {

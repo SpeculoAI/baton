@@ -44,14 +44,22 @@ test("--model on a non-cursor target is rejected", async (t) => {
   );
 });
 
-test("cursor: a model that already embeds a tier is rejected when --effort is also passed", async (t) => {
+test("cursor: --effort fails fast at start, with or without --model", async (t) => {
   const s = sandbox(t);
   cursorFixture(s.fixture);
+  await assert.rejects(
+    () => s.run("start", "--target", "cursor", "--prompt", "hi", "--effort", "high"),
+    (err: NodeJS.ErrnoException & { stdout?: string }) => {
+      const body = JSON.parse(err.stdout || "{}") as { summary?: string };
+      assert.match(body.summary || "", /does not support --effort/);
+      return true;
+    },
+  );
   await assert.rejects(
     () => s.run("start", "--target", "cursor", "--prompt", "hi", "--model", "grok-4.7-xhigh", "--effort", "high"),
     (err: NodeJS.ErrnoException & { stdout?: string }) => {
       const body = JSON.parse(err.stdout || "{}") as { summary?: string };
-      assert.match(body.summary || "", /tier|effort/i);
+      assert.match(body.summary || "", /does not support --effort/);
       return true;
     },
   );

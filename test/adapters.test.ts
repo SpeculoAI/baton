@@ -45,8 +45,8 @@ test("cursor real stream-json: session, tools, messages; thinking deltas emit no
   assert.deepEqual(events[2], { ...events[2], name: "shell", ok: true, detail: "cat a.txt" });
   const last = events.at(-1);
   assert.equal(last?.type === "message" && last.text, "hi");
-  assert.deepEqual(cursor.build({ bin: "c", cwd: "/w", prompt: "p", sessionId: "s1", reasoningEffort: "low", model: null }).args,
-    ["--print", "--force", "--trust", "--output-format", "stream-json", "--workspace", "/w", "--model", "auto[effort=low]", "--resume", "s1", "p"]);
+  assert.deepEqual(cursor.build({ bin: "c", cwd: "/w", prompt: "p", sessionId: "s1", reasoningEffort: null, model: null }).args,
+    ["--print", "--force", "--trust", "--output-format", "stream-json", "--workspace", "/w", "--resume", "s1", "p"]);
   assert.deepEqual(cursor.build({ bin: "c", cwd: "/w", prompt: "p", sessionId: null, reasoningEffort: null, model: "grok-4.7-xhigh" }).args,
     ["--print", "--force", "--trust", "--output-format", "stream-json", "--workspace", "/w", "--model", "grok-4.7-xhigh", "p"]);
 });

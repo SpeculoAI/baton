@@ -129,7 +129,7 @@ Rules:
 - Do not delegate to the CLI vendor this host session already is
 - Max 3 jobs running at once unless the host approves more
 - Use --effort low for mechanical subtasks; raise --idle-timeout for slow, silent models
-- For Cursor, pass --model <id> when the user names a model or the job needs a specific one; if the id already embeds a tier or brackets, do not also pass --effort
+- For Cursor, pass --model <id> when the user names a model or the job needs a specific one; never pass --effort to Cursor (it errors) — pick a tier-specific id from `cursor-agent --list-models` instead
 - Prefer `start --isolate` per write job; clean up with `worktree rm` when done; on `dirty_worktree` ask before `--allow-dirty`
 - Path-disjoint ready jobs may run in parallel; overlapping paths stay serialized; pass declared paths as `--scope`
 - Review-only jobs: `--mode readonly`
