@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { agents, cancel, ls, reply, result, start, status, wait } from "./tasks.ts";
+import { agents, apply, cancel, diff, ls, reply, result, start, status, wait } from "./tasks.ts";
 import { redact } from "./redact.ts";
 import type { Author, Effort, RulesMode, ScopeOnViolation, TaskMode } from "./types.ts";
 
@@ -72,6 +72,14 @@ export function createServer(): McpServer {
     description: "Get the agent's full final message of a finished turn (default: the latest), without the tool-call transcript. task_status/task_wait only carry the one-line summary.",
     inputSchema: { task_id: z.string(), turn: z.number().int().optional() },
   }, (args) => respond(() => result(args.task_id, args.turn)));
+  server.registerTool("task_diff", {
+    description: "Net change of an --isolate task since its worktree was created (worker commits, edits and new files; Baton's own worktree files excluded). stat=true returns a diffstat instead of the patch.",
+    inputSchema: { task_id: z.string(), stat: z.boolean().optional() },
+  }, (args) => respond(() => ({ task_id: args.task_id, diff: diff(args.task_id, { stat: args.stat }) })));
+  server.registerTool("task_apply", {
+    description: "Bring an --isolate task's net change onto the source repo's current branch as one local commit (three-way cherry-pick; never pushes). Refuses, changing nothing, on staged changes, overlapping dirty or untracked files, an operation in progress, or a conflict. remove=true then deletes the worktree and branch. Only with the user's consent.",
+    inputSchema: { task_id: z.string(), remove: z.boolean().optional() },
+  }, (args) => respond(() => apply(args.task_id, { remove: args.remove })));
   server.registerTool("task_reply", {
     description: "After a task stops at needs_input, success, scope_violation, readonly_violation or check_failed, start the next turn in the same session. as=human means a human said it; default host. Returns busy while running.",
     inputSchema: { task_id: z.string(), prompt: z.string(), as: z.enum(["host", "human"]).optional() },

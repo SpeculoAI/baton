@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import { parseArgs } from "node:util";
-import { agents, start, status, cancel, wait, reply, ls, prune, result as turnResult } from "./tasks.ts";
+import { agents, start, status, cancel, wait, reply, ls, prune, diff, apply, result as turnResult } from "./tasks.ts";
 import { addWorktree, listWorktrees, removeWorktree } from "./worktree.ts";
 import { redact } from "./redact.ts";
 import { detectedHosts, runInstall, type Action } from "./install.ts";
@@ -72,6 +72,12 @@ async function main(): Promise<void> {
     // Plain text, like tail: the point is to read the answer without JSON escaping or the full transcript.
     process.stdout.write(`${turnResult(positionals[0], values.turn === undefined ? undefined : Number(values.turn)).final_message}\n`);
     return;
+  } else if (command === "diff") {
+    const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { stat: { type: "boolean" } } });
+    if (positionals.length !== 1) throw new Error("diff requires one task_id.");
+    // Plain text, like result: a patch is read, not parsed.
+    process.stdout.write(diff(positionals[0], { stat: values.stat }));
+    return;
   } else if (command === "tail") {
     const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { follow: { type: "boolean", short: "f" }, raw: { type: "boolean" } } });
     if (positionals.length !== 1) throw new Error("tail requires one task_id.");
@@ -85,6 +91,10 @@ async function main(): Promise<void> {
     const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { older: { type: "string" } } });
     if (positionals.length || values.older === undefined) throw new Error("prune requires --older days.");
     result = { deleted: prune(Number(values.older)) };
+  } else if (command === "apply") {
+    const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { remove: { type: "boolean" } } });
+    if (positionals.length !== 1) throw new Error("apply requires one task_id.");
+    result = apply(positionals[0], { remove: values.remove });
   } else if (command === "cancel") {
     if (args.length !== 1) throw new Error("cancel requires one task_id.");
     result = await cancel(args[0]);
@@ -240,7 +250,7 @@ async function main(): Promise<void> {
     // TTY already showed the human summary; dumping JSON on top is noise. Scripts (non-TTY) still get JSON.
     if (!pretty) process.stdout.write(`${JSON.stringify(result)}\n`);
     return;
-  } else throw new Error("Usage: baton version | agents | start | status | cancel | wait | result | tail | reply | ls | prune | worktree | rules | install | update | uninstall | mcp");
+  } else throw new Error("Usage: baton version | agents | start | status | cancel | wait | result | diff | apply | tail | reply | ls | prune | worktree | rules | install | update | uninstall | mcp");
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }
 

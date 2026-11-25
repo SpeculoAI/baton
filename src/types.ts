@@ -83,6 +83,8 @@ export type TaskMeta = {
     branch: string;
     source_cwd: string;
     gitignore_updated: boolean;
+    /** Commit the worktree was created from; `diff` / `apply` compare against it. */
+    base_sha?: string;
   };
   scope?: string[];
   scope_on_violation?: ScopeOnViolation;

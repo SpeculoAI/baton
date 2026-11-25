@@ -48,9 +48,105 @@ export type WorktreeListItem = {
 
 const META_NAME = ".baton-worktree.json";
 
-function git(cwd: string, args: string[]): { status: number; stdout: string; stderr: string } {
-  const ran = spawnSync("git", args, { cwd, encoding: "utf8" });
+function git(cwd: string, args: string[], options: { env?: NodeJS.ProcessEnv; input?: string } = {}): { status: number; stdout: string; stderr: string } {
+  const ran = spawnSync("git", args, {
+    cwd, encoding: "utf8", input: options.input, maxBuffer: 256 * 1024 * 1024,
+    env: options.env ? { ...process.env, ...options.env } : process.env,
+  });
   return { status: ran.status ?? 1, stdout: ran.stdout || "", stderr: ran.stderr || "" };
+}
+
+function mustGit(cwd: string, args: string[], options: { env?: NodeJS.ProcessEnv; input?: string } = {}): string {
+  const ran = git(cwd, args, options);
+  if (ran.status !== 0) throw new Error(`git ${args[0]} failed: ${(ran.stderr || ran.stdout).trim()}`);
+  return ran.stdout;
+}
+
+export function headSha(cwd: string): string {
+  return mustGit(cwd, ["rev-parse", "HEAD"]).trim();
+}
+
+/** Commit the task worktree forked from: the recorded sha, or (older tasks) the merge-base with the source HEAD. */
+export function forkPoint(sourceRepo: string, branch: string, recorded?: string): string {
+  if (recorded) return recorded;
+  const ran = git(sourceRepo, ["merge-base", branch, "HEAD"]);
+  if (ran.status !== 0 || !ran.stdout.trim()) throw new Error(`Cannot find where ${branch} forked from; no base_sha recorded and merge-base failed.`);
+  return ran.stdout.trim();
+}
+
+/**
+ * The worktree's net state as a tree object: HEAD plus every non-ignored working-tree change,
+ * minus Baton's own files (.baton-worktree.json, copy / symlink entries). Built in a throwaway
+ * index so the worktree's own index, branch and files stay untouched.
+ */
+export function netTree(worktreePath: string, indexFile: string): string {
+  const env = { GIT_INDEX_FILE: indexFile };
+  try {
+    mustGit(worktreePath, ["read-tree", "HEAD"], { env });
+    const exclude = [...batonWorktreeExemptPaths(worktreePath)].map((entry) => `:(exclude,glob)${entry}`);
+    mustGit(worktreePath, ["add", "-A", "--", ".", ...exclude], { env });
+    return mustGit(worktreePath, ["write-tree"], { env }).trim();
+  } finally {
+    fs.rmSync(indexFile, { force: true });
+  }
+}
+
+export function diffTrees(cwd: string, base: string, tree: string, stat = false): string {
+  return mustGit(cwd, ["diff", stat ? "--stat" : "--binary", base, tree]);
+}
+
+/** Paths touched between two trees; --no-renames so a rename lists both its old and new path. */
+export function changedPaths(cwd: string, base: string, tree: string): string[] {
+  return mustGit(cwd, ["diff", "--name-only", "--no-renames", "-z", base, tree]).split("\0").filter(Boolean);
+}
+
+const IN_PROGRESS = ["MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply"];
+
+/** Why bringing `files` into `repo` is unsafe right now, or null. Checked before anything is written. */
+function applyBlocker(repo: string, files: string[]): string | null {
+  for (const name of IN_PROGRESS) {
+    if (fs.existsSync(path.resolve(repo, mustGit(repo, ["rev-parse", "--git-path", name]).trim()))) {
+      return `${repo} is in the middle of a merge, rebase, cherry-pick or revert (${name}); finish or abort it first.`;
+    }
+  }
+  if (git(repo, ["diff", "--cached", "--quiet"]).status !== 0) return `Staged changes in ${repo}; commit or unstage them first.`;
+  // porcelain v1 -z: "XY path\0", and a rename / copy adds its source path as the next field.
+  const fields = mustGit(repo, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]).split("\0");
+  const dirty = new Set<string>();
+  for (let i = 0; i < fields.length; i++) {
+    const entry = fields[i]!;
+    if (entry.length < 4) continue;
+    dirty.add(entry.slice(3));
+    if (entry[0] === "R" || entry[0] === "C") dirty.add(fields[++i]!);
+  }
+  const overlap = files.filter((file) => dirty.has(file));
+  return overlap.length ? `Uncommitted or untracked files in ${repo} overlap the task's changes: ${overlap.join(", ")}. Commit, stash or move them first.` : null;
+}
+
+/**
+ * Bring `tree` (forked at `base`) onto the current branch of `repo` as one commit: commit-tree, then cherry-pick
+ * for a three-way merge. Any refusal or conflict leaves HEAD, index and working tree as they were.
+ */
+export function applyTree(repo: string, base: string, tree: string, message: string): { commit: string; files: string[] } | null {
+  const files = changedPaths(repo, base, tree);
+  if (!files.length) return null;
+  const blocker = applyBlocker(repo, files);
+  if (blocker) throw new Error(blocker);
+  const squash = mustGit(repo, ["commit-tree", tree, "-p", base, "-F", "-"], { input: message }).trim();
+  const picked = git(repo, ["cherry-pick", squash]);
+  if (picked.status !== 0) {
+    const conflicts = git(repo, ["diff", "--name-only", "--diff-filter=U", "-z"]).stdout.split("\0").filter(Boolean);
+    git(repo, ["cherry-pick", "--abort"]);
+    const detail = (picked.stderr || picked.stdout).trim();
+    throw new Error(`cherry-pick failed and was aborted; ${repo} is unchanged.${conflicts.length ? ` Conflicts: ${conflicts.join(", ")}.` : ""} ${detail}`.trim());
+  }
+  return { commit: headSha(repo), files };
+}
+
+/** Delete a task's worktree and branch regardless of their state; true when both are gone. */
+export function removeTaskWorktree(repo: string, worktreePath: string, branch: string): boolean {
+  cleanupWorktree(repo, worktreePath, branch);
+  return !fs.existsSync(worktreePath) && git(repo, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]).status !== 0;
 }
 
 function strings(value: unknown): string[] {
