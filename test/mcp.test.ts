@@ -32,7 +32,7 @@ test("MCP thin shell: tool list, dispatch, bounded wait, reply, list, cancel; al
   let client = await connect(s.env);
   t.after(() => client.close());
   const names = (await client.listTools()).tools.map((tool) => tool.name).sort();
-  assert.deepEqual(names, ["delegate_task", "list_agents", "task_cancel", "task_list", "task_reply", "task_result", "task_status", "task_wait"]);
+  assert.deepEqual(names, ["delegate_task", "list_agents", "task_apply", "task_cancel", "task_diff", "task_list", "task_reply", "task_result", "task_status", "task_wait"]);
   assert.ok((await call(client, "list_agents")).agents.some((a: any) => a.id === "codex" && a.installed));
 
   const started = await call(client, "delegate_task", { target_agent: "codex", prompt: "hi", cwd: s.cwd });
@@ -115,4 +115,33 @@ test("MCP delegate_task check: failing command ends as check_failed with the che
   const done = await call(client, "task_wait", { task_ids: [started.task_id], wait_seconds: 10 });
   assert.equal(done.status, "check_failed");
   assert.equal(done.check?.exit_code, 4);
+});
+
+test("MCP task_diff / task_apply match the CLI for an --isolate task", async (t) => {
+  const s = sandbox(t);
+  gitInit(s.cwd);
+  fs.writeFileSync(path.join(s.cwd, ".gitignore"), ".worktrees/\n");
+  execFileSync("git", ["add", ".gitignore"], { cwd: s.cwd });
+  execFileSync("git", ["commit", "-m", "ignore"], { cwd: s.cwd });
+  const client = await connect(s.env);
+  t.after(() => client.close());
+  const started = await call(client, "delegate_task", { target_agent: "codex", prompt: "hi", cwd: s.cwd, isolate: true });
+  await call(client, "task_wait", { task_ids: [started.task_id], wait_seconds: 10 });
+  fs.writeFileSync(path.join(started.worktree.path, "keep.txt"), "keep\nworker\n");
+  const patch = await call(client, "task_diff", { task_id: started.task_id });
+  assert.equal(patch.task_id, started.task_id);
+  assert.match(patch.diff, /\+worker/);
+  const stat = await call(client, "task_diff", { task_id: started.task_id, stat: true });
+  assert.match(stat.diff, /keep\.txt \| 1 \+/);
+  const viaCli = execFileSync(process.execPath, [cli, "diff", started.task_id], { cwd: s.cwd, env: s.env, encoding: "utf8" });
+  assert.equal(patch.diff, viaCli);
+  const applied = await call(client, "task_apply", { task_id: started.task_id, remove: true });
+  assert.equal(applied.status, "applied");
+  assert.deepEqual(applied.files, ["keep.txt"]);
+  assert.equal(applied.removed, true);
+  assert.equal(fs.readFileSync(path.join(s.cwd, "keep.txt"), "utf8"), "keep\nworker\n");
+  assert.match(execFileSync("git", ["log", "-1", "--format=%B"], { cwd: s.cwd, encoding: "utf8" }), new RegExp(`Baton-Task: ${started.task_id}`));
+  const again = await call(client, "task_apply", { task_id: started.task_id });
+  assert.equal(again.status, "failed");
+  assert.match(again.summary, /no longer exists/);
 });

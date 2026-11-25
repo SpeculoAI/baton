@@ -21,7 +21,7 @@ import {
   rulesPointer,
   unseenRules,
 } from "./rules.ts";
-import { addWorktree, assertNotNestedWorktree, batonWorktreeExemptPaths, resolveRepoRoot } from "./worktree.ts";
+import { addWorktree, applyTree, assertNotNestedWorktree, batonWorktreeExemptPaths, diffTrees, forkPoint, headSha, netTree, removeTaskWorktree, resolveRepoRoot } from "./worktree.ts";
 import type { Author, Effort, Enforcement, GitChanges, RulesMode, RulesReport, ScopeOnViolation, TaskMeta, TaskMode, TaskStatus } from "./types.ts";
 
 export type StartInput = {
@@ -187,6 +187,7 @@ export async function start(input: StartInput): Promise<StartResult> {
       branch: added.branch,
       source_cwd,
       gitignore_updated: added.gitignore_updated,
+      base_sha: headSha(added.path),
     };
   }
 
@@ -329,6 +330,57 @@ export function result(id: string, turnNo?: number): { task_id: string; turn: nu
   if (turn.status === "running") throw new Error(`Turn ${n} is still running; wait for it first.`);
   if (!turn.final_message) throw new Error(`Turn ${n} has no recorded final message (older baton, or the agent sent none); use baton tail.`);
   return { task_id: id, turn: n, status: turn.status, final_message: turn.final_message };
+}
+
+function isolatedWorktree(meta: TaskMeta): NonNullable<TaskMeta["worktree"]> {
+  if (!meta.worktree) throw new Error(`Task ${meta.task_id} was not started with --isolate.`);
+  return meta.worktree;
+}
+
+/** Fork point and net tree of an --isolate task; the temp index lives in the task dir, never in the worktree. */
+function netChange(meta: TaskMeta): { worktree: NonNullable<TaskMeta["worktree"]>; base: string; tree: string } {
+  const worktree = isolatedWorktree(meta);
+  if (!fs.existsSync(worktree.path)) throw new Error(`Worktree ${worktree.path} no longer exists (applied with --remove, or removed by hand).`);
+  const base = forkPoint(resolveRepoRoot(worktree.source_cwd), worktree.branch, worktree.base_sha);
+  const tree = netTree(worktree.path, path.join(taskDir(meta.task_id), `net.${randomUUID()}.index`));
+  return { worktree, base, tree };
+}
+
+export function diff(id: string, options: { stat?: boolean } = {}): string {
+  const { worktree, base, tree } = netChange(status(id));
+  return diffTrees(worktree.path, base, tree, options.stat);
+}
+
+export type ApplyResult = {
+  task_id: string; status: "applied" | "nothing_to_apply"; repo: string;
+  commit?: string; files?: string[]; removed: boolean; warning?: string;
+};
+
+/** One squash commit of the task's net change, cherry-picked onto the source repo's current branch. Never pushes. */
+export function apply(id: string, options: { remove?: boolean } = {}): ApplyResult {
+  const running = new Error("Task is running; wait for it to finish.");
+  if (status(id).status === "running") throw running;
+  const release = lockTask(id);
+  if (!release) throw running;
+  try {
+    const meta = readMeta(id)!;
+    if (meta.status === "running") throw running;
+    const { worktree, base, tree } = netChange(meta);
+    const repo = resolveRepoRoot(worktree.source_cwd);
+    const subject = redact(meta.summary?.split("\n")[0]?.trim() || `apply task ${id.slice(0, 8)}`).slice(0, 72);
+    const message = `baton(${meta.target}): ${subject}\n\nBaton-Task: ${id}\nBaton-Target: ${meta.target}\n`;
+    const applied = applyTree(repo, base, tree, message);
+    const result: ApplyResult = applied
+      ? { task_id: id, status: "applied", repo, commit: applied.commit, files: applied.files, removed: false }
+      : { task_id: id, status: "nothing_to_apply", repo, removed: false };
+    if (options.remove) {
+      result.removed = removeTaskWorktree(repo, worktree.path, worktree.branch);
+      if (!result.removed) result.warning = `Applied, but could not fully remove ${worktree.path} or branch ${worktree.branch}.`;
+    }
+    return result;
+  } finally {
+    release();
+  }
 }
 
 export async function wait(ids: string[], seconds = 50): Promise<TaskView | { status: "running"; tasks: TaskView[] }> {

@@ -92,10 +92,12 @@ Everything else: notify and keep going.
 
 ## Workspace isolation
 
-For write jobs in a git repo, pass `--isolate` on each `baton start` so the job runs in a fresh worktree from `HEAD`. `status` / `wait` report `worktree.path` and `worktree.branch`. Changes stay uncommitted in that worktree; reviewing, committing, and merging are up to the user. Clean up with `baton worktree rm` when done. If `worktree.gitignore_updated` is true, remind them to commit `.gitignore`.
+For write jobs in a git repo, pass `--isolate` on each `baton start` so the job runs in a fresh worktree from `HEAD`. `status` / `wait` report `worktree.path` and `worktree.branch`. Changes stay in that worktree until applied. Review them with `baton diff <id> --stat` (full patch without `--stat`) instead of running git in the worktree yourself. Once a job passes review, bring it back with `baton apply <id> --remove` **only when the user agreed, or asked up front for accepted jobs to be applied**: it creates one local commit on the user's current branch (never pushes) and deletes the worktree and branch. Tell the user the commit sha and that `git revert <sha>` undoes it. If `apply` refuses (staged changes, overlapping uncommitted files, conflict, operation in progress), relay the reason and paths; do not merge another way. Apply jobs one at a time. If `worktree.gitignore_updated` is true, remind them to commit `.gitignore`.
 
 ```
 baton start --isolate --target <t> --prompt "..." ...
+baton diff <id> --stat             # what the job changed
+baton apply <id> --remove          # with the user's consent: one local commit, then remove the worktree
 baton worktree rm <name-or-path>   # only when clean / merged; does not cascade from task prune
 ```
 
@@ -132,7 +134,7 @@ Rules:
 - Max 3 jobs running at once unless the host approves more
 - Use --effort low for mechanical subtasks; raise --idle-timeout for slow, silent models
 - For Cursor, Codex or Claude, pass --model <id> when the user names a model or the job needs a specific one; never pass --effort to Cursor (it errors) — pick a tier-specific id from `cursor-agent --list-models` instead
-- Prefer `start --isolate` per write job; clean up with `worktree rm` when done; on `dirty_worktree` ask before `--allow-dirty`
+- Prefer `start --isolate` per write job; review with `baton diff --stat`; `baton apply --remove` only with the user's consent; on `dirty_worktree` ask before `--allow-dirty`
 - Path-disjoint ready jobs may run in parallel; overlapping paths stay serialized; pass declared paths as `--scope`
 - Review-only jobs: `--mode readonly`
 - Pass the project's acceptance command as --check "<cmd>"; a passed check counts as verified — do not re-run it; check_failed means rework, not failover

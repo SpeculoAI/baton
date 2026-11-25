@@ -19,7 +19,7 @@ For splitting into several jobs, dependencies, or fail-over: use `baton-orchestr
 
 Every command prints one JSON object. Call it as `baton <command> ...`. If `baton` is not on PATH, run `/baton:setup` and stop.
 
-The same operations also exist as MCP tools (`delegate_task`, `task_wait`, `task_result`, `task_reply`, `task_status`, `task_cancel`, `task_list`, `list_agents`). Use MCP only when the host cannot run shell commands; the behavior is identical.
+The same operations also exist as MCP tools (`delegate_task`, `task_wait`, `task_result`, `task_diff`, `task_apply`, `task_reply`, `task_status`, `task_cancel`, `task_list`, `list_agents`). Use MCP only when the host cannot run shell commands; the behavior is identical.
 
 ## When to delegate
 
@@ -50,6 +50,7 @@ baton start --target <t> --prompt "<self-contained task>" [--file <path>...] [--
 - `--model <id>` (Cursor, Codex and Claude): per-task model; kept across `reply`. Codex gets `-m <id>` and still takes `--effort`. Claude takes an id or alias (`sonnet`, `opus`) and still takes `--effort`. Cursor does not accept `--effort` at all (with or without `--model`): choose a tier-specific id from `cursor-agent --list-models` (e.g. `gpt-5.3-codex-high`) instead. Agy errors on `--model`.
 - `--idle-timeout` (default 600) stops the job only after that many seconds with no output at all. There is no total time cap unless you pass `--max-duration`. Raise `--idle-timeout` for models that think silently for a long time.
 - **Write jobs in a git repo: use `--isolate` by default.** It creates a worktree from `HEAD` (so the worker does **not** see uncommitted edits), runs there, and records `worktree.path` / `worktree.branch`. Tell the user which you picked and why. Skip `--isolate` only when the user asked for in-place, or the task is a small, explicitly scoped edit on a clean tree. Manual `baton worktree add` then `start --cwd` still works; prefer `--isolate` for new work.
+- **After an `--isolate` job:** review with `baton diff <task_id> --stat` (full patch without `--stat`), not by running git in the worktree. Bring the change back with `baton apply <task_id> --remove` **only when the user agrees** (or asked up front): it makes one local commit on their current branch, never pushes, and deletes the worktree. Tell them the commit sha and that `git revert <sha>` undoes it. If `apply` refuses, relay the reason and listed paths; do not merge another way.
 - In-place write on a dirty tree returns `dirty_worktree` with `dirty_paths`. Relay the paths and ask the user to choose `--isolate` or `--allow-dirty`. Do **not** pick `--allow-dirty` on your own.
 - Optional `--scope`: post-check mistake fence (not a sandbox); prefer with `--isolate`.
 - Optional `--check "<cmd>"`: the project's acceptance command (typecheck, unit tests; chain with `&&`). Baton runs it in the task cwd (the worktree under `--isolate`) after each turn that ends in `success`, and records `check` (`status`, `exit_code`, `output_tail`). A `passed` check is an independent result: do **not** re-run that command yourself. Under `--isolate`, dependencies need `.baton.json` `post_create`.
@@ -102,6 +103,7 @@ While `running`, read `liveness`:
 
 - `baton status <task_id>`: one look, no waiting.
 - `baton result <task_id> [--turn <n>]`: plain-text full final message of a finished turn (default latest); no tool-call transcript.
+- `baton diff <task_id> [--stat]` / `baton apply <task_id> [--remove]`: review and bring back an `--isolate` job (see Write jobs above).
 - `baton tail <task_id> [-f] [--raw]`: readable event log; `-f` follows until the job stops.
 - `baton cancel <task_id>`: stop it (kills the whole process group). Use when the user wants to stop.
 - `baton ls [--all]`: jobs for this directory (or all), newest first.
