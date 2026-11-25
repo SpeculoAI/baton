@@ -1,6 +1,8 @@
 export type Target = "codex" | "claude" | "agy" | "cursor";
 export type Effort = "low" | "medium" | "high" | "ultra";
-export type TaskStatus = "running" | "needs_input" | "success" | "failed" | "timed_out" | "cancelled" | "not_installed" | "not_authenticated" | "quota_exceeded" | "scope_violation" | "readonly_violation";
+export type TaskStatus = "running" | "needs_input" | "success" | "failed" | "timed_out" | "cancelled" | "not_installed" | "not_authenticated" | "quota_exceeded" | "scope_violation" | "readonly_violation" | "check_failed";
+/** Result of the `--check` command Baton ran after a successful turn. `status` is absent when the check was cancelled. */
+export type CheckResult = { command: string; status?: "passed" | "failed" | "timed_out"; exit_code: number | null; duration_ms: number; output_tail: string };
 export type Author = "host" | "human";
 export type ScopeOnViolation = "warn" | "fail";
 export type TaskMode = "readonly" | "write";
@@ -87,6 +89,10 @@ export type TaskMeta = {
   scope_violations?: string[];
   scope_baseline?: ScopeBaseline;
   rules?: RulesReport;
+  /** `--check` command; kept across reply and run after every successful turn. */
+  check_command?: string;
+  /** Result of the latest turn's check. */
+  check?: CheckResult;
 };
 export type EventData =
   | { type: "turn_started"; author: Author; prompt_preview: string }
@@ -95,6 +101,8 @@ export type EventData =
   | { type: "tool_result"; name: string; ok: boolean; detail: string }
   | { type: "raw"; stream: "stdout" | "stderr"; line: string }
   | { type: "error"; text: string }
+  | { type: "check_started"; command: string }
+  | { type: "check_ended"; status: "passed" | "failed" | "timed_out" | "cancelled"; exit_code: number | null }
   | { type: "turn_ended"; status: TaskStatus; exit_code: number | null };
 export type BatonEvent = { ts: string; turn: number } & EventData;
 export type SpawnSpec = {
@@ -131,4 +139,5 @@ export type Turn = {
   turn: number; author: Author; prompt: string; files?: string[]; status: TaskStatus; summary?: string; git_changes?: GitChanges;
   /** The agent's full last message of this turn (redacted); `baton result` prints it. */
   final_message?: string;
+  check?: CheckResult;
 };

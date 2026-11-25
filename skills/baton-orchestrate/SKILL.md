@@ -45,7 +45,7 @@ Do not use (prefer `baton-rescue` or stay in the host):
 
 1. `baton agents`; use only installed targets.
 2. Build the graph of bounded jobs (prompt, files, edges). Pick a target per job and say why in one sentence.
-3. `baton start` every job whose dependencies are satisfied and whose paths do not overlap another live job. Pass the job’s declared paths as repeated `--scope <glob>` (same data as the plan). Optional `--scope-on-violation warn|fail` (default `warn`). Review-only jobs: `--mode readonly`. For Cursor, Codex or Claude, pass `--model <id>` when the user names a model or the job needs a specific one. Default max 3 running at once; ask before going higher.
+3. `baton start` every job whose dependencies are satisfied and whose paths do not overlap another live job. Pass the job’s declared paths as repeated `--scope <glob>` (same data as the plan). Optional `--scope-on-violation warn|fail` (default `warn`). Review-only jobs: `--mode readonly`. When the project has an existing acceptance command (typecheck, unit tests), pass it as `--check "<cmd>"` so Baton runs it after each successful turn. For Cursor, Codex or Claude, pass `--model <id>` when the user names a model or the job needs a specific one. Default max 3 running at once; ask before going higher.
 4. Wait on all live jobs at once. If the host can run a background shell and wake this session when it exits, start once and end the current turn:
    ```
    baton wait <id1> <id2> <id3> --until-done
@@ -60,6 +60,7 @@ Do not use (prefer `baton-rescue` or stay in the host):
    - Transport `success` means **execution complete** (turn finished), not acceptance. Run Review (see below) before any pass/fail conclusion. `summary` is one line; read the full answer with `baton result <id>` (not `tail`).
    - **`success` with non-empty `scope_violations`:** treat as **not** verified pass (warn policy). `baton reply` to revert/move out-of-scope files; counts toward the rework cap.
    - **`scope_violation` / `readonly_violation`:** same class as acceptance failure — **do not** failover to another vendor. `baton reply` asking to restore paths; counts as rework.
+   - **`check_failed`:** the `--check` command failed or timed out. Same class as acceptance failure — **do not** failover. `baton reply` with the key lines of `check.output_tail` as the focused fix; counts as rework. The next turn runs the check again.
    - **Verified pass:** notify the host; mark the node done; start newly unblocked dependents.
    - **Acceptance failed after `success`:** rework in the same conversation with `baton reply <id> --prompt "<focused fix>"`, up to the rework cap (default 1); then wait again.
    - **Cannot verify:** report what remains unverified; do **not** claim accepted; do not unblock dependents that need a verified pass (ask the host if the graph is stuck).
@@ -110,7 +111,8 @@ Baton only reserves the slot after each job ends. Transport `success` stays “t
 - **Project rules present** (`.agents/`, OpenSpec, Speckit, custom checks): follow them strictly. Do not replace them with a lighter default.
 - **No project rules:** still run a **minimal task-matched verification** — check the job’s stated deliverables and key behavior with the smallest sufficient existing checks (read the diff, spot-check expected files/behavior). Do **not** invent a full CI suite or spawn a reviewer agent by default.
 - If you cannot verify an item: list it as unverified; do not claim accepted; dependents that need acceptance wait.
-- The orchestrator may run read-only check commands (project-defined, or the minimal task-matched ones above), but does not implement the worker’s coding task.
+- **`check.status` is `passed`:** Baton ran that command itself in the task cwd after the turn — treat it as independently verified and **do not re-run the same command**. Review only the diff and what the command does not cover.
+- The orchestrator may run read-only check commands (project-defined, or the minimal task-matched ones above) that `--check` did not already cover, but does not implement the worker’s coding task.
 - Large batches: optionally one short-lived reviewer per finished job; keep only its pass/fail / unverified conclusion.
 
 ## Orchestrator brief (give to the sub-agent, or follow it yourself)
@@ -133,6 +135,7 @@ Rules:
 - Prefer `start --isolate` per write job; clean up with `worktree rm` when done; on `dirty_worktree` ask before `--allow-dirty`
 - Path-disjoint ready jobs may run in parallel; overlapping paths stay serialized; pass declared paths as `--scope`
 - Review-only jobs: `--mode readonly`
+- Pass the project's acceptance command as --check "<cmd>"; a passed check counts as verified — do not re-run it; check_failed means rework, not failover
 - Prefer background `wait <ids...> --until-done` when the host wakes on shell exit; else `wait <ids...> --for 50` repeating; never wait one job after another
 - needs_input: ask the host unless earlier instructions decide it; relay the answer with `reply --as human`
 - Advance per job: wait → Review → verified pass: notify and start newly ready dependents; acceptance failed or scope_violation or readonly_violation or success+scope_violations: `reply` with a focused fix up to cap (default 1); cannot verify: report unverified items, do not claim accepted, do not unblock acceptance-gated dependents

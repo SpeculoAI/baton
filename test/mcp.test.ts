@@ -105,3 +105,14 @@ test("MCP delegate_task: dirty_worktree / allow_dirty / isolate", async (t) => {
   assert.match(isolated.worktree.branch, /^baton\/task-/);
   await call(client, "task_wait", { task_ids: [isolated.task_id], wait_seconds: 10 });
 });
+
+test("MCP delegate_task check: failing command ends as check_failed with the check result", async (t) => {
+  const s = sandbox(t);
+  const client = await connect(s.env);
+  t.after(() => client.close());
+  const started = await call(client, "delegate_task", { target_agent: "codex", prompt: "hi", cwd: s.cwd, check: "exit 4" });
+  assert.equal(started.check_command, "exit 4");
+  const done = await call(client, "task_wait", { task_ids: [started.task_id], wait_seconds: 10 });
+  assert.equal(done.status, "check_failed");
+  assert.equal(done.check?.exit_code, 4);
+});

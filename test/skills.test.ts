@@ -68,7 +68,10 @@ test("rescue: --model + scope_violation terminal state; orchestrate brief covers
   assert.match(rescue, /Agy errors on `--model`/);
   assert.match(rescue, /scope_violation/);
   assert.match(rescue, /scope_violations/);
-  assert.match(rescue, /success`, `needs_input`, `scope_violation`, or `readonly_violation/);
+  assert.match(rescue, /success`, `needs_input`, `scope_violation`, `readonly_violation`, or `check_failed/);
+  assert.match(rescue, /do \*\*not\*\* re-run that command yourself/);
+  assert.match(orchestrate, /do not re-run the same command/);
+  assert.match(orchestrate, /check_failed/);
   assert.match(orchestrate, /--model <id>/);
   assert.match(orchestrate, /worktree/);
   assert.match(orchestrate, /agents, start, wait, status, result, tail, reply, cancel, ls, worktree/);

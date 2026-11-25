@@ -15,6 +15,8 @@ export function formatEvent(event: BatonEvent): string {
     case "tool_result": return `${prefix} ${event.name} ${event.ok ? "ok" : "failed"}: ${event.detail}`;
     case "error": return `${prefix} error: ${event.text}`;
     case "raw": return `${prefix} ${event.stream}: ${event.line}`;
+    case "check_started": return `${prefix} check: ${event.command}`;
+    case "check_ended": return `${prefix} check ${event.status} (exit ${event.exit_code})`;
     case "turn_ended": return `${prefix} ended: ${event.status} (exit ${event.exit_code})`;
   }
 }

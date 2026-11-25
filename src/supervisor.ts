@@ -10,7 +10,8 @@ import { resolveRulesync, rulesGitRoot, rulesyncCheck } from "./rules.ts";
 import { appendEvent, hasTurnEnded, readMeta, writeMeta, readTurn, writeTurn, taskDir, lockTask } from "./store.ts";
 import { redact } from "./redact.ts";
 import { killGroup } from "./process.ts";
-import type { EventData, TaskStatus } from "./types.ts";
+import type { CheckResult, EventData, TaskStatus } from "./types.ts";
+const CHECK_TAIL = 4000;
 const QUOTA_PHRASES = ["usage limit", "quota exceeded", "rate limit"];
 
 function withoutHtml(text: string) {
@@ -99,6 +100,48 @@ export async function supervise(id: string): Promise<void> {
   };
   emit({ type: "turn_started", author: turn.author, prompt_preview: redact(turn.prompt).slice(0, 200) });
   const heartbeat = setInterval(() => { meta.heartbeat_at = new Date().toISOString(); save(); }, 10_000);
+  // Run the --check command in its own process group. Cancel reaches it through childPid; the idle limit only kills the check.
+  const runCheck = async (command: string): Promise<CheckResult> => {
+    const startedCheck = Date.now();
+    const file = path.join(taskDir(id), "raw", `${meta.turn}.check.log`);
+    fs.writeFileSync(file, "", { mode: 0o600 });
+    let output = "";
+    let lastOutput = startedCheck;
+    let idle = false;
+    let code: number | null = null;
+    // The worker's heartbeat has already stopped; without this a check longer than 30s looks orphaned and gets killed.
+    const beat = setInterval(() => { meta.heartbeat_at = new Date().toISOString(); save(); }, 10_000);
+    let idleTimer: NodeJS.Timeout | undefined;
+    try {
+      const child = spawn("/bin/sh", ["-c", command], { cwd: meta.cwd, env: { ...process.env, BATON_DELEGATION: "1" }, detached: true, stdio: ["ignore", "pipe", "pipe"] });
+      childPid = child.pid ?? null;
+      meta.child_pid = childPid;
+      save();
+      if (stopped) killGroup(childPid);
+      const onData = (chunk: Buffer) => {
+        lastOutput = Date.now();
+        fs.appendFileSync(file, chunk);
+        output = (output + chunk.toString()).slice(-200_000);
+      };
+      child.stdout!.on("data", onData);
+      child.stderr!.on("data", onData);
+      idleTimer = setInterval(() => {
+        if (Date.now() - lastOutput < meta.idle_timeout_s * 1000) return;
+        idle = true;
+        try { killGroup(childPid); } catch { /* already gone */ }
+      }, 50);
+      code = await new Promise<number | null>((resolve) => {
+        child.once("error", (error) => { output += `\n${error.message}`; resolve(null); });
+        child.once("close", resolve);
+      });
+    } finally {
+      clearInterval(beat);
+      clearInterval(idleTimer);
+    }
+    const result: CheckResult = { command, exit_code: code, duration_ms: Date.now() - startedCheck, output_tail: redact(output).slice(-CHECK_TAIL) };
+    if (!stopped) result.status = idle ? "timed_out" : code === 0 ? "passed" : "failed";
+    return result;
+  };
   // rulesync --check before the idle timer so its duration does not count against the worker.
   if (meta.turn === 1 && meta.rules?.rulesync?.status === "pending") {
     const repoRoot = rulesGitRoot(meta.cwd) ?? meta.cwd;
@@ -281,6 +324,21 @@ export async function supervise(id: string): Promise<void> {
         }
       }
     }
+  }
+  if (final === "success" && meta.check_command && !stopped) {
+    // Keep waiters blocked: the turn is not decided until the check ends.
+    meta.status = "running";
+    emit({ type: "check_started", command: redact(meta.check_command).slice(0, 200) });
+    const check = await runCheck(meta.check_command);
+    emit({ type: "check_ended", status: check.status ?? "cancelled", exit_code: check.exit_code });
+    turn.check = check;
+    meta.check = check;
+    if (stopped === "cancelled") { final = "cancelled"; meta.summary = "Cancelled."; }
+    else if (check.status !== "passed") {
+      final = "check_failed";
+      meta.summary = `check_failed: ${check.status === "timed_out" ? "timed out" : `exit ${check.exit_code}`}\n${check.output_tail}`.slice(0, 8192);
+    }
+    meta.status = final;
   }
   delete meta.stop_reason;
   turn.status = final;

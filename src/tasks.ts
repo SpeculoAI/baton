@@ -41,6 +41,8 @@ export type StartInput = {
   allowDirty?: boolean;
   /** Default check: discover rules without changing the prompt. */
   rules?: RulesMode;
+  /** Shell command Baton runs in the task cwd after each successful turn. */
+  check?: string;
 };
 
 const DIRTY_PATHS_CAP = 50;
@@ -233,6 +235,7 @@ export async function start(input: StartInput): Promise<StartResult> {
     scope_baseline,
     rules,
     ...(input.allowDirty ? { allow_dirty: true } : {}),
+    ...(input.check?.trim() ? { check_command: input.check.trim() } : {}),
     ...(worktree ? { worktree } : {}),
   };
   writeMeta(meta);
@@ -356,7 +359,7 @@ export async function reply(id: string, prompt: string, author: Author = "host")
   try {
     const meta = readMeta(id)!;
     if (meta.status === "running") return busy;
-    if (!["success", "needs_input", "scope_violation", "readonly_violation"].includes(meta.status)) throw new Error(`Cannot continue a task in status ${meta.status}.`);
+    if (!["success", "needs_input", "scope_violation", "readonly_violation", "check_failed"].includes(meta.status)) throw new Error(`Cannot continue a task in status ${meta.status}.`);
     if (!meta.session_id) throw new Error("No session_id; cannot resume the session.");
     if (!getAdapter(meta.target)?.resolve(process.env)) throw new Error(`${meta.target} is not on PATH.`);
     next = { ...meta, status: "running", turn: meta.turn + 1, updated_at: new Date().toISOString(), supervisor_pid: null, child_pid: null, heartbeat_at: null, last_event_at: null };
@@ -364,6 +367,7 @@ export async function reply(id: string, prompt: string, author: Author = "host")
     delete next.summary;
     delete next.warning;
     delete next.scope_violations;
+    delete next.check;
     writeTurn(id, { turn: next.turn, author, prompt, status: "running" });
     writeMeta(next);
   } finally { release(); }

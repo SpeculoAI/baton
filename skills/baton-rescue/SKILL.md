@@ -42,7 +42,7 @@ If not named, use `codex`. If the current session is already Codex, use `claude`
 ## Start
 
 ```
-baton start --target <t> --prompt "<self-contained task>" [--file <path>...] [--effort low|medium|high|ultra] [--model <id>] [--idle-timeout <s>] [--max-duration <s>] [--cwd <dir>] [--scope <glob>...] [--scope-on-violation warn|fail] [--mode readonly|write] [--isolate] [--allow-dirty] [--rules check|pointer|off]
+baton start --target <t> --prompt "<self-contained task>" [--file <path>...] [--effort low|medium|high|ultra] [--model <id>] [--idle-timeout <s>] [--max-duration <s>] [--cwd <dir>] [--scope <glob>...] [--scope-on-violation warn|fail] [--mode readonly|write] [--isolate] [--allow-dirty] [--rules check|pointer|off] [--check "<cmd>"]
 ```
 
 - The prompt states done criteria and which files to look at. Long prompts can come on stdin instead of `--prompt`.
@@ -52,6 +52,7 @@ baton start --target <t> --prompt "<self-contained task>" [--file <path>...] [--
 - **Write jobs in a git repo: use `--isolate` by default.** It creates a worktree from `HEAD` (so the worker does **not** see uncommitted edits), runs there, and records `worktree.path` / `worktree.branch`. Tell the user which you picked and why. Skip `--isolate` only when the user asked for in-place, or the task is a small, explicitly scoped edit on a clean tree. Manual `baton worktree add` then `start --cwd` still works; prefer `--isolate` for new work.
 - In-place write on a dirty tree returns `dirty_worktree` with `dirty_paths`. Relay the paths and ask the user to choose `--isolate` or `--allow-dirty`. Do **not** pick `--allow-dirty` on your own.
 - Optional `--scope`: post-check mistake fence (not a sandbox); prefer with `--isolate`.
+- Optional `--check "<cmd>"`: the project's acceptance command (typecheck, unit tests; chain with `&&`). Baton runs it in the task cwd (the worktree under `--isolate`) after each turn that ends in `success`, and records `check` (`status`, `exit_code`, `output_tail`). A `passed` check is an independent result: do **not** re-run that command yourself. Under `--isolate`, dependencies need `.baton.json` `post_create`.
 - Review / read-only jobs: pass `--mode readonly` (default `write`). Kept across `reply`. Dirty tree after a readonly turn becomes `readonly_violation`. Never combine `--isolate` / `--allow-dirty` with readonly. On macOS, Codex readonly workers using `/usr/bin/git` log `xcrun_db … Operation not permitted`; the git output is still valid — do not treat it as a failure.
 - After `status` / `wait`, if `rules.unseen` is non-empty, `rules.rulesync.status` is `stale`, `target_configured` is `false`, or `gates` is non-empty, tell the user (optionally suggest `--rules pointer` or running `rulesync generate`).
 - It returns at once with `task_id` and `status: "running"`. Keep the `task_id`. Tell the user they can watch live with `baton tail -f <task_id>`.
@@ -84,6 +85,7 @@ While `running`, read `liveness`:
 - `dirty_worktree`: in-place write refused. Relay `dirty_paths` and ask the user to choose `--isolate` or `--allow-dirty`; do not choose `--allow-dirty` yourself.
 - `scope_violation`: out-of-scope edits under `--scope-on-violation fail`. `baton reply` asking to restore those paths; do not switch vendor.
 - `readonly_violation`: `--mode readonly` but the tree changed. `baton reply` asking to restore; do not switch vendor.
+- `check_failed`: the `--check` command failed or timed out (see `check.output_tail`). `baton reply` with the key failure lines as the fix request; do not switch vendor. The next turn runs the check again.
 - `needs_input`: the worker asked `decision.question` with `decision.options`. Ask the user unchanged and wait. Then:
   ```
   baton reply <task_id> --as human --prompt "<the user's answer>"
@@ -94,7 +96,7 @@ While `running`, read `liveness`:
 - `timed_out`: relay `summary` (it says `idle` or `max_duration`). The task is closed; if the user wants another try, `baton start` again with a larger `--idle-timeout`.
 - `not_installed`: say so and stop.
 
-`baton reply` works after `success`, `needs_input`, `scope_violation`, or `readonly_violation` for a follow-up in the same conversation. While the job is `running`, `reply` returns `busy`; wait first.
+`baton reply` works after `success`, `needs_input`, `scope_violation`, `readonly_violation`, or `check_failed` for a follow-up in the same conversation. While the job is `running`, `reply` returns `busy`; wait first.
 
 ## Other commands
 

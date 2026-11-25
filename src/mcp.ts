@@ -38,6 +38,7 @@ export function createServer(): McpServer {
       isolate: z.boolean().optional().describe("Create a git worktree and run the write job there (default false)."),
       allow_dirty: z.boolean().optional().describe("Allow in-place write on a dirty working tree (default false)."),
       rules: z.enum(["check", "pointer", "off"]).optional().describe("Project rules discovery; default check. pointer injects unread rule paths into the first-turn prompt."),
+      check: z.string().optional().describe("Shell command Baton runs in the task cwd after each successful turn; a non-zero exit ends the turn as check_failed."),
     },
   }, (args) => respond(() => start({
     target: args.target_agent, prompt: args.prompt, files: args.files, cwd: args.cwd,
@@ -47,6 +48,7 @@ export function createServer(): McpServer {
     mode: args.mode as TaskMode | undefined, allowWeak: args.allow_weak,
     isolate: args.isolate, allowDirty: args.allow_dirty,
     rules: args.rules as RulesMode | undefined,
+    check: args.check,
   })));
   server.registerTool("task_status", {
     description: "Get a task's current status. While running, includes liveness (active/quiet/orphaned) and quiet_for_s.",
@@ -71,7 +73,7 @@ export function createServer(): McpServer {
     inputSchema: { task_id: z.string(), turn: z.number().int().optional() },
   }, (args) => respond(() => result(args.task_id, args.turn)));
   server.registerTool("task_reply", {
-    description: "After a task stops at needs_input, success, scope_violation or readonly_violation, start the next turn in the same session. as=human means a human said it; default host. Returns busy while running.",
+    description: "After a task stops at needs_input, success, scope_violation, readonly_violation or check_failed, start the next turn in the same session. as=human means a human said it; default host. Returns busy while running.",
     inputSchema: { task_id: z.string(), prompt: z.string(), as: z.enum(["host", "human"]).optional() },
   }, (args) => respond(() => reply(args.task_id, args.prompt, (args.as ?? "host") as Author)));
   server.registerTool("task_cancel", {
