@@ -316,7 +316,7 @@ baton mcp                             # 启动 MCP 服务（stdio）
 ```
 
 - `--effort` 映射到各家原生参数：Codex `-c model_reasoning_effort=...`；Claude/Agy `--effort`（`ultra` 映射为 `max`）。Cursor 没有独立的 effort 参数（`cursor-agent` 拒绝 `<id>[effort=...]`），`--target cursor --effort` 会在 `start` 时直接报错；请改选名称自带档位的模型（`cursor-agent --list-models`，如 `gpt-5.3-codex-high`）。
-- `--model <id>`（Cursor 与 Codex；Claude/Agy 会报错）：按任务指定模型，写入 meta，`reply` 延续。Codex 在 `exec` 和 `exec resume` 上都传 `-m <id>`（可与 `--effort` 同用）。Cursor 原样传 `--model <id>`；与 `--effort` 同时使用会报错。`status` 含 `model`（请求）与 `model_argv`（传给 CLI 的参数）；这不是 provider 确认的“实际模型”。
+- `--model <id>`（Cursor、Codex 与 Claude；Agy 会报错）：按任务指定模型，写入 meta，`reply` 延续。Codex 在 `exec` 和 `exec resume` 上都传 `-m <id>`（可与 `--effort` 同用）。Claude 每一轮都传 `--model <id>`，因为只带 `--resume` 会回落到默认模型；`sonnet` / `opus` 等别名原样传入，可与 `--effort` 同用。Cursor 原样传 `--model <id>`；与 `--effort` 同时使用会报错。`status` 含 `model`（请求）与 `model_argv`（传给 CLI 的参数）；这不是 provider 确认的“实际模型”。
 - `--idle-timeout` 默认 600：连续这么久没有任何输出字节才停掉。`--max-duration` 默认不限。两者都按单轮计时，`reply` 开新一轮时重新计时。
 - **`--mode readonly|write`（默认 `write`）：** 映射到各家只读参数（Codex `--sandbox read-only`、Claude `--permission-mode plan`、Cursor `--mode ask`、Agy `--mode plan`）。写入 meta，`reply` 延续。每轮结束后若有净变更，会把干净的 `success` 升为 `readonly_violation`。无映射的目标默认拒绝，需显式 `--allow-weak`。**兼容性：** 新增终态 `readonly_violation`。
   - **macOS + Codex 只读：** Codex 自带的 Seatbelt 沙箱禁止写 `/tmp`，Apple 的 `/usr/bin/git` shim 会打印 `couldn't create cache file '/tmp/xcrun_db-…' (errno=Operation not permitted)`，且每次调用多花约 2 秒重新解析工具链。git 命令本身仍以 0 退出、输出正确。Baton 改不了 Codex 的沙箱规则；想去掉这些噪音，就让 worker 的 PATH 先找到真实的 git（Homebrew 的 `/opt/homebrew/bin/git`，或 `xcrun -f git` 所在目录）。

@@ -1,84 +1,40 @@
-# Implementation Plan: 空闲超时的终态
+# Plan: Claude target 支持 `--model`
 
-Source spec: `SPEC-idle-timeout-terminal-state.md`
+Source spec: `SPEC-claude-model.md`
 
-## Overview
+## 现状与数据流
 
-`stop()` 在杀子进程之前把 `stop_reason` 写入仍为 `running` 的 meta。supervisor 正常收尾时删掉该字段，终态与现在的成功路径相同。它中途退出时，现有 `status()` 孤儿路径按 `stop_reason` 收成 `timed_out` 或 `cancelled`，并杀掉残留子进程。没有该字段的崩溃仍是 `failed` / `supervisor exited unexpectedly`。
+`--model` 已经有完整的通路，Claude 只缺两处：
 
-任务全文在 `tasks/todo.md`。下面是顺序索引。
+1. `src/tasks.ts:122-128` 是入口闸门：只放行 cursor / codex，并在这里算出写入 meta 的 `model_argv`（codex 直接等于 `model`）。
+2. `src/supervisor.ts:138-154` 每一轮都调用 `adapter.build({ ..., model: meta.model })`，再用返回的 `spec.modelArg` 回写 `meta.model_argv`。`reply` 走同一段代码，所以只要 `build()` 每次都传 `--model`，「每轮重传」就自动成立。
+3. `src/adapters/claude.ts` 的 `build()` 目前不解构 `model`，也不返回 `modelArg`。
 
-## Architecture Decisions
+所以改动只有：闸门放行 claude，`claude.build()` 追加 `--model` 并返回 `modelArg`。`supervisor.ts` 与 `types.ts` 都不用动。
 
-- 决定记在 `TaskMeta.stop_reason`（`"idle" | "max_duration" | "cancelled"`），不新开文件。终态 `writeMeta` 时删除。运行中的短暂窗口可以带上这个字段，不把它做成稳定 API，也不在 `status()` 的 running 视图里单独剔除。
-- 不改 `orphaned()` 的判定。有字段才改收尾文案和 `status`；没字段的分支保持 `failed` 与 `liveness: "orphaned"`。
-- `killGroup` 的异常在 `stop()` 里吞掉。计时器回调不能在决定落盘前把进程打崩。
-- 崩溃注入 `BATON_CRASH_AFTER_STOP_PERSIST=1` 只在 `stop()` 里、`killGroup` 尝试之后 `process.exit(1)`。测试通过 sandbox 的 `env` 在 `start` 前设上。不进 CLI、不进 reference。
-- 同一 turn 只追加一条 `turn_ended`。`store.ts` 提供「本 turn 是否已有 `turn_ended`」的读取，supervisor 收尾和孤儿收尾都先查再写。避免心跳过期把活着的 supervisor `SIGKILL` 掉时两边各写一条。
-- 有 `stop_reason` 的收尾返回 `finished(meta)`，不带 `liveness`。无字段的孤儿返回保持现在的 `{ ...meta, liveness: "orphaned", quiet_for_s }`。
-- 摘要字符串逐字沿用 supervisor 现有文案：`Timed out: idle.`、`Timed out: max_duration.`、`Cancelled.`、`supervisor exited unexpectedly`。
-- 不新加模块。逻辑留在 `stop()` 和 `status()`。
+## 测试缺口
 
-## Dependency Graph
+`test/fake-cli/` 里没有 `claude`，现有 claude 的 `--model` 用例在 spawn 之前就被拒了，所以从没走到 fake CLI。需要新增 symlink `test/fake-cli/claude -> fake.sh`，与 `codex`、`cursor-agent` 做法相同。已确认：`not_installed` 用例改 PATH 后用的是 codex，`mcp.test.ts` 只断言 codex 已安装，新增 fake claude 不影响现有用例。
+
+fake claude 要能 `reply`，fixture 需要输出 `system/init`（带 `session_id`）和 `result` 事件，写法照 `cursorFixture`。
+
+## 顺序与依赖
 
 ```
-TaskMeta.stop_reason
-    │
-    └── stop() 先落盘，再 killGroup，正常收尾时删除
-            │
-            └── status() 孤儿路径按字段收尾
-                    │
-                    └── 崩溃注入测试（idle / max_duration / cancel）
-                            │
-                            └── 三份文档补一句契约
+Task 1 代码 + 测试  ──→  Task 2 文档 + 技能
 ```
 
-顺序执行。文档依赖收尾文案已经在代码里定死，不与 Task 2 并行。
+Task 2 描述的是 Task 1 交付的行为，所以要先做 Task 1。两个任务都很小，不并行。
 
-## Task List
+## 风险
 
-### Phase 1: 决定落盘
+| 风险 | 应对 |
+|---|---|
+| `--model` 在 argv 中的位置不对，被 CLI 当成 prompt | 放在 `--resume` 与 prompt 之前；单测断言 prompt 仍是最后一个参数 |
+| resume 时漏传，导致回落到默认模型 | 第 2 轮 argv 断言同时有 `--resume` 和 `--model`（实测已知会回落） |
+| 非法模型时 `failureSummary` 取不到 CLI 的报错句 | 按 spec 的 Open Question 1：实现时用真实失败输出检查一次，取不到就只记录、另开 issue |
 
-- [x] Task 1: `stop()` 写入并在正常收尾时删除 `stop_reason`
+## 检查点
 
-### Checkpoint: 决定落盘
-
-- [x] 现有 idle / max_duration / cancel 用例仍是对应终态
-- [x] 终态 meta 没有 `stop_reason`
-- [x] `node --test test/lifecycle.test.ts` 通过
-
-### Phase 2: 崩溃窗口
-
-- [x] Task 2: 孤儿路径认 `stop_reason`，并补崩溃注入测试
-
-### Checkpoint: 崩溃窗口
-
-- [x] `npm test` 通过
-- [x] 无 `stop_reason` 的 SIGKILL 用例仍是 `failed` + `liveness: orphaned`
-
-### Phase 3: 文档
-
-- [x] Task 3: architecture 与两份 reference 补上这句契约
-
-### Checkpoint: Complete
-
-- [x] `npm test` 通过
-- [x] 三份文档都写明：已有 `stop_reason` 时下次读取收成 `timed_out` 或 `cancelled`
-- [x] 人审之后再改代码以外的范围
-
-## Risks and Mitigations
-
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-| supervisor 最终 `writeMeta` 与孤儿收尾同时写，出现两条 `turn_ended` | Med | 两边追加前都看本 turn 是否已有 `turn_ended`。孤儿路径在锁内重读 meta，`status !== "running"` 则直接返回 |
-| `wait` 在 `stop_reason` 已写入、终态尚未写入时仍看到 `running` | Low | 这是 spec 要求的窗口。终态仍由正常收尾或下一次孤儿读取给出 |
-| 崩溃注入环境变量漏进用户环境 | Low | 只认精确值 `"1"`，且只在 `stop()` 内生效。文档不记载 |
-| 正常收尾的 git / scope 检查把 `timed_out` 改成别的状态 | Low | 现有升级条件只作用于 `success`。收尾赋值以内存里的 `stopped` 为准，并删掉 `stop_reason` |
-
-## Open Questions
-
-无。范围以 spec 的三条假设为准：三种 `stop()` 原因都修；崩溃窗口补一条 `exit_code: null` 的 `turn_ended`；`stop_reason` 不进入稳定 API。
-
-## Parallelization
-
-必须顺序做。三处写入共享同一 meta 字段和同一句摘要。没有可以拆开并行的切片。
+- Task 1 之后：`node --test test/model-start.test.ts test/adapters.test.ts` 通过，`npm run build` 通过。
+- Task 2 之后：`npm test` 全量通过；`grep -rn "Claude/Agy error\|Claude and Agy error\|cursor and codex only" docs skills src` 没有残留。

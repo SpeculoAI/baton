@@ -31,14 +31,17 @@ export const claude: Adapter = {
   resolve(env) {
     return which(["claude"], env);
   },
-  build({ bin, prompt, sessionId, reasoningEffort, mode }) {
+  build({ bin, prompt, sessionId, reasoningEffort, model, mode }) {
     // stream-json requires --verbose with -p.
     const permission = mode === "readonly" ? "plan" : "acceptEdits";
     const args = ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode", permission, "--permission-prompts", "none"];
     if (reasoningEffort) args.push("--effort", reasoningEffort === "ultra" ? "max" : reasoningEffort);
+    // Verified 2026-11-24 (Claude Code 2.1.332): --resume without --model falls back to the default model, so pass it every turn.
+    const modelArg = model?.trim() || undefined;
+    if (modelArg) args.push("--model", modelArg);
     if (sessionId) args.push("--resume", sessionId);
     args.push(prompt);
-    return { command: bin, args, stdin: null };
+    return { command: bin, args, stdin: null, modelArg };
   },
   sessionIdFrom(line) {
     const obj = parse(line);
