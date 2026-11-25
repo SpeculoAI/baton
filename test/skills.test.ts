@@ -64,7 +64,8 @@ test("rescue: --model + scope_violation terminal state; orchestrate brief covers
   const rescue = read("baton-rescue");
   const orchestrate = read("baton-orchestrate");
   assert.match(rescue, /--model <id>/);
-  assert.match(rescue, /Cursor and Codex/);
+  assert.match(rescue, /Cursor, Codex and Claude/);
+  assert.match(rescue, /Agy errors on `--model`/);
   assert.match(rescue, /scope_violation/);
   assert.match(rescue, /scope_violations/);
   assert.match(rescue, /success`, `needs_input`, `scope_violation`, or `readonly_violation/);

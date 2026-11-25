@@ -42,5 +42,5 @@ Apps launched from the Dock, such as the Cursor IDE, often do not inherit an nvm
 
 Reload the plugin (new session) so MCP picks up tools. Then:
 
-- One bounded handoff → `baton-rescue` (supports `--scope`, `worktree add` then `start --cwd`, Cursor/Codex `--model`)
+- One bounded handoff → `baton-rescue` (supports `--scope`, `worktree add` then `start --cwd`, Cursor/Codex/Claude `--model`)
 - Several jobs / dependencies / review → `baton-orchestrate`
