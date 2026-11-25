@@ -300,7 +300,7 @@ baton start --target <codex|claude|cursor|agy> [--prompt <text> | stdin] [--file
             [--model <id>] [--idle-timeout <s>] [--max-duration <s>] [--cwd <dir>]
             [--scope <glob> ...] [--scope-on-violation warn|fail]
             [--mode readonly|write] [--allow-weak] [--isolate] [--allow-dirty]
-            [--rules check|pointer|off]
+            [--rules check|pointer|off] [--check "<cmd>"]
 baton status <id>
 baton wait <id>... [--for <s> | --until-done]  # default --for 50; --until-done blocks until a job leaves running
 baton result <id> [--turn <n>]       # plain text: the agent's full final message of a finished turn (default latest), no transcript
@@ -323,6 +323,7 @@ baton mcp                            # start the MCP server (stdio)
 - **`--isolate` / `--allow-dirty` (write only):** `--isolate` creates a worktree named `task-<id8>` (branch `baton/task-<id8>`) from `HEAD`, runs the job there, and records `worktree.path` / `worktree.branch` / `worktree.source_cwd` on the task. `reply` continues in that tree; `ls` from the source directory still lists it. Changes stay uncommitted — Baton does not commit, merge, or open a PR. In-place write on a dirty tree (tracked or untracked, non-ignored) returns `dirty_worktree` with `dirty_paths` unless you pass `--allow-dirty`. Cannot combine with each other or with `--mode readonly`. Manual flow still works: `baton worktree add`, then `baton start --cwd <path>`. Default root is `.worktrees/` (appended to `.gitignore` if needed; see `worktree.gitignore_updated`). Optional `.baton.json` configures `copy` / `symlink` / `post_create` / `rulesync` (boolean, default on). Symlinking `node_modules` can cross-contaminate when branches diverge — prefer `post_create` installs when unsure. When the new worktree has `.rulesync/` and `rulesync` is on PATH (or in `node_modules/.bin`), `worktree add` / `--isolate` runs `rulesync generate` there and reports `rules.missing` / `rules.dirtied`. Prefer generating and committing rulesync outputs in the main repo first so worktrees stay clean.
 - **`--scope` (optional):** repeatable globs relative to the task `cwd`. After each turn, Baton checks **task-baseline net changes** (commits since start HEAD ∪ working-tree digest diff) against those globs. `--scope-on-violation warn` (default) keeps the transport status and sets `scope_violations` + `warning`; `fail` upgrades a clean `success` to `scope_violation`. This is a **mistake fence**, not a sandbox: ignored paths, non-git writes, and concurrent edits on a shared cwd are blind spots — prefer combining with `--isolate`. Requires a git repo when `--scope` is set. **Breaking note for clients:** new terminal status `scope_violation` (and optional `scope_*` meta fields).
 - **`--rules check|pointer|off` (default `check`):** discovers project rule files from the task `cwd` up to the git root and records them on `meta.rules` (`found`, `unseen`, `pointer_injected`). `check` does not change the worker prompt. `pointer` prepends an English “read these files” block for entries the target does not load natively (first turn only; `reply` does not reinject). `off` skips discovery entirely. When the repo has `.rulesync/`, Baton also reports a `rules.rulesync` object: it reads `rulesync.jsonc` (+ `rulesync.local.jsonc`), notes whether the target’s rulesync id is configured and any load-gate notes for `mcp`/`hooks`, then the supervisor runs `rulesync generate --check` (whole project, no `--targets`/`--features`) and sets `status` to `in_sync` / `stale` / `error` / `skipped`. Failures never block the task. Baton never installs rulesync via `npx` and never writes rulesync outputs into the user’s main working tree.
+- **`--check "<cmd>"` (optional):** an acceptance command Baton runs itself after every turn that ends in `success` (after the readonly / scope checks), so the host does not have to re-run it. It runs as `/bin/sh -c "<cmd>"` in the task `cwd` (the worktree under `--isolate`), with the worker's environment, in its own process group; chain several commands with `&&`. Kept across `reply`. The result is `check` on the turn and on meta (latest turn): `command`, `status` (`passed` / `failed` / `timed_out`), `exit_code`, `duration_ms`, `output_tail` (last 4000 chars, redacted); full output in `raw/<n>.check.log`. `passed` keeps `success`. `failed` or `timed_out` ends the turn as `check_failed` with summary `check_failed: exit <code>` (or `check_failed: timed out`) followed by the output tail; `reply` is allowed and the next turn runs the check again. The check stops after `--idle-timeout` seconds with no output; `--max-duration` applies only to the worker. `cancel` during the check gives `cancelled`. Not run when the turn did not end in `success`. The task stays `running` until the check ends. Under `--isolate` the worktree has no dependencies unless `.baton.json` `post_create` installs them. **Breaking note for clients:** new terminal status `check_failed` and optional `check` meta field.
 
 ### Native rule files and load gates (verified 2026-11-21/22)
 
@@ -344,6 +345,7 @@ baton mcp                            # start the MCP server (stdio)
 | `success` | Turn finished; includes `summary` and this turn's `git_changes` (still check `scope_violations` under warn) |
 | `scope_violation` | Out-of-scope edits under `--scope-on-violation fail`; `reply` allowed |
 | `readonly_violation` | `--mode readonly` but the tree changed; `reply` allowed |
+| `check_failed` | The `--check` command failed or timed out; see `check`; `reply` allowed |
 | `failed` / `timed_out` / `cancelled` | Terminal; cannot be replied to |
 | `not_authenticated` / `quota_exceeded` | The target CLI is not logged in / out of quota |
 | `not_installed` | Returned by `start`; the target is not on `PATH` |
@@ -378,7 +380,7 @@ MCP is a thin shell over the same logic. It keeps no task state, so restarting M
 | Tool | Command |
 |---|---|
 | `list_agents` | `agents` |
-| `delegate_task` | `start` (`target_agent`, `prompt`, `files`, `reasoning_effort`, `model`, `idle_timeout_seconds`, `max_duration_seconds`, `cwd`, `scope`, `scope_on_violation`, `mode`, `allow_weak`, `isolate`, `allow_dirty`, `rules`) |
+| `delegate_task` | `start` (`target_agent`, `prompt`, `files`, `reasoning_effort`, `model`, `idle_timeout_seconds`, `max_duration_seconds`, `cwd`, `scope`, `scope_on_violation`, `mode`, `allow_weak`, `isolate`, `allow_dirty`, `rules`, `check`) |
 | `task_status` | `status` |
 | `task_wait` | `wait` (`task_ids`, `wait_seconds` default 50, max 55; sends a progress notification every 15 seconds) |
 | `task_result` | `result` (`task_id`, `turn`; returns JSON with `final_message`) |
@@ -399,6 +401,7 @@ The root is `~/.baton` by default; set `BATON_HOME` to move it. Directories are 
   turns/<n>.json     turn n: author, input, final status, summary, git_changes
   raw/<n>.stdout.log raw worker output for turn n, not truncated
   raw/<n>.stderr.log
+  raw/<n>.check.log  output of the --check command for turn n
 ```
 
 Task directories are never deleted automatically; use `baton prune --older <days>`.

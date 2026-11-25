@@ -1,72 +1,124 @@
-# Tasks: Claude target 支持 `--model`
+# Tasks: `start --check <cmd>`
 
-Source spec: `SPEC-claude-model.md`
+Source spec: `SPEC-check-command.md`
 Plan: `tasks/plan.md`
 
-## Task 1: 放行 claude 的 `--model`，并在每一轮传给 CLI
+## Task 1: 主路径——worker 成功后运行 check，记录结果
 
-**Description:** `src/tasks.ts` 的闸门放行 claude，`model_argv` 取 `model`；agy 的报错文案改为 `agy does not support --model yet (cursor, codex and claude only).`。`claude.build()` 在有 `model` 时把 `--model <id>` 追加在 `--resume` 与 prompt 之前，并返回 `modelArg`。`src/mcp.ts` 中 `model` 字段的 describe 加上 claude。新增 `test/fake-cli/claude -> fake.sh`。
+**Description:** 类型：`TaskStatus` 加 `check_failed`，`TaskMeta` 加 `check_command` 和 `check`，`Turn` 加 `check`，`EventData` 加 `check_started` / `check_ended`。参数：`cli.ts` 加 `--check`，`mcp.ts` 的 `delegate_task` 加 `check`，`tasks.start` 去掉首尾空白后写入 `meta.check_command`（空串视同未传）。supervisor：本轮终态为 `success` 时，在 readonly / scope 检查之后用 `/bin/sh -c` 在 `meta.cwd` 运行 check，写入 `raw/<n>.check.log`，结果写进 turn 与 meta，失败时终态改为 `check_failed`。`tail.ts` 格式化两种新事件。
 
 **Acceptance criteria:**
-- [x] `start --target claude --model sonnet`：返回的 `model`、`model_argv` 都是 `sonnet`；argv 中 `--model` 恰好出现一次，值为 `sonnet`，且在 `--resume` 之前（spec 第 1 条）。「prompt 是最后一个参数」没写断言：prompt 被 baton 包装成多行，按行切分的 argv 文件无法判断；由 `build()` 最后执行 `args.push(prompt)` 保证
-- [x] `reply` 第 2 轮的 argv 同时含 `--resume <sid>` 和 `--model sonnet`，meta 里的 `model` 不变（spec 第 2 条）
-- [x] `--model opus --effort high`：argv 同时含 `--model opus` 和 `--effort high`（spec 第 3 条）
-- [x] 不带 `--model`：argv 中没有 `--model`，meta 中没有 `model` / `model_argv`（spec 第 4 条）
-- [x] 原来「claude 拒绝 `--model`」的用例改为 agy，`summary` 匹配 `/not support --model/i`（spec 第 5 条）
-- [x] codex / cursor 的现有 `--model` 用例不改且通过（spec 第 6 条）
-- [x] Open Question 1：把实测得到的非法模型输出（`result` 事件，`is_error: true`）交给 `failureSummary` 跑一次，记录 `summary` 是否含 "issue with the selected model"；取不到只记录，不修
+- [x] `--check "exit 0"`：终态 `success`；meta 与 turn 中 `check.status` 为 `passed`、`exit_code` 为 0，且有 `duration_ms`；事件流有 `check_started` 和 `check_ended`（spec 第 1 条）
+- [x] `--check "echo boom; exit 3"`：终态 `check_failed`；`check.exit_code` 为 3；`summary` 以 `check_failed: exit 3` 开头并含 `boom`；`raw/1.check.log` 含 `boom`；`output_tail` 不超过 4000 字符（spec 第 2 条）
+- [x] `--check "test -f marker"`：cwd 有 `marker` 时为 `passed`，没有时为 `check_failed`；与 `--isolate` 同用时在 worktree 里运行（spec 第 3 条）
+- [x] worker 本轮 `FAKE_EXIT=1`：不运行 check，没有 `check` 字段，没有 check 事件（spec 第 4 条）
+- [x] 不带 `--check`：meta 中没有 `check_command` / `check`，没有 check 事件；现有测试全部不改（spec 第 8 条）
+- [x] MCP `delegate_task` 的 `check` 参数与 CLI 效果相同
 
 **Verification:**
-- [x] Tests pass: `node --test test/model-start.test.ts test/adapters.test.ts`
+- [x] Tests pass: `node --test test/check.test.ts test/mcp.test.ts`
 - [x] Build succeeds: `npm run build`
-- [x] Manual check: 不需要真实调用 claude；CLI 行为已在 spec 的 Verified CLI Behavior 表中实测
 
 **Dependencies:** None
 
 **Files likely touched:**
+- `src/types.ts`
 - `src/tasks.ts`
-- `src/adapters/claude.ts`
+- `src/cli.ts`
 - `src/mcp.ts`
-- `test/model-start.test.ts`
-- `test/fake-cli/claude`（新 symlink）
+- `src/supervisor.ts`
+- `src/tail.ts`
+- `test/check.test.ts`（新）
 
-**Estimated scope:** Small: 4 个文件 + 1 个 symlink
-
-**Open Question 1 结果（2026-11-24）：** 把实测的非法模型输出交给 fake claude（`FAKE_EXIT=1`）端到端跑了一次：终态 `failed`，`summary` 含 "issue with the selected model"，但它是原始 stream-json 尾部的 8192 字符，开头是 init 事件里的 skills 列表，主 Agent 很难读出来。按 spec 只做记录，不在本次修复：`failureSummary` 只识别 Codex 的 `turn.failed`，不读 Claude `result` 事件里的错误文本。
+**Estimated scope:** Medium：6 个源文件 + 1 个新测试文件。超出约 5 个文件的建议，但这些都是同一条参数通路上的小改动，拆开后中间状态无法验证。
 
 ## Checkpoint: After Task 1
 
-- [x] `node --test test/model-start.test.ts test/adapters.test.ts` 通过
+- [x] `node --test test/check.test.ts test/mcp.test.ts` 通过
 - [x] `npm run build` 通过
 
-## Task 2: 文档与技能同步
+## Task 2: `reply` 与每轮重跑
 
-**Description:** 把「Claude/Agy error on `--model`」改为「Claude、Codex、Cursor 支持；Agy 报错」，并写明 Claude 每一轮都重新传 `--model`（resume 不会记住模型）、可与 `--effort` 同用、原样传给 CLI、支持 `sonnet` / `opus` 等别名。
+**Description:** `src/tasks.ts` 的 `reply` 允许从 `check_failed` 继续；新一轮开始时删除 meta 中上一轮的 `check`。`check_command` 跨轮保留，每轮结束时重新运行。`src/mcp.ts` 中 `task_reply` 的说明加上 `check_failed`。
 
 **Acceptance criteria:**
-- [x] `docs/reference.md` 与 `docs/reference.zh-CN.md` 的 `--model` 条目已更新，两种语言内容一致
-- [x] `skills/baton-rescue/SKILL.md` 第 50 行、`skills/baton-orchestrate/SKILL.md` 第 48 行和第 132 行、`skills/setup/SKILL.md` 第 45 行已更新
-- [x] `grep -rn "Claude/Agy error\|Claude and Agy error\|cursor and codex only\|For Cursor or Codex" docs skills src` 没有残留
+- [x] 对 `check_failed` 的任务 `reply`：第 2 轮结束后重新运行 check；meta 中的 `check` 为第 2 轮的结果；`turns/1.json` 与 `turns/2.json` 各有自己的 `check`（spec 第 5 条）
+- [x] 第 2 轮运行期间，meta 中没有第 1 轮遗留的 `check`
 
 **Verification:**
-- [x] Tests pass: `npm test`（`test/manifests.test.ts`、`test/dist.test.ts` 覆盖了技能和清单文件）
+- [x] Tests pass: `node --test test/check.test.ts`
+
+**Dependencies:** Task 1
+
+**Files likely touched:**
+- `src/tasks.ts`
+- `src/mcp.ts`
+- `test/check.test.ts`
+
+**Estimated scope:** Small：3 个文件
+
+## Task 3: 超时、cancel、heartbeat，以及 check 期间状态仍为 running
+
+**Description:** check 运行期间，落盘的 meta 保持 `running`，check 结束后再写终态；heartbeat 保持到 check 结束；check 用自己的空闲计时器（`idle_timeout_s`），超时只杀 check 进程组，结果记为 `timed_out` / `check_failed`；check 期间 `childPid` 与 `meta.child_pid` 指向 check 进程组，`cancel` 收成 `cancelled`。
+
+**Acceptance criteria:**
+- [x] `--check "sleep 2"`：check 运行期间 `status` 返回 `running`，不是 `success`
+- [x] `--idle-timeout 1 --check "sleep 5"`：终态 `check_failed`，`check.status` 为 `timed_out`，summary 以 `check_failed: timed out` 开头，check 进程组已退出（spec 第 6 条）
+- [x] check 运行期间 `cancel`：终态 `cancelled`，check 进程组已退出，该 turn 只有一条 `turn_ended`（spec 第 7 条）
+- [x] 代码中 heartbeat 在 check 结束前不会被清除，并有一行注释说明原因（等 30 秒的用例太慢，不写）
+
+**Verification:**
+- [x] Tests pass: `npm test`
 - [x] Build succeeds: `npm run build`
 
 **Dependencies:** Task 1
 
 **Files likely touched:**
+- `src/supervisor.ts`
+- `test/check.test.ts`
+
+**Estimated scope:** Small：2 个文件
+
+## Checkpoint: After Task 3
+
+- [x] `npm test` 全量通过
+- [x] spec 第 1 至第 8 条满足
+
+## Task 4: 文档与 skill
+
+**Description:** 英文文档写清参数、结果字段、新终态和 Breaking note，提示 `--isolate` 时用 `.baton.json` 的 `post_create` 装依赖；中文 reference 同步。skill 的 Review 规则改为：有现成验收命令时带上 `--check`；`check.status` 为 `passed` 时不再重跑同一条命令；`check_failed` 回原会话返工，计入返工次数，不换别家 CLI。
+
+**Acceptance criteria:**
+- [x] `docs/reference.md`：Command line（`--check`）、Statuses and liveness（`check_failed`）、MCP tools（`check`）、Task directory（`raw/<n>.check.log`）
+- [x] `docs/reference.zh-CN.md` 与英文内容一致
+- [x] `docs/architecture.md` 的状态表加入 `check_failed`，与 `scope_violation` / `readonly_violation` 同一行
+- [x] `skills/baton-rescue/SKILL.md` 与 `skills/baton-orchestrate/SKILL.md` 的用法和 Review 规则已更新
+- [x] 如果 `test/skills.test.ts` 或其他测试锁定了旧文案，同步更新
+
+**Verification:**
+- [x] Tests pass: `npm test`
+- [x] Build succeeds: `npm run build`
+
+**Dependencies:** Task 3
+
+**Files likely touched:**
 - `docs/reference.md`
 - `docs/reference.zh-CN.md`
-- `test/skills.test.ts`（原断言钉住了 "Cursor and Codex" 这句旧文案）
+- `docs/architecture.md`
 - `skills/baton-rescue/SKILL.md`
 - `skills/baton-orchestrate/SKILL.md`
-- `skills/setup/SKILL.md`
 
-**Estimated scope:** Small: 5 个文档文件
+**Estimated scope:** Small：5 个文档文件
+
+## 执行记录（2026-11-24）
+
+- Task 3 的四个防护（check 期间保持 `running`、check 自己的 heartbeat、check 自己的空闲计时器、`childPid` 指向 check）和 Task 1 一起写进了 `runCheck`：它们是同一段代码，分开写会先产出一个有缺陷的中间版本。测试仍按任务分开写，都在 `test/check.test.ts`。
+- 变异检查：删掉「check 期间保持 `running`」那一行后，`while the check runs, the task is still running` 用例失败，说明它能抓到提前写入 `success` 的问题。
+- 计划外的改动：`test/mcp.test.ts` 加了一条 MCP `check` 用例（Task 1 验收要求）；`test/skills.test.ts` 锁定了「reply works after …」的原文，已按新文案更新，并补上 `--check` 规则的断言。
 
 ## Checkpoint: Complete
 
 - [x] `npm test` 全量通过
 - [x] `npm run build` 通过
-- [x] spec 第 1 至第 8 条全部满足
-- [x] 不包含版本号与发布改动（spec Boundaries：要先问）
+- [x] spec 第 1 至第 10 条全部满足
+- [x] 不包含版本号与发布改动

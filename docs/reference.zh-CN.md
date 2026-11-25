@@ -300,7 +300,7 @@ baton start --target <codex|claude|cursor|agy> [--prompt <text> | stdin] [--file
             [--model <id>] [--idle-timeout <秒>] [--max-duration <秒>] [--cwd <dir>]
             [--scope <glob> ...] [--scope-on-violation warn|fail]
             [--mode readonly|write] [--allow-weak] [--isolate] [--allow-dirty]
-            [--rules check|pointer|off]
+            [--rules check|pointer|off] [--check "<cmd>"]
 baton status <id>
 baton wait <id>... [--for <秒> | --until-done]  # 默认 --for 50；--until-done 阻塞到任一任务离开 running
 baton result <id> [--turn <n>]        # 纯文本：已结束轮次（默认最新）agent 的完整最终回答，不含过程记录
@@ -323,6 +323,7 @@ baton mcp                             # 启动 MCP 服务（stdio）
 - **`--isolate` / `--allow-dirty`（仅 write）：** `--isolate` 从 `HEAD` 创建名为 `task-<id8>` 的 worktree（分支 `baton/task-<id8>`），在其中运行任务，并把 `worktree.path` / `worktree.branch` / `worktree.source_cwd` 记入任务。`reply` 在同一 worktree 继续；从源目录执行 `ls` 仍能看到该任务。改动保持未提交——Baton 不自动 commit、merge 或开 PR。在脏工作区上原地 write 会返回 `dirty_worktree` 与 `dirty_paths`，除非传入 `--allow-dirty`。两者不能并用，也不能与 `--mode readonly` 并用。手动流程仍可用：先 `baton worktree add`，再 `baton start --cwd <path>`。默认目录 `.worktrees/`（必要时写入 `.gitignore`，见 `worktree.gitignore_updated`）；可选 `.baton.json` 配置 `copy` / `symlink` / `post_create` / `rulesync`（布尔，默认开启）。软链 `node_modules` 在分支依赖不一致时可能互相污染，必要时改用 `post_create` 独立安装。新 worktree 里若有 `.rulesync/` 且能找到 `rulesync`，`worktree add` / `--isolate` 会在其中运行 `rulesync generate`，并报告 `rules.missing` / `rules.dirtied`。建议先在主仓库生成并提交 rulesync 输出，避免 worktree 一开始就脏。
 - **`--scope`（可选）：** 可重复，glob 相对任务 `cwd`。每轮结束后对照**任务起点净变更**（自 baseline HEAD 起的提交 ∪ 工作区 digest 差分）。`--scope-on-violation warn`（默认）保留原终态并写 `scope_violations` + `warning`；`fail` 会把干净的 `success` 升为 `scope_violation`。这是**防失误**，不是沙箱：忽略文件、仓外写入、共享 cwd 并发改动是已知盲区——建议与 `--isolate` 叠用。带 `--scope` 时 cwd 必须是 git 仓库。**兼容性：** 新增终态 `scope_violation` 及可选 `scope_*` 字段。
 - **`--rules check|pointer|off`（默认 `check`）：** 从任务 `cwd` 向上扫到 git 根，发现项目规则文件，写入 `meta.rules`（`found`、`unseen`、`pointer_injected`）。`check` 不改执行者 prompt；`pointer` 在首轮 prompt 前插入英文“请先读这些文件”提示（仅针对目标原生不会加载的条目；`reply` 不再注入）；`off` 完全关闭。仓库有 `.rulesync/` 时还会写 `rules.rulesync`：读取 `rulesync.jsonc`（及 `rulesync.local.jsonc`），报告目标是否在配置内以及 `mcp`/`hooks` 加载关卡，再由 supervisor 运行整个项目的 `rulesync generate --check`（不传 `--targets`/`--features`），结果为 `in_sync` / `stale` / `error` / `skipped`。任何失败都不阻断任务。Baton 不会用 `npx` 安装 rulesync，也不会在用户主工作目录里写入 rulesync 生成物。
+- **`--check "<cmd>"`（可选）：** 验收命令，由 Baton 在每一轮以 `success` 结束后亲自运行（排在 readonly / scope 检查之后），host 不必再跑一遍。以 `/bin/sh -c "<cmd>"` 在任务 `cwd` 运行（`--isolate` 时为 worktree），环境与执行者相同，单独进程组；多条命令用 `&&` 连接。`reply` 沿用。结果写在 turn 和 meta（最近一轮）的 `check`：`command`、`status`（`passed` / `failed` / `timed_out`）、`exit_code`、`duration_ms`、`output_tail`（最后 4000 字符，已脱敏）；完整输出在 `raw/<n>.check.log`。`passed` 保持 `success`；`failed` 或 `timed_out` 时本轮终态为 `check_failed`，摘要为 `check_failed: exit <code>`（超时为 `check_failed: timed out`），后接输出尾部；可以 `reply`，下一轮结束后再跑一次。连续 `--idle-timeout` 秒无输出即停止 check；`--max-duration` 只管执行者。check 期间 `cancel` 得到 `cancelled`。本轮不是 `success` 时不运行。check 结束前任务保持 `running`。`--isolate` 的 worktree 默认没有依赖，需要用 `.baton.json` 的 `post_create` 安装。**客户端注意：** 新增终态 `check_failed` 和可选 meta 字段 `check`。
 
 ### 各执行者原生规则文件与加载关卡（2026-11-21/22 核实）
 
@@ -344,6 +345,7 @@ baton mcp                             # 启动 MCP 服务（stdio）
 | `success` | 本轮完成，带 `summary` 和本轮的 `git_changes`（warn 策略下仍可能有 `scope_violations`） |
 | `scope_violation` | `--scope-on-violation fail` 下越界；可 `reply` |
 | `readonly_violation` | `--mode readonly` 但工作区有净变更；可 `reply` |
+| `check_failed` | `--check` 命令失败或超时，见 `check`；可 `reply` |
 | `failed` / `timed_out` / `cancelled` | 终态，不能再 `reply` |
 | `not_authenticated` / `quota_exceeded` | 对方 CLI 没登录 / 额度用尽 |
 | `not_installed` | `start` 时就返回，目标不在 `PATH` 里 |
@@ -378,7 +380,7 @@ MCP 是同一套逻辑的薄壳，进程里不存任何任务状态，重启 MCP
 | 工具 | 对应命令 |
 |---|---|
 | `list_agents` | `agents` |
-| `delegate_task` | `start`（参数 `target_agent`、`prompt`、`files`、`reasoning_effort`、`model`、`idle_timeout_seconds`、`max_duration_seconds`、`cwd`、`scope`、`scope_on_violation`、`mode`、`allow_weak`、`isolate`、`allow_dirty`、`rules`） |
+| `delegate_task` | `start`（参数 `target_agent`、`prompt`、`files`、`reasoning_effort`、`model`、`idle_timeout_seconds`、`max_duration_seconds`、`cwd`、`scope`、`scope_on_violation`、`mode`、`allow_weak`、`isolate`、`allow_dirty`、`rules`、`check`） |
 | `task_status` | `status` |
 | `task_wait` | `wait`（参数 `task_ids`、`wait_seconds`，默认 50，上限 55；等待期间每 15 秒发一次进度通知） |
 | `task_result` | `result`（参数 `task_id`、`turn`；返回含 `final_message` 的 JSON） |
@@ -399,6 +401,7 @@ MCP 是同一套逻辑的薄壳，进程里不存任何任务状态，重启 MCP
   turns/<n>.json     第 n 轮：作者、输入、结束状态、摘要、git_changes
   raw/<n>.stdout.log 第 n 轮子进程原始输出，不截断
   raw/<n>.stderr.log
+  raw/<n>.check.log  第 n 轮 --check 命令的输出
 ```
 
 任务目录不会自动清理，用 `baton prune --older <天数>` 手动清。

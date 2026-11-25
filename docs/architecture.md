@@ -28,6 +28,7 @@ Host agent ──shell──> baton start ──detached supervisor──> worke
   turns/<n>.json     turn n: author, input, status, summary, git_changes
   raw/<n>.stdout.log raw worker stdout
   raw/<n>.stderr.log
+  raw/<n>.check.log
 ```
 
 Task ids are UUIDs; every id is validated before it is used in a path. Directories are `0700`, files `0600`. Nothing is deleted automatically; use `baton prune --older <days>`.
@@ -39,7 +40,7 @@ Task ids are UUIDs; every id is validated before it is used in a path. Directori
 | `running` | In progress; includes `liveness` and `quiet_for_s` |
 | `needs_input` | Worker asked a question; use `reply` |
 | `success` | Turn finished |
-| `scope_violation` / `readonly_violation` | Post-check failed; `reply` allowed |
+| `scope_violation` / `readonly_violation` / `check_failed` | Post-check failed; `reply` allowed |
 | `failed` / `timed_out` / `cancelled` | Terminal |
 | `not_authenticated` / `quota_exceeded` / `not_installed` | Target CLI problem |
 

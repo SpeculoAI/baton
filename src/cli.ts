@@ -38,7 +38,7 @@ async function main(): Promise<void> {
       scope: { type: "string", multiple: true }, "scope-on-violation": { type: "string" },
       mode: { type: "string" }, "allow-weak": { type: "boolean" },
       isolate: { type: "boolean" }, "allow-dirty": { type: "boolean" },
-      rules: { type: "string" },
+      rules: { type: "string" }, check: { type: "string" },
     } });
     if (positionals.length) throw new Error("start takes no positional arguments.");
     result = await start({ target: values.target || "", prompt: values.prompt ?? fs.readFileSync(0, "utf8"), cwd: values.cwd, files: values.file,
@@ -48,6 +48,7 @@ async function main(): Promise<void> {
       mode: values.mode as TaskMode | undefined, allowWeak: values["allow-weak"],
       isolate: values.isolate, allowDirty: values["allow-dirty"],
       rules: values.rules as import("./types.ts").RulesMode | undefined,
+      check: values.check,
     });
     if ((result as { status: string }).status !== "running") process.exitCode = 1;
   } else if (command === "status") {
