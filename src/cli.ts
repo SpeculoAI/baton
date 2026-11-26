@@ -7,6 +7,7 @@ import { redact } from "./redact.ts";
 import { detectedHosts, runInstall, type Action } from "./install.ts";
 import { mappedAgents, rulesInit, type InstallChoice, type RulesInitResult } from "./rulesync-setup.ts";
 import type { Author, Effort, ScopeOnViolation, TaskMode } from "./types.ts";
+import { COMMANDS, commandList, isCommand, renderHelp, wantsHelp } from "./usage.ts";
 
 function installChoice(value: string | undefined, flag: string): InstallChoice | undefined {
   if (value === undefined) return undefined;
@@ -17,6 +18,18 @@ function installChoice(value: string | undefined, flag: string): InstallChoice |
 async function main(): Promise<void> {
   const [command, ...args] = process.argv.slice(2);
   let result: unknown;
+  if (command === undefined || command === "help" || command === "-h" || command === "--help") {
+    const name = command === "help" ? args[0] : undefined;
+    if (name === undefined) process.stdout.write(renderHelp());
+    else if (isCommand(name)) process.stdout.write(renderHelp(name));
+    else throw new Error(commandList);
+    return;
+  }
+  // Before parsing, so `start --help` neither trips strict parsing nor waits on stdin.
+  if (isCommand(command) && wantsHelp(args)) {
+    process.stdout.write(renderHelp(command));
+    return;
+  }
   if (command === "_supervise") {
     if (args.length !== 1) throw new Error("task_id is missing.");
     await (await import("./supervisor.ts")).supervise(args[0]);
@@ -31,15 +44,7 @@ async function main(): Promise<void> {
   } else if (command === "agents") {
     result = { agents: agents() };
   } else if (command === "start") {
-    const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
-      target: { type: "string" }, prompt: { type: "string" }, cwd: { type: "string" },
-      file: { type: "string", multiple: true }, effort: { type: "string" }, model: { type: "string" },
-      "idle-timeout": { type: "string" }, "max-duration": { type: "string" },
-      scope: { type: "string", multiple: true }, "scope-on-violation": { type: "string" },
-      mode: { type: "string" }, "allow-weak": { type: "boolean" },
-      isolate: { type: "boolean" }, "allow-dirty": { type: "boolean" },
-      rules: { type: "string" }, check: { type: "string" },
-    } });
+    const { values, positionals } = parseArgs({ args, allowPositionals: true, options: COMMANDS.start.options });
     if (positionals.length) throw new Error("start takes no positional arguments.");
     result = await start({ target: values.target || "", prompt: values.prompt ?? fs.readFileSync(0, "utf8"), cwd: values.cwd, files: values.file,
       reasoningEffort: values.effort as Effort | undefined, model: values.model,
@@ -55,44 +60,44 @@ async function main(): Promise<void> {
     if (args.length !== 1) throw new Error("status requires one task_id.");
     result = status(args[0]);
   } else if (command === "reply") {
-    const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { prompt: { type: "string" }, as: { type: "string" } } });
+    const { values, positionals } = parseArgs({ args, allowPositionals: true, options: COMMANDS.reply.options });
     if (positionals.length !== 1) throw new Error("reply requires one task_id.");
     result = await reply(positionals[0], values.prompt ?? fs.readFileSync(0, "utf8"), (values.as ?? "host") as Author);
     if ((result as { status: string }).status !== "running") process.exitCode = 1;
   } else if (command === "wait") {
     const { values, positionals } = parseArgs({
       args, allowPositionals: true,
-      options: { for: { type: "string" }, "until-done": { type: "boolean" } },
+      options: COMMANDS.wait.options,
     });
     if (values["until-done"] && values.for !== undefined) throw new Error("--until-done and --for cannot be used together.");
     result = await wait(positionals, values["until-done"] ? Infinity : values.for === undefined ? 50 : Number(values.for));
   } else if (command === "result") {
-    const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { turn: { type: "string" } } });
+    const { values, positionals } = parseArgs({ args, allowPositionals: true, options: COMMANDS.result.options });
     if (positionals.length !== 1) throw new Error("result requires one task_id.");
     // Plain text, like tail: the point is to read the answer without JSON escaping or the full transcript.
     process.stdout.write(`${turnResult(positionals[0], values.turn === undefined ? undefined : Number(values.turn)).final_message}\n`);
     return;
   } else if (command === "diff") {
-    const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { stat: { type: "boolean" } } });
+    const { values, positionals } = parseArgs({ args, allowPositionals: true, options: COMMANDS.diff.options });
     if (positionals.length !== 1) throw new Error("diff requires one task_id.");
     // Plain text, like result: a patch is read, not parsed.
     process.stdout.write(diff(positionals[0], { stat: values.stat }));
     return;
   } else if (command === "tail") {
-    const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { follow: { type: "boolean", short: "f" }, raw: { type: "boolean" } } });
+    const { values, positionals } = parseArgs({ args, allowPositionals: true, options: COMMANDS.tail.options });
     if (positionals.length !== 1) throw new Error("tail requires one task_id.");
     await (await import("./tail.ts")).tail(positionals[0], { follow: values.follow, raw: values.raw });
     return;
   } else if (command === "ls") {
-    const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { all: { type: "boolean" } } });
+    const { values, positionals } = parseArgs({ args, allowPositionals: true, options: COMMANDS.ls.options });
     if (positionals.length) throw new Error("ls takes no positional arguments.");
     result = { tasks: ls(values.all) };
   } else if (command === "prune") {
-    const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { older: { type: "string" } } });
+    const { values, positionals } = parseArgs({ args, allowPositionals: true, options: COMMANDS.prune.options });
     if (positionals.length || values.older === undefined) throw new Error("prune requires --older days.");
     result = { deleted: prune(Number(values.older)) };
   } else if (command === "apply") {
-    const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { remove: { type: "boolean" } } });
+    const { values, positionals } = parseArgs({ args, allowPositionals: true, options: COMMANDS.apply.options });
     if (positionals.length !== 1) throw new Error("apply requires one task_id.");
     result = apply(positionals[0], { remove: values.remove });
   } else if (command === "cancel") {
@@ -104,7 +109,7 @@ async function main(): Promise<void> {
       const { values, positionals } = parseArgs({
         args: rest,
         allowPositionals: true,
-        options: { name: { type: "string" }, branch: { type: "string" }, base: { type: "string" } },
+        options: COMMANDS.worktree.options,
       });
       if (positionals.length) throw new Error("worktree add takes no positional arguments.");
       result = addWorktree(process.cwd(), { name: values.name, branch: values.branch, base: values.base });
@@ -122,10 +127,7 @@ async function main(): Promise<void> {
     if (action !== "init") throw new Error("Usage: baton rules init");
     const { values, positionals } = parseArgs({
       args: rest, allowPositionals: true,
-      options: {
-        install: { type: "string" }, source: { type: "string" }, template: { type: "boolean" },
-        targets: { type: "string", multiple: true }, yes: { type: "boolean" }, "dry-run": { type: "boolean" },
-      },
+      options: COMMANDS.rules.options,
     });
     if (positionals.length) throw new Error("rules init takes no positional arguments.");
     if (values.source && values.template) throw new Error("--source and --template cannot be used together.");
@@ -152,16 +154,10 @@ async function main(): Promise<void> {
   } else if (command === "install" || command === "update" || command === "uninstall") {
     const { values, positionals } = parseArgs({
       args, allowPositionals: true,
-      options: {
-        only: { type: "string", multiple: true }, force: { type: "boolean" },
-        "dry-run": { type: "boolean" }, "skip-global": { type: "boolean" },
-        rulesync: { type: "string" },
-      },
+      // Each command parses with its own table (update/uninstall reject install-only flags); typed as install's superset.
+      options: COMMANDS[command].options as typeof COMMANDS.install.options,
     });
     if (positionals.length) throw new Error(`${command} takes no positional arguments.`);
-    if (command !== "install" && values.force) throw new Error(`${command} does not accept --force.`);
-    if (command === "uninstall" && values["skip-global"]) throw new Error("uninstall does not accept --skip-global.");
-    if (command !== "install" && values.rulesync !== undefined) throw new Error(`${command} does not accept --rulesync.`);
     const rulesyncChoice = installChoice(values.rulesync, "--rulesync");
     const action = command as Action;
     const pretty = Boolean(process.stdin.isTTY);
@@ -250,7 +246,7 @@ async function main(): Promise<void> {
     // TTY already showed the human summary; dumping JSON on top is noise. Scripts (non-TTY) still get JSON.
     if (!pretty) process.stdout.write(`${JSON.stringify(result)}\n`);
     return;
-  } else throw new Error("Usage: baton version | agents | start | status | cancel | wait | result | diff | apply | tail | reply | ls | prune | worktree | rules | install | update | uninstall | mcp");
+  } else throw new Error(commandList);
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }
 
