@@ -12,7 +12,39 @@ test("every command prints help with exit 0, listing each option it parses", asy
     assert.ok(stdout.startsWith(`Usage: baton ${name}`), name);
     for (const key of Object.keys("options" in def ? def.options : {})) assert.ok(stdout.includes(`--${key}`), `${name} --${key}`);
     assert.ok(stdout.includes("-h, --help"), name);
+    if ("subcommands" in def) {
+      for (const [sub, subDef] of Object.entries(def.subcommands)) {
+        assert.ok(stdout.includes(`  ${sub} `), `${name} lists subcommand ${sub}`);
+        const { stdout: subOut } = await run(name, sub, "--help");
+        assert.ok(subOut.startsWith(`Usage: baton ${name} ${sub}`), `${name} ${sub}`);
+        for (const key of Object.keys("options" in subDef ? subDef.options : {})) assert.ok(subOut.includes(`--${key}`), `${name} ${sub} --${key}`);
+        assert.ok(subOut.includes("-h, --help"), `${name} ${sub}`);
+      }
+    }
   }
+});
+
+test("worktree subcommand help isolates options and documents rm behavior", async () => {
+  const addHelp = (await run("worktree", "add", "--help")).stdout;
+  assert.match(addHelp, /^Usage: baton worktree add/);
+  assert.ok(addHelp.includes("--base"));
+  assert.match(addHelp, /main.*master.*HEAD/i);
+  assert.ok(!addHelp.includes("--force"));
+
+  const lsHelp = (await run("worktree", "ls", "--help")).stdout;
+  assert.match(lsHelp, /^Usage: baton worktree ls/);
+  assert.ok(!lsHelp.includes("--name"));
+  assert.ok(!lsHelp.includes("--force"));
+
+  const rmHelp = (await run("worktree", "rm", "--help")).stdout;
+  assert.match(rmHelp, /^Usage: baton worktree rm/);
+  assert.ok(rmHelp.includes("-f, --force"));
+  assert.match(rmHelp, /dirty/i);
+  assert.match(rmHelp, /branch/i);
+  assert.ok(!rmHelp.includes("--name"));
+
+  assert.equal((await run("help", "worktree", "rm")).stdout, rmHelp);
+  await assert.rejects(run("help", "worktree", "nope"), (error: { stdout: string }) => JSON.parse(error.stdout).status === "failed");
 });
 
 test("-h works after other flags and on nested actions; start does not read stdin", async () => {

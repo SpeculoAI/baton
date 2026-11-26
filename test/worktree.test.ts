@@ -321,3 +321,113 @@ test("removeWorktree: clean tree can be removed; dirty tree and unmerged commits
     cleanup();
   }
 });
+
+test("removeWorktree with force removes dirty and unmerged trees, still rejects main repo", () => {
+  const { cwd, git, cleanup } = tempRepo();
+  try {
+    const dirty = addWorktree(cwd, { name: "dirty-f" });
+    writeFileSync(path.join(dirty.path, "README.md"), "dirty\n");
+    assert.throws(() => removeWorktree(cwd, "dirty-f"), /--force/);
+    const rmDirty = removeWorktree(cwd, "dirty-f", { force: true });
+    assert.equal(rmDirty.status, "ok");
+    assert.equal(existsSync(dirty.path), false);
+    assert.throws(() => git(["rev-parse", "--verify", dirty.branch]));
+
+    const ahead = addWorktree(cwd, { name: "ahead-f" });
+    writeFileSync(path.join(ahead.path, "extra.txt"), "x\n");
+    git(["-C", ahead.path, "add", "extra.txt"]);
+    git(["-C", ahead.path, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-m", "ahead"]);
+    assert.throws(() => removeWorktree(cwd, "ahead-f"), /--force/);
+    const rmAhead = removeWorktree(cwd, "ahead-f", { force: true });
+    assert.equal(rmAhead.status, "ok");
+    assert.equal(existsSync(ahead.path), false);
+    assert.throws(() => git(["rev-parse", "--verify", ahead.branch]));
+
+    assert.throws(() => removeWorktree(cwd, cwd, { force: true }), /only (remove|delete)|managed/i);
+  } finally {
+    cleanup();
+  }
+});
+
+test("removeWorktree rejects untracked files unless exempt or forced, and force succeeds when branch is already gone", () => {
+  const { cwd, git, cleanup } = tempRepo();
+  try {
+    writeFileSync(path.join(cwd, ".env.local"), "SECRET=1\n");
+    writeFileSync(path.join(cwd, ".baton.json"), JSON.stringify({ worktree: { copy: [".env.*"] } }));
+
+    const exemptOnly = addWorktree(cwd, { name: "exempt-only" });
+    assert.equal(removeWorktree(cwd, "exempt-only").status, "ok");
+    assert.equal(existsSync(exemptOnly.path), false);
+
+    const untracked = addWorktree(cwd, { name: "untracked" });
+    writeFileSync(path.join(untracked.path, "new-file.txt"), "draft\n");
+    assert.throws(() => removeWorktree(cwd, "untracked"), /uncommitted.*--force/i);
+    assert.equal(removeWorktree(cwd, "untracked", { force: true }).status, "ok");
+    assert.equal(existsSync(untracked.path), false);
+
+    const detached = addWorktree(cwd, { name: "missing-branch" });
+    git(["-C", detached.path, "checkout", "--detach"]);
+    git(["branch", "-D", detached.branch]);
+    assert.equal(removeWorktree(cwd, "missing-branch", { force: true }).status, "ok");
+    assert.equal(existsSync(detached.path), false);
+    assert.ok(!git(["worktree", "list", "--porcelain"]).includes("missing-branch"));
+  } finally {
+    cleanup();
+  }
+});
+
+test("CLI worktree rm supports --force / -f and rejects unknown flags across add/ls/rm", async () => {
+  const { cwd, git, cleanup } = tempRepo();
+  const { exec, cli } = await import("./helpers.ts");
+  const run = (...args: string[]) => exec(process.execPath, [cli, ...args], { cwd, timeout: 8000 });
+  try {
+    const dirty = addWorktree(cwd, { name: "cli-dirty" });
+    writeFileSync(path.join(dirty.path, "README.md"), "modified\n");
+
+    await assert.rejects(
+      run("worktree", "rm", "cli-dirty", "--bogus"),
+      (error: { stdout: string }) => /unknown option.*--bogus/i.test(JSON.parse(error.stdout).summary),
+    );
+    await assert.rejects(
+      run("worktree", "rm", "cli-dirty", "--base", "main"),
+      (error: { stdout: string }) => /unknown option.*--base/i.test(JSON.parse(error.stdout).summary),
+    );
+    await assert.rejects(
+      run("worktree", "rm", "--force"),
+      (error: { stdout: string }) => /requires one name or path/i.test(JSON.parse(error.stdout).summary),
+    );
+    await assert.rejects(
+      run("worktree", "add", "--force"),
+      (error: { stdout: string }) => /unknown option.*--force/i.test(JSON.parse(error.stdout).summary),
+    );
+    await assert.rejects(
+      run("worktree", "ls", "--bogus"),
+      (error: { stdout: string }) => /unknown option.*--bogus/i.test(JSON.parse(error.stdout).summary),
+    );
+
+    const rmLong = JSON.parse((await run("worktree", "rm", "cli-dirty", "--force")).stdout) as { status: string; name: string };
+    assert.equal(rmLong.status, "ok");
+    assert.equal(rmLong.name, "cli-dirty");
+    assert.equal(existsSync(dirty.path), false);
+
+    const ahead = addWorktree(cwd, { name: "cli-ahead" });
+    writeFileSync(path.join(ahead.path, "a.txt"), "1\n");
+    git(["-C", ahead.path, "add", "a.txt"]);
+    git(["-C", ahead.path, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-m", "ahead"]);
+
+    const rmShort = JSON.parse((await run("worktree", "rm", "-f", "cli-ahead")).stdout) as { status: string; name: string };
+    assert.equal(rmShort.status, "ok");
+    assert.equal(rmShort.name, "cli-ahead");
+    assert.equal(existsSync(ahead.path), false);
+    assert.throws(() => git(["rev-parse", "--verify", ahead.branch]));
+
+    const byPath = addWorktree(cwd, { name: "cli-path" });
+    writeFileSync(path.join(byPath.path, "untracked.txt"), "u\n");
+    const rmByPath = JSON.parse((await run("worktree", "rm", byPath.path, "--force")).stdout) as { status: string; name: string };
+    assert.equal(rmByPath.status, "ok");
+    assert.equal(rmByPath.name, "cli-path");
+    assert.equal(existsSync(byPath.path), false);
+  } finally {
+    cleanup();
+  }
+});

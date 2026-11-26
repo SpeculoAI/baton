@@ -98,7 +98,7 @@ For write jobs in a git repo, pass `--isolate` on each `baton start` so the job 
 baton start --isolate --target <t> --prompt "..." ...
 baton diff <id> --stat             # what the job changed
 baton apply <id> --remove          # with the user's consent: one local commit, then remove the worktree
-baton worktree rm <name-or-path>   # only when clean / merged; does not cascade from task prune
+baton worktree rm <name-or-path> [-f|--force]  # clean/merged by default; --force discards dirty/unmerged (user consent only); does not cascade from task prune
 ```
 
 `--isolate` uses the same `.baton.json` `copy` / `symlink` / `post_create` as `baton worktree add`. Manual `worktree add` then `start --cwd` still works; prefer `--isolate` for new jobs. In-place write on a dirty tree returns `dirty_worktree` — ask the host before `--allow-dirty`. If isolation is unavailable, say so up front: the main session must not modify the shared tree until the run ends or is cancelled. Symlinking `node_modules` can cross-contaminate when branches diverge — prefer `post_create` install when unsure.

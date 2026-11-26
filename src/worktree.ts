@@ -458,9 +458,16 @@ function resolveManagedPath(cwd: string, nameOrPath: string): { repo: string; ro
 }
 
 function isDirty(worktreePath: string): boolean {
-  // Ignore untracked (copy/.baton-worktree.json); only block on tracked edits.
-  const status = git(worktreePath, ["status", "--porcelain", "--untracked-files=no"]);
-  return status.status === 0 && status.stdout.trim().length > 0;
+  const status = git(worktreePath, ["status", "--porcelain=v1", "-z", "--untracked-files=normal"]);
+  if (status.status !== 0) return true;
+  const exempt = [...batonWorktreeExemptPaths(worktreePath)];
+  for (const entry of status.stdout.split("\0")) {
+    if (entry.length < 4) continue;
+    if (entry.slice(0, 2) !== "??") return true;
+    const top = entry.slice(3).replace(/\/$/, "").split("/")[0]!;
+    if (!exempt.some((pattern) => matchBasename(top, pattern))) return true;
+  }
+  return false;
 }
 
 function hasUnmergedCommits(repo: string, branch: string, base: string): boolean {
@@ -471,23 +478,28 @@ function hasUnmergedCommits(repo: string, branch: string, base: string): boolean
 
 export type WorktreeRemoveResult = { status: "ok"; path: string; branch: string; name: string };
 
-export function removeWorktree(cwd: string, nameOrPath: string): WorktreeRemoveResult {
+export function removeWorktree(cwd: string, nameOrPath: string, options: { force?: boolean } = {}): WorktreeRemoveResult {
   const { repo, worktreePath, meta } = resolveManagedPath(cwd, nameOrPath);
-  if (isDirty(worktreePath)) {
-    throw new Error(`worktree has uncommitted changes; refusing to remove: ${worktreePath}`);
+  if (!options.force) {
+    if (isDirty(worktreePath)) {
+      throw new Error(`worktree has uncommitted changes; refusing to remove: ${worktreePath} (pass --force to remove anyway).`);
+    }
+    if (hasUnmergedCommits(repo, meta.branch, meta.base)) {
+      throw new Error(`Branch ${meta.branch} has commits not merged into ${meta.base}; refusing to remove (pass --force to remove anyway).`);
+    }
   }
-  if (hasUnmergedCommits(repo, meta.branch, meta.base)) {
-    throw new Error(`Branch ${meta.branch} has commits not merged into ${meta.base}; refusing to remove.`);
-  }
-  // ponytail: --force after our tracked-dirty + unmerged checks; untracked copy/meta are expected
+  // ponytail: --force after our dirty + unmerged checks (or user --force); untracked copy/meta are expected
   const removed = git(repo, ["worktree", "remove", "--force", worktreePath]);
   if (removed.status !== 0) {
     throw new Error(`git worktree remove failed: ${(removed.stderr || removed.stdout).trim()}`);
   }
-  const deleted = git(repo, ["branch", "-d", meta.branch]);
-  if (deleted.status !== 0) {
-    throw new Error(`Failed to delete branch: ${(deleted.stderr || deleted.stdout).trim()}`);
-  }
   git(repo, ["worktree", "prune"]);
+  const branchExists = git(repo, ["rev-parse", "--verify", "--quiet", `refs/heads/${meta.branch}`]).status === 0;
+  if (branchExists || !options.force) {
+    const deleted = git(repo, ["branch", options.force ? "-D" : "-d", meta.branch]);
+    if (deleted.status !== 0) {
+      throw new Error(`Failed to delete branch: ${(deleted.stderr || deleted.stdout).trim()}`);
+    }
+  }
   return { status: "ok", path: worktreePath, branch: meta.branch, name: meta.name };
 }
