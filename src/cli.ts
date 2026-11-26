@@ -39,6 +39,19 @@ async function main(): Promise<void> {
     await (await import("./mcp.ts")).startMcp();
     return;
   }
+  if (command === "report") {
+    const { values, positionals } = parseArgs({ args, allowPositionals: true, options: COMMANDS.report.options });
+    if (positionals.length > 1) throw new Error("report takes at most one task_id.");
+    const { buildReport, submitReport } = await import("./report.ts");
+    const report = buildReport(positionals[0], { title: values.title });
+    if (values.submit) {
+      result = submitReport(report);
+      process.stdout.write(`${JSON.stringify(result)}\n`);
+      return;
+    }
+    process.stdout.write(`${report.markdown}\n\nOpen issue: ${report.issueUrl}\n`);
+    return;
+  }
   if (command === "version" || command === "--version") {
     result = { version: JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")).version };
   } else if (command === "agents") {
