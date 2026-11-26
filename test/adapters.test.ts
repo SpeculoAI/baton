@@ -47,9 +47,9 @@ test("cursor real stream-json: session, tools, messages; thinking deltas emit no
   const last = events.at(-1);
   assert.equal(last?.type === "message" && last.text, "hi");
   assert.deepEqual(cursor.build({ bin: "c", cwd: "/w", prompt: "p", sessionId: "s1", reasoningEffort: null, model: null }).args,
-    ["--print", "--force", "--trust", "--output-format", "stream-json", "--workspace", "/w", "--resume", "s1", "p"]);
+    ["--print", "--force", "--trust", "--output-format", "stream-json", "--workspace", "/w", "--resume", "s1"]);
   assert.deepEqual(cursor.build({ bin: "c", cwd: "/w", prompt: "p", sessionId: null, reasoningEffort: null, model: "grok-4.7-xhigh" }).args,
-    ["--print", "--force", "--trust", "--output-format", "stream-json", "--workspace", "/w", "--model", "grok-4.7-xhigh", "p"]);
+    ["--print", "--force", "--trust", "--output-format", "stream-json", "--workspace", "/w", "--model", "grok-4.7-xhigh"]);
 });
 
 test("agy real stream-json: tool steps are paired; the full reply comes from result only once; no raw kept", () => {
@@ -63,7 +63,8 @@ test("agy real stream-json: tool steps are paired; the full reply comes from res
   const failed = agy.parseLine(JSON.stringify({ event: "result", result: { status: "ERROR", response: "boom" } }));
   assert.deepEqual(failed?.map((e) => e.type), ["error"]);
   assert.deepEqual(agy.build({ bin: "a", cwd: "/w", prompt: "p", sessionId: "c1", reasoningEffort: "ultra" }).args,
-    ["--print", "p", "--mode", "accept-edits", "--output-format", "stream-json", "--effort", "max", "--conversation", "c1"]);
+    ["--print=", "--mode", "accept-edits", "--input-format", "stream-json", "--output-format", "stream-json", "--effort", "max", "--conversation", "c1"]);
+  assert.deepEqual(JSON.parse(agy.build({ bin: "a", cwd: "/w", prompt: "a\nb", sessionId: null, reasoningEffort: null }).stdin!), { event: "user", message: { content: "a\nb" } });
 });
 
 test("claude real stream-json: hook/init/thinking/rate-limit emit no events; tools are paired; no raw kept", () => {
@@ -79,7 +80,8 @@ test("claude real stream-json: hook/init/thinking/rate-limit emit no events; too
   const failed = claude.parseLine(JSON.stringify({ type: "result", subtype: "error_during_execution", is_error: true, result: "boom" }));
   assert.deepEqual(failed?.map((e) => e.type), ["error"]);
   assert.deepEqual(claude.build({ bin: "c", cwd: "/w", prompt: "p", sessionId: "s1", reasoningEffort: "ultra" }).args,
-    ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits", "--permission-prompts", "none", "--effort", "max", "--resume", "s1", "p"]);
+    ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits", "--permission-prompts", "none", "--effort", "max", "--resume", "s1"]);
+  assert.equal(claude.build({ bin: "c", cwd: "/w", prompt: "p", sessionId: null, reasoningEffort: null }).stdin, "p");
 });
 
 test("cursor resolves cursor-agent first, then falls back to agent", () => {
@@ -141,7 +143,7 @@ test("readonly mode: argv mapping for all four; codex resume still has no sandbo
     ["--print", "--mode", "ask", "--trust", "--output-format", "stream-json", "--workspace"]);
   assert.ok(!getAdapter("cursor")!.build(input).args.includes("--force"));
   assert.deepEqual(getAdapter("agy")!.build(input).args.slice(0, 5),
-    ["--print", "p", "--mode", "plan", "--output-format"]);
+    ["--print=", "--mode", "plan", "--input-format", "stream-json"]);
 });
 
 test("fake CLI resolves via PATH, outputs per fixture and supports exit codes", () => {

@@ -33,7 +33,7 @@ Issue: [#48](https://github.com/SpeculoAI/baton/issues/48)
   - `claude -p`：不带位置参数，提示词从 stdin 读取。可用。
   - `cursor-agent --print`：不带位置参数，提示词从 stdin 读取。可用。
   - `agy`：纯文本 stdin 不可用，`--print` 必须带值，`--print=-` 会把 `-` 当成提示词。可用的写法是 `--print= --input-format stream-json --output-format stream-json`（`--print=` 值为空），再从 stdin 写一行 `{"event":"user","message":{"content":"<提示词>"}}`，写完关闭 stdin。字段名只有 `content` 有效，`text` 和 `prompt` 会报错。输出事件格式与现在相同，adapter 的解析逻辑不用改。
-  - 所以三个 adapter 都按 D1 处理，D2 的回退暂时用不到。agy 带 `--conversation` 续接时是否仍然正常，留到 T8 验证。
+  - 所以三个 adapter 都按 D1 处理，D2 的回退暂时用不到。agy 带 `--conversation` 续接时是否仍然正常：2026-11-25 尝试验证时 agy 账号额度已用完（429，约 166 小时后重置），**尚未验证**。首轮已确认提示词经 stdin 被 agy 读取并处理（baton 拿到了 session id，报错来自模型调用）。
 - **D2 某个 CLI 不支持 stdin 时的回退。**
   - 解析出的程序是 `.exe`（或 POSIX 上的任意程序）：提示词继续走 argv。这不经过 `cmd.exe`，只需检查 Windows 命令行 32767 字符的上限。
   - 解析出的程序是 `.cmd`/`.bat`，且提示词含换行或 `cmd.exe` 元字符：启动前直接报错，写清楚原因。绝不静默截断。

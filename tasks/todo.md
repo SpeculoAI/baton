@@ -26,7 +26,7 @@ Spec: `SPEC-native-windows.md` · Plan: `tasks/plan.md`
 **Verification**：
 - [x] 输出里能看到复述的第二行，与原文逐字节一致。
 
-**Result（2026-11-25）**：已完成，详见 spec 的 "T0 验证结果"。agy 带 `--conversation` 续接时是否正常，留给 T8 验证。
+**Result（2026-11-25）**：已完成，详见 spec 的 "T0 验证结果"。agy 带 `--conversation` 续接时是否正常，T8 时因 agy 额度用完未能验证，待额度恢复后补测。
 
 **Dependencies**：无
 **Files likely touched**：`SPEC-native-windows.md`
