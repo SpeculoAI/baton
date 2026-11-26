@@ -199,10 +199,12 @@ export function ensureIgnored(repo: string, worktreeRoot: string): boolean {
   if (rel.startsWith("..") || path.isAbsolute(rel)) {
     throw new Error("worktree root must be inside the repository.");
   }
-  const check = git(repo, ["check-ignore", "-q", rel]);
+  const normalized = rel.replace(/\\/g, "/");
+  // Trailing slash tells git check-ignore this is a directory even before mkdirSync creates it.
+  const entry = normalized.endsWith("/") ? normalized : `${normalized}/`;
+  const check = git(repo, ["check-ignore", "-q", entry]);
   if (check.status === 0) return false;
   const ignorePath = path.join(repo, ".gitignore");
-  const entry = rel.endsWith("/") ? rel : `${rel}/`;
   const existing = fs.existsSync(ignorePath) ? fs.readFileSync(ignorePath, "utf8") : "";
   const prefix = existing && !existing.endsWith("\n") ? "\n" : "";
   fs.writeFileSync(ignorePath, `${existing}${prefix}${entry}\n`);
