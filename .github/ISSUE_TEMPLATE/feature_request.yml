@@ -1,0 +1,25 @@
+name: Feature request
+description: Suggest an improvement, new flag, or workflow change
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or goal
+      description: What workflow or limitation are you running into?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the CLI flag, output, or behavior you would like.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or context
+      description: Any workarounds or tradeoffs you considered.
+    validations:
+      required: false

@@ -103,9 +103,9 @@ function readEventSkeleton(id: string, cwd?: string): string[] {
 }
 
 function makeIssueUrl(title: string, body: string, shortBody: string): string {
-  const full = `${ISSUE_NEW_URL}?${new URLSearchParams({ title, body }).toString()}`;
+  const full = `${ISSUE_NEW_URL}?${new URLSearchParams({ labels: "bug", title, body }).toString()}`;
   if (full.length <= MAX_URL_LEN) return full;
-  return `${ISSUE_NEW_URL}?${new URLSearchParams({ title, body: shortBody }).toString()}`;
+  return `${ISSUE_NEW_URL}?${new URLSearchParams({ labels: "bug", title, body: shortBody }).toString()}`;
 }
 
 export function buildReport(taskId?: string, opts: { title?: string } = {}): DiagnosticReport {
@@ -192,11 +192,12 @@ export function submitReport(report: DiagnosticReport, deps: SubmitDeps = {}): S
 
   const auth = runSync("gh", ["auth", "status"], { stdio: "ignore", windowsHide: true });
   if (auth.status === 0) {
-    const created = runSync("gh", ["issue", "create", "-R", REPO, "--title", report.title, "--body-file", "-"], {
-      input: report.markdown,
-      encoding: "utf8",
-      windowsHide: true,
-    });
+    const ghOpts = { input: report.markdown, encoding: "utf8" as const, windowsHide: true };
+    let created = runSync("gh", ["issue", "create", "-R", REPO, "--label", "bug", "--title", report.title, "--body-file", "-"], ghOpts);
+    // External users without triage/label rights may fail on --label; retry once without it.
+    if (created.status !== 0 && /label|permission/i.test(created.stderr ?? "")) {
+      created = runSync("gh", ["issue", "create", "-R", REPO, "--title", report.title, "--body-file", "-"], ghOpts);
+    }
     const url = (created.stdout ?? "").trim();
     if (created.status === 0 && url) return { method: "gh", url, submitted: true };
   }

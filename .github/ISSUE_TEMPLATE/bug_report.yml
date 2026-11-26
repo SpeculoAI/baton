@@ -1,0 +1,28 @@
+name: Bug report
+description: Report broken behavior, unexpected errors, or regressions
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the actual behavior and how it differs from what you expected.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Run `baton ...`
+        2. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostic
+    attributes:
+      label: Environment / diagnostic report
+      description: Paste the output of `baton report [task_id]` (redacted automatically; review before posting).
+      render: markdown
+    validations:
+      required: false

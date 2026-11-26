@@ -79,6 +79,7 @@ test("buildReport with task_id keeps strict whitelist and omits prompts, busines
   assert.ok(!rep.markdown.includes(s.cwd));
   assert.ok(!rep.markdown.includes("second line detail"));
   assert.ok(rep.issueUrl.startsWith("https://github.com/SpeculoAI/baton/issues/new?"));
+  assert.equal(new URL(rep.issueUrl).searchParams.get("labels"), "bug");
 
   // Business summary on a success task must be omitted.
   const okId = randomUUID();
@@ -103,6 +104,23 @@ test("submitReport uses gh when authenticated, and falls back to browser or url 
   });
   assert.deepEqual(ghRes, { method: "gh", url: "https://github.com/SpeculoAI/baton/issues/999", submitted: true });
   assert.equal(calls.length, 2);
+  assert.ok(calls[1]?.[1]?.includes("--label"));
+  assert.ok(calls[1]?.[1]?.includes("bug"));
+
+  // Authenticated gh without label permission retries once without --label
+  const retryCalls: (readonly string[] | undefined)[] = [];
+  const retryRes = submitReport(sample, {
+    spawnSync: ((_cmd: string, args?: readonly string[]) => {
+      retryCalls.push(args);
+      if (args?.[0] === "auth") return { status: 0, stdout: "", stderr: "" } as ReturnType<typeof import("cross-spawn").sync>;
+      if (args?.includes("--label")) return { status: 1, stdout: "", stderr: "could not add label: permission denied" } as ReturnType<typeof import("cross-spawn").sync>;
+      return { status: 0, stdout: "https://github.com/SpeculoAI/baton/issues/1000\n", stderr: "" } as ReturnType<typeof import("cross-spawn").sync>;
+    }) as typeof import("cross-spawn").sync,
+    openBrowser: () => { throw new Error("should not open browser when retry succeeds"); },
+  });
+  assert.deepEqual(retryRes, { method: "gh", url: "https://github.com/SpeculoAI/baton/issues/1000", submitted: true });
+  assert.equal(retryCalls.length, 3);
+  assert.ok(!retryCalls[2]?.includes("--label"));
 
   // Unauthenticated gh -> browser fallback
   let openedUrl = "";
