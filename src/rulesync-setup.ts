@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
+import spawn from "cross-spawn";
 import { adapters } from "./adapters/index.ts";
 import { which } from "./adapters/common.ts";
 import { redact } from "./redact.ts";

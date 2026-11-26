@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
+import spawn from "cross-spawn";
 import { which } from "./adapters/common.ts";
 import { redact } from "./redact.ts";
 import type { EnvFeature, RuleSupport, RulesyncReport } from "./types.ts";
@@ -231,13 +232,8 @@ function expandFeatures(value: string[] | "*"): string[] {
 /** Locate rulesync: project node_modules → main repo node_modules → PATH. Never uses npx. */
 export function resolveRulesync(repoRoot: string, mainRepoRoot?: string, env = process.env): string | null {
   for (const root of [repoRoot, mainRepoRoot].filter(Boolean) as string[]) {
-    const local = path.join(root, "node_modules", ".bin", "rulesync");
-    try {
-      fs.accessSync(local, fs.constants.X_OK);
-      return local;
-    } catch {
-      // try next
-    }
+    const local = which(["rulesync"], { PATH: path.join(root, "node_modules", ".bin") });
+    if (local) return local;
   }
   return which(["rulesync"], env);
 }

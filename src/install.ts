@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import spawn from "cross-spawn";
 import fs from "node:fs";
 import path from "node:path";
 import { which } from "./adapters/common.ts";
