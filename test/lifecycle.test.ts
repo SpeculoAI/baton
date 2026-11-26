@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { once } from "node:events";
 import { pathToFileURL } from "node:url";
 import { sandbox, exec, cli, sleep } from "./helpers.ts";
@@ -188,7 +188,16 @@ async function assertProcessGone(pid: number) {
     try { process.kill(pid, 0); } catch { return; }
     await sleep(20);
   }
-  assert.fail(`process ${pid} did not exit`);
+  assert.fail(`process ${pid} did not exit${describeProcess(pid)}`);
+}
+
+// On Windows say what is still holding the pid; a bare "did not exit" cannot be debugged from CI logs.
+function describeProcess(pid: number): string {
+  if (process.platform !== "win32") return "";
+  try {
+    const out = execFileSync("powershell", ["-NoProfile", "-Command", `Get-CimInstance Win32_Process -Filter "ProcessId=${pid}" | Format-List ProcessId,ParentProcessId,Name,CreationDate,CommandLine`], { encoding: "utf8", timeout: 15000 });
+    return `\n${out.trim()}`;
+  } catch (error) { return ` (could not describe it: ${(error as Error).message})`; }
 }
 
 test("after supervisor is killed, status reports orphaned, kills leftover processes and writes the terminal state only once", async (t) => {

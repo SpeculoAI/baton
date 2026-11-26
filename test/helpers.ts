@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import type { ExecFileOptions } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { TestContext } from "node:test";
@@ -36,6 +36,15 @@ function sandboxPath(): string {
   const git = (process.env.PATH ?? "").split(path.delimiter).find((dir) => dir && fs.existsSync(path.join(dir, "git.exe")));
   return [fakeCli, git, path.join(process.env.SystemRoot ?? "C:\\Windows", "System32")].filter(Boolean).join(path.delimiter);
 }
+/** Windows: the processes still running from `dir`, for the message when it cannot be removed. */
+function survivors(dir: string): string {
+  if (process.platform !== "win32") return "";
+  try {
+    const filter = `$_.CommandLine -like '*${path.basename(dir)}*' -or $_.ExecutablePath -like '*${path.basename(dir)}*'`;
+    const out = execFileSync("powershell", ["-NoProfile", "-Command", `Get-CimInstance Win32_Process | Where-Object { ${filter} } | Format-List ProcessId,ParentProcessId,Name,CommandLine`], { encoding: "utf8", timeout: 15000 });
+    return `\nstill running from ${dir}:\n${out.trim()}`;
+  } catch { return ""; }
+}
 export function sandbox(t: TestContext) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "baton-integration-"));
   const cwd = path.join(home, "work");
@@ -57,7 +66,9 @@ export function sandbox(t: TestContext) {
       } catch {}
     }
     // On Windows a worker that is still shutting down keeps its cwd open for a moment.
-    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    try { fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) {
+      throw new Error(`${(error as Error).message}${survivors(home)}`);
+    }
   });
   async function run<T = TaskMeta & { liveness?: string; quiet_for_s?: number }>(...args: string[]): Promise<T> {
     const result = await exec(process.execPath, [cli, ...args], { cwd, env, timeout: 8000 });
