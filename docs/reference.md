@@ -292,7 +292,7 @@ Say something like "rescue this refactor to Codex" and the host runs `baton star
 
 ### Command line
 
-Every command prints exactly one JSON object (except `tail` and `result`) and exits non-zero on error. `baton` is the global command from `@speculoai/baton`.
+Every command prints exactly one JSON object (except `tail`, `result`, `diff` and help) and exits non-zero on error. `baton` is the global command from `@speculoai/baton`. `baton --help` lists the commands; `baton <command> -h` / `--help` prints that command's options, defaults and examples as plain text and exits 0.
 
 ```bash
 baton agents
