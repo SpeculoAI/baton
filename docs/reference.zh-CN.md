@@ -21,6 +21,7 @@
 - [任务目录 ~/.baton](#任务目录-baton)
 - [各平台底层调用规范](#各平台底层调用规范)
 - [安全机制](#安全机制)
+  - [Windows 平台说明](#windows-平台说明)
 - [手工冒烟测试](#手工冒烟测试)
 - [开发与单元测试](#开发与单元测试)
 - [从 0.3.x 升级](#从-03x-升级)
@@ -63,10 +64,11 @@ baton rules init [--install project|global|skip] [--source claudecode|codexcli|c
 
 ### 前置要求
 
-1. **Node.js** >= 20.17。
-2. 本地已安装并登录至少一个受支持的 Agent CLI（`codex`、`claude`、`agy`、`cursor`）。
-3. 通过插件市场安装不会把 `baton` 放进 PATH。运行 `/baton:setup`，或执行 `npm install -g @speculoai/baton`。
-4. （可选）本地开发：
+1. **支持平台**：macOS、Linux 与原生 Windows 10/11（PowerShell 或 cmd；WSL 按 Linux 处理）。
+2. **Node.js** >= 20.17。
+3. 本地已安装并登录至少一个受支持的 Agent CLI（`codex`、`claude`、`agy`、`cursor`）。
+4. 通过插件市场安装不会把 `baton` 放进 PATH。运行 `/baton:setup`，或执行 `npm install -g @speculoai/baton`。
+5. （可选）本地开发：
    ```bash
    git clone https://github.com/SpeculoAI/baton.git
    cd baton
@@ -330,7 +332,7 @@ baton mcp                             # 启动 MCP 服务（stdio）
   - `--remove` 只在 apply 成功或 `nothing_to_apply` 之后删除 worktree 和分支；被拒绝时不删除。删除失败不影响已完成的 apply，返回 `removed: false` 和 `warning`。
 - **`--scope`（可选）：** 可重复，glob 相对任务 `cwd`，按 [picomatch](https://github.com/micromatch/picomatch) 且 `dot: true` 匹配，`dir/**` 也覆盖 `dir/.env.example` 这类点文件；不带通配符的目录路径匹配其下全部文件。每轮结束后对照**任务起点净变更**（自 baseline HEAD 起的提交 ∪ 工作区 digest 差分）。`--scope-on-violation warn`（默认）保留原终态并写 `scope_violations` + `warning`；`fail` 会把干净的 `success` 升为 `scope_violation`。这是**防失误**，不是沙箱：忽略文件、仓外写入、共享 cwd 并发改动是已知盲区——建议与 `--isolate` 叠用。带 `--scope` 时 cwd 必须是 git 仓库。**兼容性：** 新增终态 `scope_violation` 及可选 `scope_*` 字段。
 - **`--rules check|pointer|off`（默认 `check`）：** 从任务 `cwd` 向上扫到 git 根，发现项目规则文件，写入 `meta.rules`（`found`、`unseen`、`pointer_injected`）。`check` 不改执行者 prompt；`pointer` 在首轮 prompt 前插入英文“请先读这些文件”提示（仅针对目标原生不会加载的条目；`reply` 不再注入）；`off` 完全关闭。仓库有 `.rulesync/` 时还会写 `rules.rulesync`：读取 `rulesync.jsonc`（及 `rulesync.local.jsonc`），报告目标是否在配置内以及 `mcp`/`hooks` 加载关卡，再由 supervisor 运行整个项目的 `rulesync generate --check`（不传 `--targets`/`--features`），结果为 `in_sync` / `stale` / `error` / `skipped`。任何失败都不阻断任务。Baton 不会用 `npx` 安装 rulesync，也不会在用户主工作目录里写入 rulesync 生成物。
-- **`--check "<cmd>"`（可选）：** 验收命令，由 Baton 在每一轮以 `success` 结束后亲自运行（排在 readonly / scope 检查之后），host 不必再跑一遍。以 `/bin/sh -c "<cmd>"` 在任务 `cwd` 运行（`--isolate` 时为 worktree），环境与执行者相同，单独进程组；多条命令用 `&&` 连接。`reply` 沿用。结果写在 turn 和 meta（最近一轮）的 `check`：`command`、`status`（`passed` / `failed` / `timed_out`）、`exit_code`、`duration_ms`、`output_tail`（最后 4000 字符，已脱敏）；完整输出在 `raw/<n>.check.log`。`passed` 保持 `success`；`failed` 或 `timed_out` 时本轮终态为 `check_failed`，摘要为 `check_failed: exit <code>`（超时为 `check_failed: timed out`），后接输出尾部；可以 `reply`，下一轮结束后再跑一次。连续 `--idle-timeout` 秒无输出即停止 check；`--max-duration` 只管执行者。check 期间 `cancel` 得到 `cancelled`。本轮不是 `success` 时不运行。check 结束前任务保持 `running`。`--isolate` 的 worktree 默认没有依赖，需要用 `.baton.json` 的 `post_create` 安装。**客户端注意：** 新增终态 `check_failed` 和可选 meta 字段 `check`。
+- **`--check "<cmd>"`（可选）：** 验收命令，由 Baton 在每一轮以 `success` 结束后亲自运行（排在 readonly / scope 检查之后），host 不必再跑一遍。通过平台默认 shell（POSIX 上为 `/bin/sh`，Windows 上为 `cmd.exe`）在任务 `cwd` 运行（`--isolate` 时为 worktree），环境与执行者相同；多条命令用 `&&` 连接。`reply` 沿用。结果写在 turn 和 meta（最近一轮）的 `check`：`command`、`status`（`passed` / `failed` / `timed_out`）、`exit_code`、`duration_ms`、`output_tail`（最后 4000 字符，已脱敏）；完整输出在 `raw/<n>.check.log`。`passed` 保持 `success`；`failed` 或 `timed_out` 时本轮终态为 `check_failed`，摘要为 `check_failed: exit <code>`（超时为 `check_failed: timed out`），后接输出尾部；可以 `reply`，下一轮结束后再跑一次。连续 `--idle-timeout` 秒无输出即停止 check；`--max-duration` 只管执行者。check 期间 `cancel` 得到 `cancelled`。本轮不是 `success` 时不运行。check 结束前任务保持 `running`。`--isolate` 的 worktree 默认没有依赖，需要用 `.baton.json` 的 `post_create` 安装。**客户端注意：** 新增终态 `check_failed` 和可选 meta 字段 `check`。
 
 ### 各执行者原生规则文件与加载关卡（2026-11-21/22 核实）
 
@@ -401,7 +403,7 @@ MCP 是同一套逻辑的薄壳，进程里不存任何任务状态，重启 MCP
 
 ## 任务目录 ~/.baton
 
-根目录默认 `~/.baton`，可用 `BATON_HOME` 换位置。目录权限 `0700`，文件 `0600`（里面有 prompt 原文）。
+根目录默认 `~/.baton`，可用 `BATON_HOME` 换位置。POSIX 下目录权限 `0700`、文件 `0600`（里面有 prompt 原文）；Windows 上 POSIX 权限位不生效，依赖用户目录的 ACL 保护。
 
 ```
 ~/.baton/tasks/<task_id>/
@@ -424,7 +426,7 @@ MCP 是同一套逻辑的薄壳，进程里不存任何任务状态，重启 MCP
 | **Codex** | `codex exec --json --color never --approve-for-me --skip-git-repo-check --cd <cwd> -` | `codex exec resume --json <thread_id> -` | write 用 `--approve-for-me`（与 `--sandbox` 互斥）；readonly 首轮用 `--sandbox read-only`；`exec resume` 无 sandbox 参数，也不接受 `--cd`、`--color` |
 | **Claude Code** | `claude -p --output-format stream-json --verbose --permission-mode acceptEdits --permission-prompts none` | 追加 `--resume <session_id>` | readonly → `--permission-mode plan`；`stream-json` 在 `-p` 下必须配 `--verbose`；hook 事件不进事件流 |
 | **Cursor** | `cursor-agent --print --force --trust --output-format stream-json --workspace <cwd>` | 追加 `--resume <session_id>` | readonly → `--mode ask`（去掉 `--force`，保留 `--trust`）；优先找 `cursor-agent`，再找 `agent`，不调用 IDE 的 `cursor` |
-| **Antigravity (agy)** | `agy --print <prompt> --mode accept-edits --output-format stream-json` | 追加 `--conversation <id>` | readonly → `--mode plan`；回复是逐字增量，完整文本取自最终 `result` |
+| **Antigravity (agy)** | `agy --print= --mode accept-edits --input-format stream-json --output-format stream-json`（提示词走 stdin） | 追加 `--conversation <id>` | readonly → `--mode plan`；回复是逐字增量，完整文本取自最终 `result` |
 
 解析器认不出的输出行一律记为 `raw` 事件，不会丢。各家的真实输出样本在 `test/fixtures/`。
 
@@ -433,8 +435,8 @@ MCP 是同一套逻辑的薄壳，进程里不存任何任务状态，重启 MCP
 ## 安全机制
 
 1. **防递归 (`BATON_DELEGATION=1`)**：子进程环境里带这个变量，下游再调用 baton 会被直接拒绝。
-2. **进程组隔离**：子 CLI 独立成进程组，超时和 `cancel` 会杀掉整组，包括它拉起的孙进程。
-3. **凭据脱敏**：写进事件和摘要的文本先脱敏再截断；原始日志完整保留在受 `0600` 保护的 `raw/` 下。
+2. **进程组隔离**：POSIX 下子 CLI 独立成进程组，超时和 `cancel` 会杀掉整组（含孙进程）。Windows 上通过 `taskkill /T /F`（辅以按父 PID 清理）终止进程树，详见[Windows 平台说明](#windows-平台说明)。
+3. **凭据脱敏**：写进事件和摘要的文本先脱敏再截断；原始日志完整保留在 `raw/` 下，POSIX 上受 `0600` 保护（Windows 上由用户目录 ACL 保护）。
 4. **id 校验**：所有传入的 task id 先校验是 UUID，再拼路径。
 5. **`--scope` 不是安全边界**：只事后检查 git 可见的净变更。被 ignore 的路径、仓外写入、共享 cwd 并发、orphaned（检查未跑）是已知盲区。
 6. **脏工作区拦截**：git 仓库内原地 `--mode write` 若工作区有未提交改动，返回 `dirty_worktree`。改用 `--isolate` 或 `--allow-dirty`。
@@ -446,6 +448,15 @@ MCP 是同一套逻辑的薄壳，进程里不存任何任务状态，重启 MCP
 | Claude Code | `--permission-mode acceptEdits --permission-prompts none` | 文件编辑自动接受 |
 | Cursor | `--force --trust` | 命令与编辑无需确认 |
 | Antigravity | `--mode accept-edits` | 编辑自动接受 |
+
+### Windows 平台说明
+
+Baton 支持原生 Windows 10/11（PowerShell 与 cmd；WSL 按 Linux 处理），与 POSIX 存在以下平台差异：
+
+- **文件权限**：`~/.baton` 上的 POSIX 权限位（`0700`/`0600`）在 Windows 上不生效，任务文件与原始日志依赖用户目录的 ACL 保护。
+- **进程树清理**：`cancel` 与超时通过 `taskkill /T /F`（以及 `.cmd` 垫片的 `cmd.exe` 先行退出时按父 PID 补扫）终止进程树。由于未引入原生 Job Object，若中间父进程已退出，更深层的孙进程仍可能漏杀。
+- **Shell 命令（`--check` 与 `.baton.json` `post_create`）**：在 Windows 上通过 `cmd.exe`（`shell: true`）执行，而非 `/bin/sh`。跨平台命令请避免依赖 POSIX 专属语法。
+- **worktree 符号链接（`.baton.json` `symlink`）**：目录条目使用 NTFS junction（无需提权）；文件符号链接需要开发者模式或管理员权限，遇 `EPERM` 时请将对应文件条目改到 `copy`。
 
 ---
 

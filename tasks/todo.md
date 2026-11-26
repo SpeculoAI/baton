@@ -276,18 +276,18 @@ Spec: `SPEC-native-windows.md` · Plan: `tasks/plan.md`
   - `--check` 和 `post_create` 在 Windows 上通过 `cmd.exe` 执行。
 
 **Acceptance criteria**：
-- [ ] Success Criteria 6 满足。
-- [ ] install 测试通过。
+- [x] Success Criteria 6 满足。
+- [x] install 测试通过（`npm.cmd` 特判已在 PR B 移除，`src/` 中无残留）。
 
 **Verification**：
-- [ ] 三个平台上 `npm test` 通过。
-- [ ] 中英文文档内容一致。
+- [x] `npm test` 通过（macOS 本地全过；三平台待 PR C CI 验证）。
+- [x] 中英文文档内容一致。
 
 **Dependencies**：Checkpoint B
 **Files likely touched**：`src/install.ts`、`src/rulesync-setup.ts`、`README.md`、`README.zh-CN.md`、`docs/reference.md`、`docs/reference.zh-CN.md`（文档文件为机械同步）
 **Estimated scope**：M
 
-### T13：Windows 真机冒烟（设备待定）
+### T13：Windows 真机冒烟（暂跳过）
 
 **Description**：在 Windows 真机上依次验证：
 
@@ -295,17 +295,9 @@ Spec: `SPEC-native-windows.md` · Plan: `tasks/plan.md`
 - `baton agents` 能识别它们；
 - codex 和 claude 各完成一次真实的 start → wait → reply，提示词为多行并带特殊字符。
 
-**Acceptance criteria**：
-- [ ] Success Criteria 4 满足。
-
-**Verification**：
-- [ ] 留存命令和输出记录。
-
-**Dependencies**：T12，以及确定可用的设备
-**Files likely touched**：无，或按发现的问题修复
-**Estimated scope**：S
+**Status（2026-11-26）**：因当前无可用 Windows 真机，经确认暂跳过；发版后通过 #79（`baton report`）收集真实环境问题并按独立 issue 跟进。
 
 ## Checkpoint C：PR C
 
-- [ ] Success Criteria 4、6 满足。
-- [ ] 把 spec 的 Status 改为 implemented。
+- [x] Success Criteria 6 满足（Success Criteria 4 真机冒烟暂跳过，见 T13）。
+- [x] 把 spec 的 Status 改为 implemented（注明真机冒烟延后至 #79 反馈）。
