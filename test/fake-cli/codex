@@ -1,1 +1,2 @@
-fake.sh
+#!/bin/sh
+exec "${BATON_TEST_NODE:-node}" "${0%/*}/fake.mjs" "$@"

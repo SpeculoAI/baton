@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { exec } from "./helpers.ts";
+import { exec, exe, fakeBin } from "./helpers.ts";
 import { commandsFor, planInstall, readInstalled, REPO, runInstall, writeInstalled } from "../src/install.ts";
 
 const cli = path.resolve(import.meta.dirname, "../src/cli.ts");
@@ -12,7 +12,7 @@ function bins(t: test.TestContext, names: string[]) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "baton-bins-"));
   const log = path.join(dir, "log");
   for (const name of names) {
-    fs.writeFileSync(path.join(dir, name), `#!/bin/sh\nprintf '%s\\n' "$0 $*" >> ${JSON.stringify(log)}\n`, { mode: 0o755 });
+    fakeBin(dir, name, `import fs from "node:fs";\nfs.appendFileSync(${JSON.stringify(log)}, ${JSON.stringify(name)} + " " + process.argv.slice(2).join(" ") + "\\n");\n`);
   }
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   return { dir, log };
@@ -98,7 +98,7 @@ test("--dry-run only lists commands, does not run them, and does not write insta
   assert.equal(out.global, undefined);
   assert.equal(out.hosts[0].id, "claude");
   assert.deepEqual(out.hosts[0].commands, commandsFor("claude", "install").map((step) => step.args));
-  assert.equal(out.hosts[0].bin, path.join(dir, "claude"));
+  assert.equal(out.hosts[0].bin, path.join(dir, exe("claude")));
   assert.equal(fs.existsSync(log), false);
   assert.equal(fs.existsSync(path.join(home, "installed.json")), false);
 });
@@ -180,12 +180,11 @@ test("soft migrate failures stay quiet on stderr when the host still succeeds", 
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "baton-bins-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-  fs.writeFileSync(path.join(dir, "claude"), `#!/bin/sh
-case " $* " in
-  *"agent-plugin-agent"*) printf 'Failed to uninstall old plugin\\n' >&2; exit 1 ;;
-esac
-exit 0
-`, { mode: 0o755 });
+  fakeBin(dir, "claude", `if (process.argv.slice(2).join(" ").includes("agent-plugin-agent")) {
+  process.stderr.write("Failed to uninstall old plugin\\n");
+  process.exit(1);
+}
+`);
   let leaked = "";
   const original = process.stderr.write.bind(process.stderr);
   (process.stderr as NodeJS.WriteStream).write = ((chunk: string | Uint8Array, ...rest: unknown[]) => {

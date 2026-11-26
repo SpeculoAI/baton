@@ -16,6 +16,13 @@ function gitInit(cwd: string) {
   git(["commit", "-m", "init"]);
 }
 
+// Checks run through the platform shell (sh, or cmd.exe on Windows), so build them from `node -e` instead of shell syntax.
+const NODE = process.platform === "win32" ? '"%BATON_TEST_NODE%"' : '"$BATON_TEST_NODE"';
+const js = (code: string) => `${NODE} -e "${code}"`;
+const fileExists = (name: string) => js(`process.exitCode = require('fs').existsSync('${name}') ? 0 : 1`);
+// Starts a 30s grandchild, records its pid in $CHECK_PID_FILE, then waits.
+const holdChild = js("const c=require('child_process').spawn(process.execPath,['-e','setTimeout(()=>{},30000)'],{stdio:'ignore'});require('fs').writeFileSync(process.env.CHECK_PID_FILE,String(c.pid));setInterval(()=>{},1000)");
+
 const checkEvents = (events: { type: string }[]) => events.filter((e) => e.type === "check_started" || e.type === "check_ended");
 
 test("--check passing: success, check recorded on meta and turn, check events emitted", async (t) => {
@@ -35,7 +42,7 @@ test("--check passing: success, check recorded on meta and turn, check events em
 
 test("--check failing: check_failed with exit code, output tail in summary and raw log", async (t) => {
   const s = sandbox(t);
-  const started = await s.run("start", "--target", "codex", "--prompt", "hi", "--check", "echo boom; head -c 9000 /dev/zero | tr '\\0' x; exit 3");
+  const started = await s.run("start", "--target", "codex", "--prompt", "hi", "--check", js("console.log('boom');process.stdout.write('x'.repeat(9000));process.exitCode=3"));
   const done = await s.until(started.task_id);
   assert.equal(done.status, "check_failed");
   assert.equal(done.check?.status, "failed");
@@ -51,7 +58,7 @@ test("--check failing: check_failed with exit code, output tail in summary and r
 
 test("--check output tail keeps the failure text", async (t) => {
   const s = sandbox(t);
-  const started = await s.run("start", "--target", "codex", "--prompt", "hi", "--check", "echo boom >&2; exit 1");
+  const started = await s.run("start", "--target", "codex", "--prompt", "hi", "--check", js("console.error('boom');process.exitCode=1"));
   const done = await s.until(started.task_id);
   assert.equal(done.status, "check_failed");
   assert.match(done.summary || "", /boom/);
@@ -61,10 +68,10 @@ test("--check output tail keeps the failure text", async (t) => {
 test("--check runs in the task cwd", async (t) => {
   const s = sandbox(t);
   fs.writeFileSync(path.join(s.cwd, "marker"), "");
-  const passed = await s.run("start", "--target", "codex", "--prompt", "hi", "--check", "test -f marker");
+  const passed = await s.run("start", "--target", "codex", "--prompt", "hi", "--check", fileExists("marker"));
   assert.equal((await s.until(passed.task_id)).check?.status, "passed");
   fs.rmSync(path.join(s.cwd, "marker"));
-  const failed = await s.run("start", "--target", "codex", "--prompt", "hi", "--check", "test -f marker");
+  const failed = await s.run("start", "--target", "codex", "--prompt", "hi", "--check", fileExists("marker"));
   assert.equal((await s.until(failed.task_id)).status, "check_failed");
 });
 
@@ -72,7 +79,7 @@ test("--check with --isolate runs in the worktree", async (t) => {
   const s = sandbox(t);
   gitInit(s.cwd);
   fs.writeFileSync(path.join(s.cwd, "main-only.txt"), "untracked in the main tree\n");
-  const started = await s.run("start", "--target", "codex", "--prompt", "hi", "--isolate", "--check", "test -f keep.txt && test ! -f main-only.txt");
+  const started = await s.run("start", "--target", "codex", "--prompt", "hi", "--isolate", "--check", js("const f=require('fs');process.exitCode=f.existsSync('keep.txt')&&!f.existsSync('main-only.txt')?0:1"));
   const done = await s.until(started.task_id);
   assert.equal(done.check?.status, "passed");
   assert.equal(done.status, "success");
@@ -103,7 +110,7 @@ test("without --check nothing changes", async (t) => {
 test("reply after check_failed reruns the check; each turn keeps its own result", async (t) => {
   const s = sandbox(t);
   const flag = path.join(s.cwd, "fixed");
-  const started = await s.run("start", "--target", "codex", "--prompt", "hi", "--check", "test -f fixed");
+  const started = await s.run("start", "--target", "codex", "--prompt", "hi", "--check", fileExists("fixed"));
   assert.equal((await s.until(started.task_id)).status, "check_failed");
   fs.writeFileSync(flag, "");
   s.env.FAKE_SLEEP = "0.5";
@@ -119,7 +126,7 @@ test("reply after check_failed reruns the check; each turn keeps its own result"
 
 test("while the check runs, the task is still running", async (t) => {
   const s = sandbox(t);
-  const started = await s.run("start", "--target", "codex", "--prompt", "hi", "--check", "sleep 1.5");
+  const started = await s.run("start", "--target", "codex", "--prompt", "hi", "--check", js("setTimeout(()=>{},1500)"));
   await s.until(started.task_id, () => s.events(started.task_id).some((e) => e.type === "check_started"));
   assert.equal((await s.run("status", started.task_id)).status, "running");
   assert.equal((await s.until(started.task_id)).status, "success");
@@ -128,7 +135,8 @@ test("while the check runs, the task is still running", async (t) => {
 test("--check idle timeout: check_failed / timed_out and the check process group is killed", async (t) => {
   const s = sandbox(t);
   const pidFile = path.join(s.home, "check.pid");
-  const started = await s.run("start", "--target", "codex", "--prompt", "hi", "--idle-timeout", "1", "--check", `sleep 30 & echo $! > ${pidFile}; wait`);
+  s.env.CHECK_PID_FILE = pidFile;
+  const started = await s.run("start", "--target", "codex", "--prompt", "hi", "--idle-timeout", "1", "--check", holdChild);
   const done = await s.until(started.task_id, undefined, 8000);
   assert.equal(done.status, "check_failed");
   assert.equal(done.check?.status, "timed_out");
@@ -140,7 +148,8 @@ test("--check idle timeout: check_failed / timed_out and the check process group
 test("cancel during the check: cancelled, check killed, one turn_ended", async (t) => {
   const s = sandbox(t);
   const pidFile = path.join(s.home, "check.pid");
-  const started = await s.run("start", "--target", "codex", "--prompt", "hi", "--check", `sleep 30 & echo $! > ${pidFile}; wait`);
+  s.env.CHECK_PID_FILE = pidFile;
+  const started = await s.run("start", "--target", "codex", "--prompt", "hi", "--check", holdChild);
   await s.until(started.task_id, () => fs.existsSync(pidFile) && fs.readFileSync(pidFile, "utf8").trim() !== "");
   await s.run("cancel", started.task_id);
   const done = await s.until(started.task_id);
