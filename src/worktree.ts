@@ -145,9 +145,11 @@ export function applyTree(repo: string, base: string, tree: string, message: str
 }
 
 /** Delete a task's worktree and branch regardless of their state; true when both are gone. */
-export function removeTaskWorktree(repo: string, worktreePath: string, branch: string): boolean {
-  cleanupWorktree(repo, worktreePath, branch);
-  return !fs.existsSync(worktreePath) && git(repo, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]).status !== 0;
+/** Removes an --isolate worktree and its branch; null on success, otherwise what stayed behind and what git said. */
+export function removeTaskWorktree(repo: string, worktreePath: string, branch: string): string | null {
+  const errors = cleanupWorktree(repo, worktreePath, branch);
+  const gone = !fs.existsSync(worktreePath) && git(repo, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]).status !== 0;
+  return gone ? null : errors.join("; ") || "worktree or branch still present";
 }
 
 function strings(value: unknown): string[] {
@@ -206,8 +208,8 @@ export function assertNotNestedWorktree(cwd: string): void {
   const common = git(cwd, ["rev-parse", "--git-common-dir"]);
   if (dir.status !== 0 || common.status !== 0) throw new Error("Current directory is not a git repository.");
   // realpath: on macOS /var vs /private/var must not look like a linked worktree.
-  const gitDir = fs.realpathSync(path.resolve(cwd, dir.stdout.trim()));
-  const gitCommon = fs.realpathSync(path.resolve(cwd, common.stdout.trim()));
+  const gitDir = fs.realpathSync.native(path.resolve(cwd, dir.stdout.trim()));
+  const gitCommon = fs.realpathSync.native(path.resolve(cwd, common.stdout.trim()));
   if (gitDir === gitCommon) return;
   const superproject = git(cwd, ["rev-parse", "--show-superproject-working-tree"]);
   if (superproject.status === 0 && superproject.stdout.trim()) return;
@@ -230,8 +232,8 @@ export function batonWorktreeExemptPaths(cwd: string): Set<string> {
   const dir = git(cwd, ["rev-parse", "--git-dir"]);
   const common = git(cwd, ["rev-parse", "--git-common-dir"]);
   if (dir.status !== 0 || common.status !== 0) return new Set();
-  const gitDir = fs.realpathSync(path.resolve(cwd, dir.stdout.trim()));
-  const gitCommon = fs.realpathSync(path.resolve(cwd, common.stdout.trim()));
+  const gitDir = fs.realpathSync.native(path.resolve(cwd, dir.stdout.trim()));
+  const gitCommon = fs.realpathSync.native(path.resolve(cwd, common.stdout.trim()));
   if (gitDir === gitCommon) return new Set(); // main checkout
   const top = git(cwd, ["rev-parse", "--show-toplevel"]);
   if (top.status !== 0) return new Set();
@@ -420,10 +422,13 @@ function prepareWorktree(repo: string, worktreePath: string, cfg: WorktreeConfig
   }
 }
 
-function cleanupWorktree(repo: string, worktreePath: string, branch: string): void {
-  git(repo, ["worktree", "remove", "--force", worktreePath]);
-  git(repo, ["branch", "-D", branch]);
-  git(repo, ["worktree", "prune"]);
+function cleanupWorktree(repo: string, worktreePath: string, branch: string): string[] {
+  const errors: string[] = [];
+  for (const args of [["worktree", "remove", "--force", worktreePath], ["branch", "-D", branch], ["worktree", "prune"]]) {
+    const ran = git(repo, args);
+    if (ran.status !== 0) errors.push(`git ${args.slice(0, 2).join(" ")}: ${(ran.stderr || ran.stdout).trim()}`);
+  }
+  return errors;
 }
 
 function resolveManagedPath(cwd: string, nameOrPath: string): { repo: string; root: string; worktreePath: string; meta: WorktreeMeta } {

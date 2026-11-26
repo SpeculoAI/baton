@@ -387,8 +387,9 @@ export function apply(id: string, options: { remove?: boolean } = {}): ApplyResu
       ? { task_id: id, status: "applied", repo, commit: applied.commit, files: applied.files, removed: false }
       : { task_id: id, status: "nothing_to_apply", repo, removed: false };
     if (options.remove) {
-      result.removed = removeTaskWorktree(repo, worktree.path, worktree.branch);
-      if (!result.removed) result.warning = `Applied, but could not fully remove ${worktree.path} or branch ${worktree.branch}.`;
+      const problem = removeTaskWorktree(repo, worktree.path, worktree.branch);
+      result.removed = problem === null;
+      if (problem) result.warning = `Applied, but could not fully remove ${worktree.path} or branch ${worktree.branch}: ${problem}`;
     }
     return result;
   } finally {
