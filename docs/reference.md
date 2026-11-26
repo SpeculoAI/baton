@@ -21,6 +21,7 @@ The full manual: every install path, flag, status, and calling convention. For t
 - [Task directory ~/.baton](#task-directory-baton)
 - [Underlying Calling Conventions](#underlying-calling-conventions)
 - [Safety](#safety)
+  - [Windows notes](#windows-notes)
 - [Manual Smoke Testing](#manual-smoke-testing)
 - [Development & Testing](#development--testing)
 - [Upgrading from 0.3.x](#upgrading-from-03x)
@@ -63,10 +64,11 @@ The per-host commands below are the same steps, run by hand.
 
 ### Prerequisites
 
-1. **Node.js** >= 20.17.
-2. At least one supported Agent CLI installed and logged in locally (`codex`, `claude`, `agy`, or `cursor`).
-3. A marketplace install does not put `baton` on PATH. Run `/baton:setup`, or `npm install -g @speculoai/baton`.
-4. (Optional) Local checkout:
+1. **Supported platforms**: macOS, Linux, and native Windows 10/11 (PowerShell or cmd; WSL is treated as Linux).
+2. **Node.js** >= 20.17.
+3. At least one supported Agent CLI installed and logged in locally (`codex`, `claude`, `agy`, or `cursor`).
+4. A marketplace install does not put `baton` on PATH. Run `/baton:setup`, or `npm install -g @speculoai/baton`.
+5. (Optional) Local checkout:
    ```bash
    git clone https://github.com/SpeculoAI/baton.git
    cd baton
@@ -330,7 +332,7 @@ baton mcp                            # start the MCP server (stdio)
   - `--remove` deletes the worktree and its branch, but only after a successful apply or `nothing_to_apply`; never after a refusal. If removal fails the apply still stands, with `removed: false` and a `warning`.
 - **`--scope` (optional):** repeatable globs relative to the task `cwd`, matched with [picomatch](https://github.com/micromatch/picomatch) and `dot: true`, so `dir/**` also covers dotfiles such as `dir/.env.example`; a bare directory path matches everything under it. After each turn, Baton checks **task-baseline net changes** (commits since start HEAD ∪ working-tree digest diff) against those globs. `--scope-on-violation warn` (default) keeps the transport status and sets `scope_violations` + `warning`; `fail` upgrades a clean `success` to `scope_violation`. This is a **mistake fence**, not a sandbox: ignored paths, non-git writes, and concurrent edits on a shared cwd are blind spots — prefer combining with `--isolate`. Requires a git repo when `--scope` is set. **Breaking note for clients:** new terminal status `scope_violation` (and optional `scope_*` meta fields).
 - **`--rules check|pointer|off` (default `check`):** discovers project rule files from the task `cwd` up to the git root and records them on `meta.rules` (`found`, `unseen`, `pointer_injected`). `check` does not change the worker prompt. `pointer` prepends an English “read these files” block for entries the target does not load natively (first turn only; `reply` does not reinject). `off` skips discovery entirely. When the repo has `.rulesync/`, Baton also reports a `rules.rulesync` object: it reads `rulesync.jsonc` (+ `rulesync.local.jsonc`), notes whether the target’s rulesync id is configured and any load-gate notes for `mcp`/`hooks`, then the supervisor runs `rulesync generate --check` (whole project, no `--targets`/`--features`) and sets `status` to `in_sync` / `stale` / `error` / `skipped`. Failures never block the task. Baton never installs rulesync via `npx` and never writes rulesync outputs into the user’s main working tree.
-- **`--check "<cmd>"` (optional):** an acceptance command Baton runs itself after every turn that ends in `success` (after the readonly / scope checks), so the host does not have to re-run it. It runs as `/bin/sh -c "<cmd>"` in the task `cwd` (the worktree under `--isolate`), with the worker's environment, in its own process group; chain several commands with `&&`. Kept across `reply`. The result is `check` on the turn and on meta (latest turn): `command`, `status` (`passed` / `failed` / `timed_out`), `exit_code`, `duration_ms`, `output_tail` (last 4000 chars, redacted); full output in `raw/<n>.check.log`. `passed` keeps `success`. `failed` or `timed_out` ends the turn as `check_failed` with summary `check_failed: exit <code>` (or `check_failed: timed out`) followed by the output tail; `reply` is allowed and the next turn runs the check again. The check stops after `--idle-timeout` seconds with no output; `--max-duration` applies only to the worker. `cancel` during the check gives `cancelled`. Not run when the turn did not end in `success`. The task stays `running` until the check ends. Under `--isolate` the worktree has no dependencies unless `.baton.json` `post_create` installs them. **Breaking note for clients:** new terminal status `check_failed` and optional `check` meta field.
+- **`--check "<cmd>"` (optional):** an acceptance command Baton runs itself after every turn that ends in `success` (after the readonly / scope checks), so the host does not have to re-run it. It runs through the platform shell (`/bin/sh` on POSIX, `cmd.exe` on Windows) in the task `cwd` (the worktree under `--isolate`), with the worker's environment; chain several commands with `&&`. Kept across `reply`. The result is `check` on the turn and on meta (latest turn): `command`, `status` (`passed` / `failed` / `timed_out`), `exit_code`, `duration_ms`, `output_tail` (last 4000 chars, redacted); full output in `raw/<n>.check.log`. `passed` keeps `success`. `failed` or `timed_out` ends the turn as `check_failed` with summary `check_failed: exit <code>` (or `check_failed: timed out`) followed by the output tail; `reply` is allowed and the next turn runs the check again. The check stops after `--idle-timeout` seconds with no output; `--max-duration` applies only to the worker. `cancel` during the check gives `cancelled`. Not run when the turn did not end in `success`. The task stays `running` until the check ends. Under `--isolate` the worktree has no dependencies unless `.baton.json` `post_create` installs them. **Breaking note for clients:** new terminal status `check_failed` and optional `check` meta field.
 
 ### Native rule files and load gates (verified 2026-11-21/22)
 
@@ -401,7 +403,7 @@ MCP is a thin shell over the same logic. It keeps no task state, so restarting M
 
 ## Task directory ~/.baton
 
-The root is `~/.baton` by default; set `BATON_HOME` to move it. Directories are `0700` and files `0600` (they contain prompts).
+The root is `~/.baton` by default; set `BATON_HOME` to move it. On POSIX, directories are `0700` and files `0600` (they contain prompts); on Windows, POSIX mode bits do not apply and access relies on the user profile directory's ACL.
 
 ```
 ~/.baton/tasks/<task_id>/
@@ -424,7 +426,7 @@ Task directories are never deleted automatically; use `baton prune --older <days
 | **Codex** | `codex exec --json --color never --approve-for-me --skip-git-repo-check --cd <cwd> -` | `codex exec resume --json <thread_id> -` | write uses `--approve-for-me` (conflicts with `--sandbox`); readonly first turn uses `--sandbox read-only`; `exec resume` has no sandbox flag and rejects `--cd` / `--color` |
 | **Claude Code** | `claude -p --output-format stream-json --verbose --permission-mode acceptEdits --permission-prompts none` | add `--resume <session_id>` | readonly → `--permission-mode plan`; `stream-json` with `-p` requires `--verbose`; hook events stay out of the event stream |
 | **Cursor** | `cursor-agent --print --force --trust --output-format stream-json --workspace <cwd>` | add `--resume <session_id>` | readonly → `--mode ask` (drops `--force`, keeps `--trust`); prefers `cursor-agent`, then `agent`; never the IDE's `cursor` |
-| **Antigravity (agy)** | `agy --print <prompt> --mode accept-edits --output-format stream-json` | add `--conversation <id>` | readonly → `--mode plan`; replies stream as deltas; the full text comes from the final `result` |
+| **Antigravity (agy)** | `agy --print= --mode accept-edits --input-format stream-json --output-format stream-json` (prompt via stdin) | add `--conversation <id>` | readonly → `--mode plan`; replies stream as deltas; the full text comes from the final `result` |
 
 Any output line a parser does not recognize is kept as a `raw` event, never dropped. Real output samples for each CLI live in `test/fixtures/`.
 
@@ -433,8 +435,8 @@ Any output line a parser does not recognize is kept as a `raw` event, never drop
 ## Safety
 
 1. **No recursion (`BATON_DELEGATION=1`)**: set in the worker's environment; a downstream call into baton is refused.
-2. **Process groups**: each worker runs in its own process group; timeouts and `cancel` kill the whole group, grandchildren included.
-3. **Credential redaction**: text written to events and summaries is redacted before truncation; full raw logs stay under `raw/`, protected by `0600`.
+2. **Process groups**: on POSIX each worker runs in its own process group so timeouts and `cancel` kill the whole group, grandchildren included. On Windows, Baton terminates trees with `taskkill /T /F` (plus a parent-PID sweep); see [Windows notes](#windows-notes).
+3. **Credential redaction**: text written to events and summaries is redacted before truncation; full raw logs stay under `raw/`, protected by `0600` on POSIX (user-directory ACL on Windows).
 4. **Id validation**: every task id is checked to be a UUID before it is used in a path.
 5. **`--scope` is not a security boundary**: it only post-checks git-visible net changes. `.gitignore`d files, writes outside the repo, concurrent shared-cwd edits, and orphaned supervisors (check skipped) are known blind spots.
 6. **Dirty-tree guard**: in-place `--mode write` in a git repo refuses when the working tree has uncommitted changes (`dirty_worktree`). Use `--isolate` or `--allow-dirty`.
@@ -446,6 +448,15 @@ Any output line a parser does not recognize is kept as a `raw` event, never drop
 | Claude Code | `--permission-mode acceptEdits --permission-prompts none` | File edits are accepted automatically |
 | Cursor | `--force --trust` | Commands and edits run without confirmation |
 | Antigravity | `--mode accept-edits` | Edits are accepted automatically |
+
+### Windows notes
+
+Baton supports native Windows 10/11 (PowerShell and cmd; WSL is treated as Linux) with the following platform differences:
+
+- **File permissions**: POSIX mode bits (`0700`/`0600` on `~/.baton`) do not take effect on Windows; task files and raw logs rely on the user profile directory's ACL.
+- **Process-tree cleanup**: `cancel` and timeouts use `taskkill /T /F` (with a parent-PID fallback when a `.cmd` shim's `cmd.exe` has already exited). Because Windows process trees are walked by parent PID without a Job Object, grandchildren whose intermediate parent already exited may escape termination.
+- **Shell commands (`--check` and `.baton.json` `post_create`)**: executed through `cmd.exe` (`shell: true`), not `/bin/sh`. Avoid POSIX-only shell syntax in cross-platform commands.
+- **Worktree symlinks (`.baton.json` `symlink`)**: directory entries use NTFS junctions (no elevation required); file symlinks require Developer Mode or administrator rights — move file entries to `copy` if symlink creation fails with `EPERM`.
 
 ---
 
