@@ -148,6 +148,11 @@ export function applyTree(repo: string, base: string, tree: string, message: str
 /** Removes an --isolate worktree and its branch; null on success, otherwise what stayed behind and what git said. */
 export function removeTaskWorktree(repo: string, worktreePath: string, branch: string): string | null {
   const problems = cleanupWorktree(repo, worktreePath, branch);
+  // Windows keeps a deleted directory visible ("delete pending", or git leaves it) until the last handle on it closes, e.g. a worker that is still exiting.
+  for (let wait = 0; process.platform === "win32" && wait < 20 && fs.existsSync(worktreePath); wait++) {
+    try { fs.rmSync(worktreePath, { recursive: true, force: true }); } catch { /* still held */ }
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+  }
   if (fs.existsSync(worktreePath)) problems.push(`${worktreePath} still exists`);
   if (git(repo, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]).status === 0) problems.push(`branch ${branch} still exists`);
   return problems.length ? problems.join("; ") : null;

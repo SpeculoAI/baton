@@ -12,7 +12,12 @@ export function killGroup(pid: number | null): void {
   if (!pid || !Number.isSafeInteger(pid) || pid <= 1) return;
   if (process.platform === "win32") {
     // shortcut: taskkill follows parent pids, so a grandchild whose parent already exited escapes; a Job Object would need a native addon.
-    spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" }); // exit 128 = already gone
+    const killed = spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" });
+    // 128 = no such process. libuv ends a worker's direct child (a .cmd shim's cmd.exe) when the supervisor dies, but the shim's own
+    // children keep that dead pid as their parent, so sweep them by it.
+    if (killed.status === 128) {
+      spawnSync("powershell", ["-NoProfile", "-Command", `Get-CimInstance Win32_Process -Filter 'ParentProcessId=${pid}' | ForEach-Object { taskkill /PID $_.ProcessId /T /F | Out-Null }`], { windowsHide: true, stdio: "ignore", timeout: 15_000 });
+    }
     return;
   }
   try { process.kill(-pid, "SIGKILL"); } catch (error) {
