@@ -71,7 +71,8 @@ export function sandbox(t: TestContext) {
     }
   });
   async function run<T = TaskMeta & { liveness?: string; quiet_for_s?: number }>(...args: string[]): Promise<T> {
-    const result = await exec(process.execPath, [cli, ...args], { cwd, env, timeout: 8000 });
+    // Windows orphan cleanup may cold-start powershell (Get-CimInstance, up to 15s) on top of a 2s wait.
+    const result = await exec(process.execPath, [cli, ...args], { cwd, env, timeout: process.platform === "win32" ? 20_000 : 8000 });
     return JSON.parse(result.stdout);
   }
   const dir = (id: string) => path.join(home, "tasks", id);
