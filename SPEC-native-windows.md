@@ -54,6 +54,19 @@ Issue: [#48](https://github.com/SpeculoAI/baton/issues/48)
 - **D8** 所有 `detached: true` 的启动加 `windowsHide: true`。
 - **D9 新增 `.gitattributes`，内容 `* text=auto eol=lf`。** Windows runner 默认开启 `autocrlf`，会把 fixture 和 patch 转成 CRLF。
 
+## 实现中发现的事实（PR B，windows-latest 实测）
+
+下面这些在写 spec 时不知道，是 CI 暴露的，已按此实现，D1–D9 的原文不再修改：
+
+- **worker 和 `--check` 在 Windows 上不能 `detached`。** `detached: true` 加 `.cmd` 垫片（经 cmd.exe）会让子进程永远不输出，所有任务挂在 running。Windows 没有进程组，`taskkill /T` 靠父 PID 找树，不需要 detached。supervisor 本身仍然 detached（它要比 CLI 活得久）。D6、D8 据此：`--check` 用 `shell: true`，worker 与 check 的 `detached` 只在 POSIX 为 true。
+- **libuv 会给非 detached 的子进程套 Job Object**（父进程一死，直接子进程被杀，孙进程不受影响）。supervisor 崩溃时，`.cmd` 垫片的 cmd.exe 先没了，而它底下的 worker 和孙进程活下来，父 PID 指向已死的 cmd.exe，`taskkill /PID <cmd> /T` 报"进程不存在"。所以 `killGroup` 在 taskkill 不成功时，改为列出"父 PID 等于该 PID"的存活进程并逐个 `taskkill /T`。这扩大了 D4：孤儿恢复能杀到这条链，但仍然杀不到"中间一层已死且不是我们记录的 pid"的更深后代。
+- **`taskkill` 和 `powershell` 必须用 `SystemRoot` 拼绝对路径**，不能依赖 PATH（沙箱和精简环境的 PATH 里没有 `WindowsPowerShell\v1.0`）。
+- **meta.json 的原子替换在 Windows 上会因读者占用而 `EPERM`。** `start` 在轮询 `meta.json`，supervisor 同时重写它，supervisor 会因此崩溃（日志里表现为 `supervisor exited before it was ready`）。`store.ts` 加了 win32 专用、最多 200ms 的重试。这是 Open Questions 里"CI 暴露问题再加"的那一项，**需要你确认保留**，它在独立提交 fdc9d30 里。
+- **路径比较要用 `realpathSync.native`**：Windows 临时目录和用户名超过 8 个字符的家目录会以 8.3 短名（`RUNNER~1`）出现，而 git 输出长路径，JS 版 `realpathSync` 不展开短名。影响 `--isolate`、scope 的相对路径、嵌套 worktree 检测、`ls`。
+- **`apply --remove`**：目录删除后在 Windows 上会继续可见一小会儿（句柄未关闭），最多等 2 秒；失败时 warning 里带上 git 的原因和剩余项。
+- **CI 要关闭 `core.autocrlf`**（runner 默认开启，会把 patch 和检出内容改成 CRLF）。仓库的 `.gitattributes` 不管临时测试仓库。
+- **没有迁移的测试**：`cancel kills a supervisor that never reacts` 用 SIGSTOP 冻结 supervisor，Windows 没有等价手段，只在 POSIX 跑；`FAKE_GIT_SLEEP` 垫片只有 POSIX 版本，所以 Windows 上"git 慢时 cancel"的用例会通过，但没有真正模拟慢 git。
+
 ## Tech Stack
 
 - Node `>=20.17`，ESM，TypeScript。测试时 Node 直接运行 `.ts`（type stripping）。

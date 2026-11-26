@@ -65,16 +65,16 @@ T8、T9/T10、T11 都只依赖 T6，相互之间独立，可以按任意顺序�
 - [ ] macOS、Linux CI 全绿；`git diff main -- src/` 为空
 
 ### Phase 2: 运行时（PR B）
-- [ ] T5：CI matrix 加 `windows-latest`（预期红）
-- [ ] T6：引入 cross-spawn；`which` 支持 `PATHEXT`；改造 worker 启动和 `agents()`
-- [ ] T7：rules、rulesync-setup、install 改用 cross-spawn
-- [ ] T8：提示词走 stdin（D1/D2），加逐字节一致测试
-- [ ] T9：`killGroup` 的 taskkill 分支；加 `windowsHide`
-- [ ] T10：cancel 改为写取消文件，配套兜底和孤儿收尾
-- [ ] T11：`--check` 改用 `shell: true`；目录链接改用 junction
+- [x] T5：CI matrix 加 `windows-latest`（预期红）
+- [x] T6：引入 cross-spawn；`which` 支持 `PATHEXT`；改造 worker 启动和 `agents()`
+- [x] T7：rules、rulesync-setup、install 改用 cross-spawn
+- [x] T8：提示词走 stdin（D1/D2），加逐字节一致测试
+- [x] T9：`killGroup` 的 taskkill 分支；加 `windowsHide`
+- [x] T10：cancel 改为写取消文件，配套兜底和孤儿收尾
+- [x] T11：`--check` 改用 `shell: true`；目录链接改用 junction
 
 ### Checkpoint B
-- [ ] 三个平台 CI 全绿；满足 Success Criteria 1、2、3、5
+- [x] 三个平台 CI 全绿；满足 Success Criteria 1、2、3、5
 
 ### Phase 3: install、文档、真机（PR C）
 - [ ] T12：install 去掉 `npm.cmd` 特判；文档写明平台支持和已知限制

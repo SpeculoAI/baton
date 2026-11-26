@@ -134,11 +134,11 @@ Spec: `SPEC-native-windows.md` · Plan: `tasks/plan.md`
 **Description**：在 `ci.yml` 的 test matrix 里加上 `windows-latest`。之后每次推送都能拿到 Windows 上的失败清单。
 
 **Acceptance criteria**：
-- [ ] Windows job 能跑起来，失败原因都出在测试上，不是 CI 配置错误。
-- [ ] 不修改 `ci-ok` 的判断规则。
+- [x] Windows job 能跑起来，失败原因都出在测试上，不是 CI 配置错误。
+- [x] 不修改 `ci-ok` 的判断规则。
 
 **Verification**：
-- [ ] 推送后看 job 日志，确认失败都落在预期的模块上。
+- [x] 推送后看 job 日志，确认失败都落在预期的模块上。
 
 **Dependencies**：Checkpoint A
 **Files likely touched**：`.github/workflows/ci.yml`
@@ -153,13 +153,13 @@ Spec: `SPEC-native-windows.md` · Plan: `tasks/plan.md`
 - `agents()` 调用 `--version` 改用 cross-spawn 的同步版本。
 
 **Acceptance criteria**：
-- [ ] Windows 上 `baton agents` 能识别 `.cmd` 和 `.exe`。
-- [ ] Windows 上能启动 `.cmd` 形式的 worker。
-- [ ] POSIX 上行为不变。
+- [x] Windows 上 `baton agents` 能识别 `.cmd` 和 `.exe`。
+- [x] Windows 上能启动 `.cmd` 形式的 worker。
+- [x] POSIX 上行为不变。
 
 **Verification**：
-- [ ] `npm test` 在三个平台上通过 which 和 start 相关用例。
-- [ ] 新增用例：`which` 能找到 `x.cmd` 和 `x.exe`，只在 win32 上运行。
+- [x] `npm test` 在三个平台上通过 which 和 start 相关用例。
+- [x] 新增用例：`which` 能找到 `x.cmd` 和 `x.exe`，只在 win32 上运行。
 
 **Dependencies**：T5
 **Files likely touched**：`package.json`、`package-lock.json`、`src/adapters/common.ts`、`src/supervisor.ts`、`src/tasks.ts`、`test/adapters.test.ts`
@@ -170,11 +170,11 @@ Spec: `SPEC-native-windows.md` · Plan: `tasks/plan.md`
 **Description**：把这三处启动外部程序的 `spawn` 和 `spawnSync` 替换成 cross-spawn。`git` 调用保持不变。
 
 **Acceptance criteria**：
-- [ ] Windows 上 rulesync 和 npm 的 `.cmd` 能正常启动。
-- [ ] 现有测试全绿。
+- [x] Windows 上 rulesync 和 npm 的 `.cmd` 能正常启动。
+- [x] 现有测试全绿。
 
 **Verification**：
-- [ ] 三个平台上 `npm test` 的 rules、rulesync-setup、install 用例通过。
+- [x] 三个平台上 `npm test` 的 rules、rulesync-setup、install 用例通过。
 
 **Dependencies**：T6
 **Files likely touched**：`src/rules.ts`、`src/rulesync-setup.ts`、`src/install.ts`
@@ -188,12 +188,12 @@ Spec: `SPEC-native-windows.md` · Plan: `tasks/plan.md`
 - 新增测试：提示词包含换行和 `& | > ^ " %`，经过每个 adapter 后，由假 CLI 的 `FAKE_INPUT_FILE` 收到的内容与原文逐字节一致。
 
 **Acceptance criteria**：
-- [ ] 三个平台上，提示词都逐字节到达 worker。
-- [ ] argv 里不再出现提示词（D2 的 `.exe` 回退除外）。
+- [x] 三个平台上，提示词都逐字节到达 worker。
+- [x] argv 里不再出现提示词（D2 的 `.exe` 回退除外）。
 
 **Verification**：
-- [ ] 三个平台上 `npm test` 通过新增用例。
-- [ ] 现有 adapter 参数断言已按新行为同步更新。
+- [x] 三个平台上 `npm test` 通过新增用例。
+- [x] 现有 adapter 参数断言已按新行为同步更新。
 
 **Dependencies**：T0、T6
 **Files likely touched**：`src/adapters/claude.ts`、`src/adapters/cursor.ts`、`src/adapters/agy.ts`、`test/adapters.test.ts`、`test/lifecycle.test.ts`
@@ -206,12 +206,12 @@ Spec: `SPEC-native-windows.md` · Plan: `tasks/plan.md`
 - supervisor launch、worker、check 三处 `detached` 启动都加上 `windowsHide: true`。
 
 **Acceptance criteria**：
-- [ ] Windows 上 idle timeout 和 max duration 能杀掉整棵 worker 进程树，包括孙进程。
-- [ ] POSIX 分支不变。
+- [x] Windows 上 idle timeout 和 max duration 能杀掉整棵 worker 进程树，包括孙进程。
+- [x] POSIX 分支不变。
 
 **Verification**：
-- [ ] 三个平台上，lifecycle 的超时和孙进程用例通过。
-- [ ] `process.test.ts` 新增 win32 用例：对已退出的 PID 调用不报错。
+- [x] 三个平台上，lifecycle 的超时和孙进程用例通过。
+- [x] `process.test.ts` 新增 win32 用例：对已退出的 PID 调用不报错。
 
 **Dependencies**：T6
 **Files likely touched**：`src/process.ts`、`src/supervisor.ts`、`src/tasks.ts`、`test/process.test.ts`
@@ -226,12 +226,12 @@ Spec: `SPEC-native-windows.md` · Plan: `tasks/plan.md`
 - 孤儿收尾时，如果当前 turn 存在取消文件，就记为 `cancelled`。
 
 **Acceptance criteria**：
-- [ ] Windows 上 cancel 后状态记为 `cancelled`，并且杀掉孙进程。
-- [ ] supervisor 卡死时，兜底仍能记为 `cancelled`。
-- [ ] `reply` 之后，上一轮的取消文件不影响新的一轮。
+- [x] Windows 上 cancel 后状态记为 `cancelled`，并且杀掉孙进程。
+- [x] supervisor 卡死时，兜底仍能记为 `cancelled`。
+- [x] `reply` 之后，上一轮的取消文件不影响新的一轮。
 
 **Verification**：
-- [ ] 三个平台上 cancel 相关用例通过，另新增 3 条：兜底、孤儿收尾识别取消文件、reply 不受影响。
+- [x] 三个平台上 cancel 相关用例通过，另新增 3 条：兜底、孤儿收尾识别取消文件、reply 不受影响。
 
 **Dependencies**：T9
 **Files likely touched**：`src/tasks.ts`、`src/supervisor.ts`、`test/lifecycle.test.ts`
@@ -244,11 +244,11 @@ Spec: `SPEC-native-windows.md` · Plan: `tasks/plan.md`
 - worktree 的目录链接用 `"junction"` 类型。文件链接遇到 `EPERM` 时报错，并提示改用 `copy`。
 
 **Acceptance criteria**：
-- [ ] 三个平台上 check 用例通过。
-- [ ] Windows 上 worktree add/rm 和 `--isolate` + `diff` + `apply` 通过。
+- [x] 三个平台上 check 用例通过。
+- [x] Windows 上 worktree add/rm 和 `--isolate` + `diff` + `apply` 通过。
 
 **Verification**：
-- [ ] 三个平台上 `npm test` 的 check、worktree、isolation、diff-apply 用例通过。
+- [x] 三个平台上 `npm test` 的 check、worktree、isolation、diff-apply 用例通过。
 
 **Dependencies**：T6
 **Files likely touched**：`src/supervisor.ts`、`src/worktree.ts`、`test/worktree.test.ts`
@@ -256,9 +256,9 @@ Spec: `SPEC-native-windows.md` · Plan: `tasks/plan.md`
 
 ## Checkpoint B：PR B
 
-- [ ] 三个平台的 CI 全绿。
-- [ ] Success Criteria 1、2、3、5 逐条核对。
-- [ ] 如果 Windows 上暴露了 rename `EPERM` 或路径大小写问题，先停下来问你（spec Ask first）。
+- [x] 三个平台的 CI 全绿（#77，最终 Windows 215 通过 / 0 失败 / 2 跳过）。
+- [x] Success Criteria 1、2、3、5 逐条核对，见 PR 描述。
+- [x] Windows 上暴露了 rename `EPERM`：`start` 轮询 `meta.json` 时 supervisor 被拒绝替换文件而崩溃。已加有上限的重试（单独一个提交 fdc9d30，可单独撤回），**待你确认保留**。路径大小写问题没有出现。
 - [ ] 交给你评审。
 
 ---
