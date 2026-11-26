@@ -173,8 +173,8 @@ export async function start(input: StartInput): Promise<StartResult> {
     const short = task_id.replace(/-/g, "").slice(0, 8);
     const name = `task-${short}`;
     const added = addWorktree(cwd, { name, branch: `baton/${name}`, base: "HEAD" });
-    const realCwd = fs.realpathSync(cwd);
-    const realRepo = fs.realpathSync(repo);
+    const realCwd = fs.realpathSync.native(cwd);
+    const realRepo = fs.realpathSync.native(repo);
     const rel = path.relative(realRepo, realCwd);
     if (rel.startsWith("..") || path.isAbsolute(rel)) {
       throw new Error("--isolate cwd must be inside the repository.");
@@ -430,13 +430,13 @@ export async function reply(id: string, prompt: string, author: Author = "host")
 export function ls(all = false, cwd = process.cwd()): TaskView[] {
   const here = path.resolve(cwd);
   let hereReal = here;
-  try { hereReal = fs.realpathSync(here); } catch { /* keep resolved */ }
+  try { hereReal = fs.realpathSync.native(here); } catch { /* keep resolved */ }
   return listTasks().filter((meta) => {
     if (all) return true;
     if (meta.cwd === here || meta.worktree?.source_cwd === here) return true;
     try {
-      if (fs.realpathSync(meta.cwd) === hereReal) return true;
-      if (meta.worktree?.source_cwd && fs.realpathSync(meta.worktree.source_cwd) === hereReal) return true;
+      if (fs.realpathSync.native(meta.cwd) === hereReal) return true;
+      if (meta.worktree?.source_cwd && fs.realpathSync.native(meta.worktree.source_cwd) === hereReal) return true;
     } catch { /* missing path */ }
     return false;
   }).map((meta) => status(meta.task_id))

@@ -84,8 +84,10 @@ export function relativizeToTaskCwd(
   repoRoot: string,
   cwd: string,
 ): string[] {
-  const root = path.resolve(repoRoot);
-  const base = path.resolve(cwd);
+  // git prints the long, real path; cwd may arrive as a Windows 8.3 short name (RUNNER~1) or a symlink.
+  const real = (dir: string) => { try { return fs.realpathSync.native(dir); } catch { return path.resolve(dir); } };
+  const root = real(repoRoot);
+  const base = real(cwd);
   return repoRelativePaths.map((rel) => {
     const abs = path.resolve(root, rel);
     return normalizeRel(path.relative(base, abs));

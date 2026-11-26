@@ -56,7 +56,8 @@ export function sandbox(t: TestContext) {
         }
       } catch {}
     }
-    fs.rmSync(home, { recursive: true, force: true });
+    // On Windows a worker that is still shutting down keeps its cwd open for a moment.
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   async function run<T = TaskMeta & { liveness?: string; quiet_for_s?: number }>(...args: string[]): Promise<T> {
     const result = await exec(process.execPath, [cli, ...args], { cwd, env, timeout: 8000 });
