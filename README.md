@@ -62,7 +62,7 @@ The host starts the job, checks on it in short steps, passes Codex's "A or B?" t
 npx @speculoai/baton install
 ```
 
-It finds the agent CLIs on your machine, asks which ones should get the plugin, and installs the global `baton` command. It then offers to set up [rulesync](https://github.com/dyoshikawa/rulesync) for the current project (optional; rerun any time with `baton rules init`). Requires Node ≥ 20.17 and at least one supported agent CLI that is already logged in.
+It finds the agent CLIs on your machine, asks which ones should get the plugin, and installs the global `baton` command. It then offers to set up [rulesync](https://github.com/dyoshikawa/rulesync) for the current project (optional; rerun any time with `baton rules init`). Supports macOS, Linux, and native Windows 10/11 (PowerShell or cmd); requires Node ≥ 20.17 and at least one supported agent CLI that is already logged in. See [Windows notes](docs/reference.md#windows-notes) for platform differences.
 
 Check which workers Baton can see:
 

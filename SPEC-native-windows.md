@@ -1,6 +1,6 @@
 # Spec: 原生 Windows 支持 — V1
 
-Status: approved
+Status: implemented (CI verified; Windows device smoke deferred to #79)
 Issue: [#48](https://github.com/SpeculoAI/baton/issues/48)
 
 ## Objective
@@ -190,7 +190,8 @@ export function killGroup(pid: number | null): void {
 
 ## Open Questions
 
-1. PR C 用哪台 Windows 真机：待定。那台设备的网络比较复杂，后面再定。
+已决定（2026-11-26）：
+- 当前无可用 Windows 真机，暂跳过 T13 真机冒烟，先合入 PR C（文档）并上线；真实 Windows 机器上的安装与运行问题改为结合 #79（`baton report`）收集反馈后按独立 issue 修复。
 
 已决定（2026-11-25）：
 - 同意新增运行时依赖 `cross-spawn`。

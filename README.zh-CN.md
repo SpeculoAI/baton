@@ -62,7 +62,7 @@
 npx @speculoai/baton install
 ```
 
-它会找出本机装了哪些 Agent CLI，问你要给哪些装插件，并安装全局 `baton` 命令。之后会推荐为当前项目配置 [rulesync](https://github.com/dyoshikawa/rulesync)（可选，以后可随时用 `baton rules init` 重跑）。需要 Node ≥ 20.17，以及至少一个已登录的受支持 Agent CLI。
+它会找出本机装了哪些 Agent CLI，问你要给哪些装插件，并安装全局 `baton` 命令。之后会推荐为当前项目配置 [rulesync](https://github.com/dyoshikawa/rulesync)（可选，以后可随时用 `baton rules init` 重跑）。支持 macOS、Linux 与原生 Windows 10/11（PowerShell 或 cmd）；需要 Node ≥ 20.17，以及至少一个已登录的受支持 Agent CLI。Windows 差异与限制见[Windows 平台说明](docs/reference.zh-CN.md#windows-平台说明)。
 
 看看 Baton 能找到哪些执行者：
 
