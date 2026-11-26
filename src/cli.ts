@@ -7,7 +7,7 @@ import { redact } from "./redact.ts";
 import { detectedHosts, runInstall, type Action } from "./install.ts";
 import { mappedAgents, rulesInit, type InstallChoice, type RulesInitResult } from "./rulesync-setup.ts";
 import type { Author, Effort, ScopeOnViolation, TaskMode } from "./types.ts";
-import { COMMANDS, commandList, isCommand, renderHelp, wantsHelp } from "./usage.ts";
+import { COMMANDS, commandList, hasSubcommand, isCommand, renderHelp, wantsHelp } from "./usage.ts";
 
 function installChoice(value: string | undefined, flag: string): InstallChoice | undefined {
   if (value === undefined) return undefined;
@@ -20,14 +20,18 @@ async function main(): Promise<void> {
   let result: unknown;
   if (command === undefined || command === "help" || command === "-h" || command === "--help") {
     const name = command === "help" ? args[0] : undefined;
+    const sub = command === "help" ? args[1] : undefined;
     if (name === undefined) process.stdout.write(renderHelp());
-    else if (isCommand(name)) process.stdout.write(renderHelp(name));
-    else throw new Error(commandList);
+    else if (isCommand(name)) {
+      if (sub === undefined) process.stdout.write(renderHelp(name));
+      else if (hasSubcommand(name, sub)) process.stdout.write(renderHelp(name, sub));
+      else throw new Error(`Usage: ${COMMANDS[name].usage}`);
+    } else throw new Error(commandList);
     return;
   }
   // Before parsing, so `start --help` neither trips strict parsing nor waits on stdin.
   if (isCommand(command) && wantsHelp(args)) {
-    process.stdout.write(renderHelp(command));
+    process.stdout.write(renderHelp(command, hasSubcommand(command, args[0]) ? args[0] : undefined));
     return;
   }
   if (command === "_supervise") {
@@ -122,16 +126,22 @@ async function main(): Promise<void> {
       const { values, positionals } = parseArgs({
         args: rest,
         allowPositionals: true,
-        options: COMMANDS.worktree.options,
+        options: COMMANDS.worktree.subcommands.add.options,
       });
       if (positionals.length) throw new Error("worktree add takes no positional arguments.");
       result = addWorktree(process.cwd(), { name: values.name, branch: values.branch, base: values.base });
     } else if (action === "ls") {
-      if (rest.length) throw new Error("worktree ls takes no extra arguments.");
+      const { positionals } = parseArgs({ args: rest, allowPositionals: true, options: {} });
+      if (positionals.length) throw new Error("worktree ls takes no positional arguments.");
       result = { worktrees: listWorktrees(process.cwd()) };
     } else if (action === "rm") {
-      if (rest.length !== 1) throw new Error("worktree rm requires one name or path.");
-      result = removeWorktree(process.cwd(), rest[0]!);
+      const { values, positionals } = parseArgs({
+        args: rest,
+        allowPositionals: true,
+        options: COMMANDS.worktree.subcommands.rm.options,
+      });
+      if (positionals.length !== 1) throw new Error("worktree rm requires one name or path.");
+      result = removeWorktree(process.cwd(), positionals[0]!, { force: values.force });
     } else {
       throw new Error("Usage: baton worktree add|ls|rm");
     }

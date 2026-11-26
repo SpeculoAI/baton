@@ -1,6 +1,6 @@
 /** One table per subcommand: cli.ts parses with `options`, and `--help` renders from the same entries. */
 type Opt = { type: "string" | "boolean"; short?: string; multiple?: boolean; arg?: string; desc: string };
-type Cmd = { usage: string; summary: string; options?: Record<string, Opt>; notes?: string[]; examples?: string[] };
+type Cmd = { usage: string; summary: string; options?: Record<string, Opt>; subcommands?: Record<string, Cmd>; notes?: string[]; examples?: string[] };
 
 const INSTALL_OPTIONS = {
   only: { type: "string", multiple: true, arg: "agent", desc: "Only this agent: claude, codex, cursor, agy or gemini (repeatable)" },
@@ -93,14 +93,34 @@ export const COMMANDS = {
     options: { older: { type: "string", arg: "days", desc: "Age threshold in days (required)" } },
   },
   worktree: {
-    usage: "baton worktree add [options] | ls | rm <name-or-path>",
+    usage: "baton worktree add | ls | rm",
     summary: "Manage baton worktrees under .worktrees/.",
-    options: {
-      name: { type: "string", arg: "id", desc: "Worktree name (add)" },
-      branch: { type: "string", arg: "name", desc: "Branch to create (add)" },
-      base: { type: "string", arg: "ref", desc: "Ref to start from (add; default HEAD)" },
+    subcommands: {
+      add: {
+        usage: "baton worktree add [--name <id>] [--branch <name>] [--base <ref>]",
+        summary: "Create a baton-managed worktree and local branch.",
+        options: {
+          name: { type: "string", arg: "id", desc: "Worktree name (default random hex)" },
+          branch: { type: "string", arg: "name", desc: "Branch to create (default baton/<name>)" },
+          base: { type: "string", arg: "ref", desc: "Ref to start from (default .baton.json base, main, master, or HEAD)" },
+        },
+      },
+      ls: {
+        usage: "baton worktree ls",
+        summary: "List baton-managed worktrees.",
+      },
+      rm: {
+        usage: "baton worktree rm <name-or-path> [-f | --force]",
+        summary: "Remove a baton-managed worktree and delete its local branch.",
+        options: {
+          force: { type: "boolean", short: "f", desc: "Remove even when dirty or unmerged (git branch -D)" },
+        },
+        notes: [
+          "Accepts a worktree name under .worktrees/ or its path; only baton-managed trees can be removed.",
+          "Without --force, refuses dirty trees or branches with commits unmerged into base; when clean, removes the tree and deletes the associated local branch (e.g. baton/*).",
+        ],
+      },
     },
-    notes: ["rm refuses dirty or unmerged trees; when clean it removes the tree and deletes the local branch."],
   },
   rules: {
     usage: "baton rules init [options]",
@@ -147,6 +167,11 @@ export function isCommand(name: string | undefined): name is CommandName {
   return name !== undefined && Object.hasOwn(COMMANDS, name);
 }
 
+export function hasSubcommand(name: CommandName, sub: string | undefined): boolean {
+  const subs = (COMMANDS[name] as Cmd).subcommands;
+  return sub !== undefined && subs !== undefined && Object.hasOwn(subs, sub);
+}
+
 /** `-h` / `--help` anywhere before `--`. */
 export function wantsHelp(args: string[]): boolean {
   const end = args.indexOf("--");
@@ -160,7 +185,7 @@ function columns(rows: [string, string][]): string[] {
   return rows.map(([left, right]) => `  ${left.padEnd(width)}${right}`);
 }
 
-export function renderHelp(name?: CommandName): string {
+export function renderHelp(name?: CommandName, sub?: string): string {
   if (!name) {
     return [
       "Usage: baton <command> [options]",
@@ -174,21 +199,25 @@ export function renderHelp(name?: CommandName): string {
       "",
     ].join("\n");
   }
-  const cmd: Cmd = COMMANDS[name];
+  const top: Cmd = COMMANDS[name];
+  const cmd: Cmd = sub && top.subcommands && Object.hasOwn(top.subcommands, sub) ? top.subcommands[sub]! : top;
   const options: [string, string][] = Object.entries(cmd.options ?? {}).map(([key, opt]) => [
-      `${opt.short ? `-${opt.short}, ` : ""}--${key}${opt.type === "string" ? ` <${opt.arg ?? "value"}>` : ""}`,
-      opt.desc,
-    ]);
+    `${opt.short ? `-${opt.short}, ` : ""}--${key}${opt.type === "string" ? ` <${opt.arg ?? "value"}>` : ""}`,
+    opt.desc,
+  ]);
   options.push(["-h, --help", "Show this help"]);
+  const subs = cmd.subcommands ? Object.entries(cmd.subcommands) : [];
   return [
     `Usage: ${cmd.usage}`,
     "",
     cmd.summary,
+    ...(subs.length ? ["", "Subcommands:", ...columns(subs.map(([k, v]) => [k, v.summary]))] : []),
     "",
     "Options:",
     ...columns(options),
     ...(cmd.notes?.length ? ["", ...cmd.notes] : []),
     ...(cmd.examples?.length ? ["", "Examples:", ...cmd.examples.map((line) => `  ${line}`)] : []),
+    ...(subs.length ? ["", `Run \`baton ${name} <subcommand> --help\` for a subcommand's options.`] : []),
     "",
   ].join("\n");
 }

@@ -97,6 +97,8 @@ test("skills: --isolate and dirty_worktree guidance (#51)", () => {
   assert.match(rescue, /uncommitted/i);
   assert.match(rescue, /worktree\.gitignore_updated|gitignore_updated/);
   assert.match(orchestrate, /start --isolate/);
+  assert.match(orchestrate, /worktree rm[\s\S]{0,40}--force/);
+  assert.match(rescue, /worktree rm[\s\S]{0,40}--force/);
 });
 
 test("setup: Node >= 20.17; installs the global package when the command is missing", () => {
