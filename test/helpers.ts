@@ -79,7 +79,7 @@ export function sandbox(t: TestContext) {
   const meta = (id: string): TaskMeta => JSON.parse(fs.readFileSync(path.join(dir(id), "meta.json"), "utf8"));
   const turn = (id: string, n = 1): Turn => JSON.parse(fs.readFileSync(path.join(dir(id), "turns", `${n}.json`), "utf8"));
   const events = (id: string): BatonEvent[] => fs.readFileSync(path.join(dir(id), "events.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
-  async function until(id: string, predicate: (meta: TaskMeta) => boolean = (meta) => meta.status !== "running", timeout = 6000) {
+  async function until(id: string, predicate: (meta: TaskMeta) => boolean = (meta) => meta.status !== "running", timeout = process.platform === "win32" ? 15_000 : 6000) {
     const end = Date.now() + timeout;
     while (Date.now() < end) { const m = meta(id); if (predicate(m)) return m; await sleep(20); }
     throw new Error(`task did not reach the expected state: ${JSON.stringify(meta(id))}`);
