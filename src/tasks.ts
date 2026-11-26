@@ -6,7 +6,7 @@ import crossSpawn from "cross-spawn";
 import { once } from "node:events";
 import { adapters, getAdapter } from "./adapters/index.ts";
 import { resolveCursorModelArg } from "./adapters/cursor.ts";
-import { readMeta, writeMeta, writeTurn, readTurn, appendEvent, hasTurnEnded, taskDir, lockTask, listTasks } from "./store.ts";
+import { readMeta, writeMeta, writeTurn, readTurn, appendEvent, hasTurnEnded, taskDir, cancelRequestPath, lockTask, listTasks } from "./store.ts";
 import { setTimeout as sleep } from "node:timers/promises";
 import { redact } from "./redact.ts";
 import { isAlive, killGroup } from "./process.ts";
@@ -288,7 +288,7 @@ export function status(id: string): TaskView {
       }
     }
     killGroup(meta.child_pid);
-    const reason = meta.stop_reason;
+    const reason = meta.stop_reason ?? (fs.existsSync(cancelRequestPath(id, meta.turn)) ? "cancelled" : undefined);
     const decided = reason === "idle" || reason === "max_duration" || reason === "cancelled";
     meta.status = decided ? (reason === "cancelled" ? "cancelled" : "timed_out") : "failed";
     meta.summary = decided ? (reason === "cancelled" ? "Cancelled." : `Timed out: ${reason}.`) : "supervisor exited unexpectedly";
@@ -304,16 +304,28 @@ export function status(id: string): TaskView {
   } finally { release(); }
 }
 
+// The supervisor polls for the request every 250ms; past this it is treated as stuck and killed, and the orphan path records the cancel.
+const CANCEL_FORCE_MS = 5000;
+
 export async function cancel(id: string): Promise<TaskView> {
   let meta = status(id);
   if (meta.status !== "running") return meta;
-  const end = Date.now() + 2000;
+  fs.writeFileSync(cancelRequestPath(id, meta.turn), "", { flag: "a", mode: 0o600 });
+  const start = Date.now();
   let signalled: number | null = null;
-  while (Date.now() < end) {
+  let forced = false;
+  while (Date.now() - start < CANCEL_FORCE_MS + 2000) {
     meta = status(id);
     if (meta.status !== "running") return meta;
-    if (meta.supervisor_pid !== signalled && isAlive(meta.supervisor_pid)) {
+    // POSIX also signals so the supervisor reacts at once; Windows has no signal that reaches its handler.
+    if (process.platform !== "win32" && meta.supervisor_pid !== signalled && isAlive(meta.supervisor_pid)) {
       try { process.kill(meta.supervisor_pid!, "SIGTERM"); signalled = meta.supervisor_pid; } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+      }
+    }
+    if (!forced && Date.now() - start > CANCEL_FORCE_MS && isAlive(meta.supervisor_pid)) {
+      forced = true;
+      try { process.kill(meta.supervisor_pid!, "SIGKILL"); } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
       }
     }

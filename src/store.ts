@@ -10,6 +10,11 @@ export function batonHome(): string {
   return path.resolve(process.env.BATON_HOME || path.join(os.homedir(), ".baton"));
 }
 
+/** A cancel request is a file, not a signal: Windows cannot deliver one, and a file also survives a supervisor that has not started yet. One per turn, so a later reply is not hit by an old request. */
+export function cancelRequestPath(id: string, turn: number): string {
+  return path.join(taskDir(id), `cancel_requested.${turn}`);
+}
+
 export function taskDir(id: string): string {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw new Error("task_id must be a UUID.");
   return path.join(batonHome(), "tasks", id);

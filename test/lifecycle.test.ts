@@ -124,6 +124,64 @@ test("supervisor exit after stop_reason still finalizes as that stop, once", asy
   }
 });
 
+test("a cancel request file alone cancels the task: no signal needed (the Windows path)", async (t) => {
+  const s = sandbox(t);
+  const pidFile = path.join(s.home, "request.pid");
+  s.env.FAKE_CHILD_PID_FILE = pidFile;
+  s.env.FAKE_HANG = "1";
+  const started = await s.run("start", "--target", "codex", "--prompt", "hi");
+  await s.until(started.task_id, (m) => !!m.child_pid && fs.existsSync(pidFile));
+  const grandchild = Number(fs.readFileSync(pidFile, "utf8"));
+  fs.writeFileSync(path.join(s.dir(started.task_id), "cancel_requested.1"), "");
+  const done = await s.until(started.task_id);
+  assert.equal(done.status, "cancelled");
+  assert.equal(done.summary, "Cancelled.");
+  await assertProcessGone(grandchild);
+  assert.equal(s.events(started.task_id).filter((event) => event.type === "turn_ended").length, 1);
+});
+
+test("a supervisor that dies after a cancel request leaves the task cancelled, not failed", async (t) => {
+  const s = sandbox(t);
+  const pidFile = path.join(s.home, "stuck.pid");
+  s.env.FAKE_CHILD_PID_FILE = pidFile;
+  s.env.FAKE_HANG = "1";
+  const started = await s.run("start", "--target", "codex", "--prompt", "hi");
+  const running = await s.until(started.task_id, (m) => !!m.child_pid && fs.existsSync(pidFile));
+  const grandchild = Number(fs.readFileSync(pidFile, "utf8"));
+  process.kill(running.supervisor_pid!, "SIGKILL");
+  await assertProcessGone(running.supervisor_pid!);
+  fs.writeFileSync(path.join(s.dir(started.task_id), "cancel_requested.1"), "");
+  const done = await s.run("status", started.task_id);
+  assert.equal(done.status, "cancelled");
+  assert.equal(done.summary, "Cancelled.");
+  await assertProcessGone(grandchild);
+});
+
+test("cancel kills a supervisor that never reacts and still records cancelled", { skip: process.platform === "win32" }, async (t) => {
+  const s = sandbox(t);
+  const pidFile = path.join(s.home, "frozen.pid");
+  s.env.FAKE_CHILD_PID_FILE = pidFile;
+  s.env.FAKE_HANG = "1";
+  const started = await s.run("start", "--target", "codex", "--prompt", "hi");
+  const running = await s.until(started.task_id, (m) => !!m.child_pid && fs.existsSync(pidFile));
+  const grandchild = Number(fs.readFileSync(pidFile, "utf8"));
+  process.kill(running.supervisor_pid!, "SIGSTOP"); // frozen: neither SIGTERM nor the request file is seen
+  const done = await s.run("cancel", started.task_id);
+  assert.equal(done.status, "cancelled");
+  await assertProcessGone(running.supervisor_pid!);
+  await assertProcessGone(grandchild);
+});
+
+test("a cancel request from an earlier turn does not touch the next turn", async (t) => {
+  const s = sandbox(t);
+  const first = await s.run("start", "--target", "codex", "--prompt", "hi");
+  assert.equal((await s.until(first.task_id)).status, "success");
+  fs.writeFileSync(path.join(s.dir(first.task_id), "cancel_requested.1"), "");
+  await s.run("reply", first.task_id, "--prompt", "again");
+  const done = await s.until(first.task_id, (m) => m.turn === 2 && m.status !== "running");
+  assert.equal(done.status, "success");
+});
+
 async function assertProcessGone(pid: number) {
   for (let i = 0; i < 100; i++) {
     try { process.kill(pid, 0); } catch { return; }

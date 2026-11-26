@@ -7,7 +7,7 @@ import { buildPrompt, interpret } from "./contract.ts";
 import { baselineToSnapshot, gitChanges, gitRepoRoot, gitSnapshot, pathsSinceBaseline } from "./git.ts";
 import { applyScopePolicy, findScopeViolations, isDirUnderCwd, relativizeToTaskCwd } from "./scope.ts";
 import { resolveRulesync, rulesGitRoot, rulesyncCheck } from "./rules.ts";
-import { appendEvent, hasTurnEnded, readMeta, writeMeta, readTurn, writeTurn, taskDir, lockTask } from "./store.ts";
+import { appendEvent, hasTurnEnded, readMeta, writeMeta, readTurn, writeTurn, taskDir, cancelRequestPath, lockTask } from "./store.ts";
 import { redact } from "./redact.ts";
 import { killGroup } from "./process.ts";
 import type { CheckResult, EventData, TaskStatus } from "./types.ts";
@@ -87,6 +87,10 @@ export async function supervise(id: string): Promise<void> {
   };
   const cancel = () => stop("cancelled");
   process.on("SIGTERM", cancel);
+  // The request file is the portable path (Windows has no signal to send); SIGTERM only makes POSIX react sooner.
+  const cancelFile = cancelRequestPath(id, meta.turn);
+  const cancelWatch = setInterval(() => { if (fs.existsSync(cancelFile)) { clearInterval(cancelWatch); cancel(); } }, 250);
+  cancelWatch.unref();
   try {
     meta.supervisor_pid = process.pid;
     meta.heartbeat_at = new Date().toISOString();
@@ -351,4 +355,5 @@ export async function supervise(id: string): Promise<void> {
   if (hasTurnEnded(id, meta.turn)) save();
   else emit({ type: "turn_ended", status: final, exit_code: code });
   process.off("SIGTERM", cancel);
+  clearInterval(cancelWatch);
 }
