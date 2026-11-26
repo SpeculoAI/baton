@@ -97,6 +97,26 @@ test("ensureIgnored: appends to .gitignore if not ignored, leaves it alone if al
   }
 });
 
+test("ensureIgnored and addWorktree do not duplicate .gitignore when worktree root dir does not exist yet (#84)", () => {
+  for (const pattern of [".worktrees/", "/.worktrees/", ".worktrees"]) {
+    const { cwd, cleanup } = tempRepo();
+    try {
+      const initial = `.env\n.impeccable/\n${pattern}\n`;
+      writeFileSync(path.join(cwd, ".gitignore"), initial);
+      const root = path.join(cwd, ".worktrees");
+      assert.equal(existsSync(root), false);
+      assert.equal(ensureIgnored(cwd, root), false);
+      assert.equal(readFileSync(path.join(cwd, ".gitignore"), "utf8"), initial);
+
+      const added = addWorktree(cwd, { name: "idempotent" });
+      assert.equal(added.gitignore_updated, false);
+      assert.equal(readFileSync(path.join(cwd, ".gitignore"), "utf8"), initial);
+    } finally {
+      cleanup();
+    }
+  }
+});
+
 test("assertNotNestedWorktree: main repo passes, linked worktree is rejected", () => {
   const { cwd, git, cleanup } = tempRepo();
   try {
