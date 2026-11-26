@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import spawn from "cross-spawn";
 import { createInterface } from "node:readline";
 import { getAdapter } from "./adapters/index.ts";
 import { buildPrompt, interpret } from "./contract.ts";

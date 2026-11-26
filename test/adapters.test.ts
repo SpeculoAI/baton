@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fakeBin } from "./helpers.ts";
-import { execFileSync } from "node:child_process";
+import crossSpawn from "cross-spawn";
+import { exe, fakeBin } from "./helpers.ts";
 import { codex } from "../src/adapters/codex.ts";
 import { which, authHit } from "../src/adapters/common.ts";
 import { getAdapter } from "../src/adapters/index.ts";
@@ -148,11 +148,22 @@ test("fake CLI resolves via PATH, outputs per fixture and supports exit codes", 
   const dir = path.join(import.meta.dirname, "fake-cli");
   const env = { ...process.env, PATH: dir, BATON_TEST_NODE: process.execPath, FAKE_FIXTURE: path.join(import.meta.dirname, "fixtures/codex.stream.jsonl"), FAKE_SLEEP: "0", FAKE_EXIT: "0", FAKE_HANG: "0" };
   const bin = which(["codex"], env);
-  assert.equal(bin, path.join(dir, "codex"));
-  assert.match(execFileSync(bin!, [], { env, encoding: "utf8", input: "prompt" }), /thread.started/);
-  assert.throws(() => execFileSync(bin!, [], { env: { ...env, FAKE_EXIT: "3" }, input: "prompt" }), (error: unknown) => (error as { status: number }).status === 3);
+  assert.equal(bin, path.join(dir, exe("codex")));
+  assert.match(crossSpawn.sync(bin!, [], { env, encoding: "utf8", input: "prompt" }).stdout, /thread.started/);
+  assert.equal(crossSpawn.sync(bin!, [], { env: { ...env, FAKE_EXIT: "3" }, input: "prompt" }).status, 3);
   assert.equal(which(["missing"], env), null);
   assert.ok(authHit("NOT LOGGED IN", ["not logged in"]));
+});
+
+test("which on Windows finds .exe and .cmd by PATHEXT, never the extensionless npm shim", { skip: process.platform !== "win32" }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "baton-bin-"));
+  fs.writeFileSync(path.join(dir, "tool"), "#!/bin/sh\n"); // what npm puts next to tool.cmd
+  fs.writeFileSync(path.join(dir, "tool.cmd"), "@exit /b 0\r\n");
+  fs.writeFileSync(path.join(dir, "other.exe"), "");
+  assert.equal(which(["tool"], { PATH: dir }), path.join(dir, "tool.cmd"));
+  assert.equal(which(["other"], { Path: dir, PATHEXT: ".EXE;.CMD" }), path.join(dir, "other.exe"));
+  assert.equal(which(["tool"], { PATH: dir, PATHEXT: ".EXE" }), null);
+  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test("adapter rules: coverage matrix and rulesyncTarget / gates", () => {

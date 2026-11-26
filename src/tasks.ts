@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
+import crossSpawn from "cross-spawn";
 import { once } from "node:events";
 import { adapters, getAdapter } from "./adapters/index.ts";
 import { resolveCursorModelArg } from "./adapters/cursor.ts";
@@ -468,7 +469,7 @@ export function agents(env: NodeJS.ProcessEnv = process.env): { id: string; inst
   return Object.values(adapters).map((adapter) => {
     const bin = adapter.resolve(env);
     if (!bin) return { id: adapter.id, installed: false, bin: null, version: null };
-    const ran = spawnSync(bin, ["--version"], { encoding: "utf8", timeout: 5000, env });
+    const ran = crossSpawn.sync(bin, ["--version"], { encoding: "utf8", timeout: 5000, env });
     const version = `${ran.stdout || ""}\n${ran.stderr || ""}`.trim().split("\n").filter(Boolean)[0] || null;
     return { id: adapter.id, installed: true, bin, version };
   });
