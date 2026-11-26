@@ -96,7 +96,7 @@ function positive(value: number, name: string): number {
 const SUPERVISOR_READY_MS = 15_000;
 
 async function launch(id: string): Promise<void> {
-  const child = spawn(process.execPath, [path.join(import.meta.dirname, `cli${path.extname(import.meta.filename)}`), "_supervise", id], { detached: true, stdio: "ignore", env: process.env });
+  const child = spawn(process.execPath, [path.join(import.meta.dirname, `cli${path.extname(import.meta.filename)}`), "_supervise", id], { detached: true, windowsHide: true, stdio: "ignore", env: process.env });
   await once(child, "spawn");
   let exited = false;
   child.once("exit", () => { exited = true; });

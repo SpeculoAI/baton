@@ -395,7 +395,13 @@ function prepareWorktree(repo: string, worktreePath: string, cfg: WorktreeConfig
       const dest = path.join(worktreePath, name);
       if (!fs.existsSync(src)) continue;
       if (fs.existsSync(dest)) fs.rmSync(dest, { recursive: true, force: true });
-      fs.symlinkSync(src, dest);
+      try {
+        // junction: Windows lets any user link a directory this way; file links need Developer Mode or admin.
+        fs.symlinkSync(src, dest, fs.statSync(src).isDirectory() ? "junction" : "file");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EPERM") throw error;
+        throw new Error(`cannot symlink ${name}: Windows needs Developer Mode or admin rights for file links; list it under "copy" in .baton.json instead.`);
+      }
     }
   }
   for (const command of cfg.post_create) {
