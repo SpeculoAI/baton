@@ -248,8 +248,7 @@ export async function rulesInit(input: {
     if (choice === "project" && projectUnavailable) {
       return { ...base, status: "failed", detail: `Cannot install rulesync into the project: ${projectUnavailable}` };
     }
-    const npm = process.platform === "win32" ? "npm.cmd" : "npm";
-    const command = choice === "project" ? [npm, "install", "-D", "rulesync"] : [npm, "install", "-g", "rulesync"];
+    const command = choice === "project" ? ["npm", "install", "-D", "rulesync"] : ["npm", "install", "-g", "rulesync"];
     if (input.dryRun) return { ...base, status: "planned", install: { choice, ok: false, command } };
     prompt?.step?.(`Installing rulesync (${command.slice(1).join(" ")})…`);
     const ran = await run(command[0]!, command.slice(1), root ?? input.cwd);

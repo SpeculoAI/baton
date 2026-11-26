@@ -3,7 +3,7 @@ import path from "node:path";
 
 // Windows variable names are case-insensitive ("Path"), but a copied env object is not.
 const envValue = (env: NodeJS.ProcessEnv, key: string) =>
-  process.platform === "win32" ? env[Object.keys(env).find((name) => name.toUpperCase() === key) ?? key] : env[key];
+  process.platform === "win32" ? env[key] ?? env[Object.keys(env).find((name) => name.toUpperCase() === key) ?? key] : env[key];
 
 // Windows: only the extensions cross-spawn can run. The extensionless npm shim next to a .cmd is a sh script and must not match.
 function fileNames(name: string, env: NodeJS.ProcessEnv): string[] {

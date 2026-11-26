@@ -35,9 +35,9 @@ function installLocalBin(root: string) {
 function fakeRun(root: string, opts: { ops?: Array<Record<string, unknown>>; npmFails?: boolean; npmInstalls?: boolean } = {}) {
   const calls: string[] = [];
   const run: RunFn = async (command, args) => {
-    calls.push([path.basename(command), ...args].join(" "));
+    calls.push([path.parse(command).name, ...args].join(" "));
     const ok = { status: 0, stdout: "", stderr: "" };
-    if (path.basename(command).startsWith("npm")) {
+    if (path.parse(command).name.startsWith("npm")) {
       if (opts.npmFails) return { status: 1, stdout: "", stderr: "EACCES: permission denied" };
       if (opts.npmInstalls !== false && args.includes("-D")) installLocalBin(root);
       return ok;

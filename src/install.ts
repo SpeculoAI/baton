@@ -144,7 +144,7 @@ export function planInstall(input: {
   if (input.action === "uninstall" || input.skipGlobal) return { hosts, missing };
   const version = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")).version as string;
   const spec = input.action === "update" ? "@speculoai/baton@latest" : `@speculoai/baton@${version}`;
-  return { hosts, missing, global: { command: [process.platform === "win32" ? "npm.cmd" : "npm", "install", "-g", spec] } };
+  return { hosts, missing, global: { command: ["npm", "install", "-g", spec] } };
 }
 
 export function readInstalled(home = batonHome()): string[] {

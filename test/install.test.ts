@@ -115,7 +115,7 @@ test("global install failure still continues; hard failure writes no record; sof
     env: { PATH: dir },
     home,
     spawn(command, args) {
-      calls.push(`${path.basename(command)} ${args.join(" ")}`);
+      calls.push(`${path.parse(command).name} ${args.join(" ")}`);
       if (command === "npm") return { status: 1, stderr: "EACCES" };
       if (args.at(-1) === "baton@speculoai") return { status: 1, stderr: "install failed" };
       return { status: 0 };
