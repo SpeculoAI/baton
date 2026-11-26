@@ -24,9 +24,14 @@ test("pathInScope: exact path without wildcard", () => {
   assert.equal(pathInScope("src/auth.ts", ["src/other.ts"]), false);
 });
 
-test("pathInScope: **/* does not match dotdir without explicit segment", () => {
-  assert.equal(pathInScope(".github/workflows/a.yml", ["**/*"]), false);
+test("pathInScope: wildcards match dotfiles and dotdirs (#72)", () => {
+  assert.equal(pathInScope("services/npm-cache/.env.example", ["services/npm-cache/**"]), true);
+  assert.equal(pathInScope("services/cubesandbox/vite-react/.dockerignore", ["services/cubesandbox/vite-react/**"]), true);
+  assert.equal(pathInScope("app/.npmrc", ["app/*"]), true);
+  assert.equal(pathInScope(".github/workflows/a.yml", ["**/*"]), true);
   assert.equal(pathInScope(".github/workflows/a.yml", ["**/.github/**"]), true);
+  assert.equal(pathInScope(".env", ["[.]env"]), true);
+  assert.equal(pathInScope("other/.env", ["services/**"]), false);
 });
 
 test("validateScopeGlob rejects empty and negation", () => {

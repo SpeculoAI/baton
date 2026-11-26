@@ -13,6 +13,8 @@ test("build output runs: version and start launch dist/cli.js _supervise", async
   t.after(() => fs.rmSync(out, { recursive: true, force: true }));
   await exec(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"), "-p", path.join(root, "tsconfig.build.json"), "--outDir", path.join(out, "dist")], { cwd: root, timeout: 60000 });
   fs.copyFileSync(path.join(root, "package.json"), path.join(out, "package.json"));
+  // Like an installed package, dist resolves its runtime dependencies (picomatch) from node_modules.
+  fs.symlinkSync(path.join(root, "node_modules"), path.join(out, "node_modules"));
   const cli = path.join(out, "dist", "cli.js");
 
   const version = JSON.parse((await exec(process.execPath, [cli, "version"], { cwd: out, timeout: 8000 })).stdout);
