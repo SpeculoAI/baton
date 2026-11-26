@@ -40,8 +40,8 @@ export const claude: Adapter = {
     const modelArg = model?.trim() || undefined;
     if (modelArg) args.push("--model", modelArg);
     if (sessionId) args.push("--resume", sessionId);
-    args.push(prompt);
-    return { command: bin, args, stdin: null, modelArg };
+    // The prompt goes through stdin: argv would pass through cmd.exe for a .cmd shim on Windows, which cuts it at the first newline.
+    return { command: bin, args, stdin: prompt, modelArg };
   },
   sessionIdFrom(line) {
     const obj = parse(line);

@@ -31,11 +31,14 @@ test("task store validates UUIDs, isolates BATON_HOME and protects permissions",
   writeTurn(id, { turn: 1, author: "host", prompt: "hi", status: "running" });
   assert.deepEqual(readMeta(id), meta);
   assert.deepEqual(listTasks(), [meta]);
-  for (const dir of [home, path.join(home, "tasks"), taskDir(id), path.join(taskDir(id), "turns"), path.join(taskDir(id), "raw")]) {
-    assert.equal(fs.statSync(dir).mode & 0o777, 0o700);
-  }
-  for (const file of ["meta.json", "events.jsonl", "turns/1.json"]) {
-    assert.equal(fs.statSync(path.join(taskDir(id), file)).mode & 0o777, 0o600);
+  // Windows ignores mode bits; the user-profile ACL protects the files instead.
+  if (process.platform !== "win32") {
+    for (const dir of [home, path.join(home, "tasks"), taskDir(id), path.join(taskDir(id), "turns"), path.join(taskDir(id), "raw")]) {
+      assert.equal(fs.statSync(dir).mode & 0o777, 0o700);
+    }
+    for (const file of ["meta.json", "events.jsonl", "turns/1.json"]) {
+      assert.equal(fs.statSync(path.join(taskDir(id), file)).mode & 0o777, 0o600);
+    }
   }
   assert.equal(JSON.parse(fs.readFileSync(path.join(taskDir(id), "events.jsonl"), "utf8")).text, "hi");
   process.env.BATON_HOME = "";

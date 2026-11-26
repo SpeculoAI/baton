@@ -24,10 +24,11 @@ export const agy: Adapter = {
     return which(["agy"], env);
   },
   build({ bin, prompt, sessionId, reasoningEffort, mode }) {
-    const args = ["--print", prompt, "--mode", mode === "readonly" ? "plan" : "accept-edits", "--output-format", "stream-json"];
+    // Verified 2026-11-25: agy has no plain-text stdin. `--print=` (empty) plus stream-json input reads one {"event":"user","message":{"content":…}} line per turn from stdin.
+    const args = ["--print=", "--mode", mode === "readonly" ? "plan" : "accept-edits", "--input-format", "stream-json", "--output-format", "stream-json"];
     if (reasoningEffort) args.push("--effort", reasoningEffort === "ultra" ? "max" : reasoningEffort);
     if (sessionId) args.push("--conversation", sessionId);
-    return { command: bin, args, stdin: null };
+    return { command: bin, args, stdin: `${JSON.stringify({ event: "user", message: { content: prompt } })}\n` };
   },
   sessionIdFrom(line) {
     const obj = parse(line);

@@ -49,8 +49,8 @@ export const cursor: Adapter = {
     const modelArg = resolveCursorModelArg(model, reasoningEffort);
     if (modelArg) args.push("--model", modelArg);
     if (sessionId) args.push("--resume", sessionId);
-    args.push(prompt);
-    return { command: bin, args, stdin: null, modelArg: modelArg ?? undefined };
+    // Prompt on stdin, not argv (see claude.ts).
+    return { command: bin, args, stdin: prompt, modelArg: modelArg ?? undefined };
   },
   sessionIdFrom(line) {
     const obj = parse(line);

@@ -145,7 +145,8 @@ test("apply: one local commit with trailers, same change as diff; Baton files st
   const applied = await s.run<Applied>("apply", done.task_id);
   assert.equal(applied.status, "applied");
   assert.equal(applied.removed, false);
-  assert.equal(applied.repo, fs.realpathSync(s.cwd));
+  // git reports C:/long/path on Windows; the cwd may be an 8.3 short name.
+  assert.equal(path.normalize(applied.repo), fs.realpathSync.native(s.cwd));
   assert.equal(applied.commit, git(s.cwd, "rev-parse", "HEAD").trim());
   assert.equal(git(s.cwd, "rev-parse", "HEAD~1").trim(), head);
   assert.deepEqual(applied.files, ["committed.txt", "keep.txt", "new.txt"]);
@@ -243,7 +244,7 @@ test("apply --remove deletes the worktree and branch; nothing_to_apply also remo
   workerChanges(done.worktree!.path);
   const applied = await s.run<Applied>("apply", done.task_id, "--remove");
   assert.equal(applied.status, "applied");
-  assert.equal(applied.removed, true);
+  assert.equal(applied.removed, true, JSON.stringify(applied));
   assert.equal(fs.existsSync(done.worktree!.path), false);
   assert.equal(branchExists(s.cwd, done.worktree!.branch), false);
 
@@ -251,7 +252,7 @@ test("apply --remove deletes the worktree and branch; nothing_to_apply also remo
   const head = git(s.cwd, "rev-parse", "HEAD");
   const nothing = await s.run<Applied>("apply", empty.task_id, "--remove");
   assert.equal(nothing.status, "nothing_to_apply");
-  assert.equal(nothing.removed, true);
+  assert.equal(nothing.removed, true, JSON.stringify(nothing));
   assert.equal(git(s.cwd, "rev-parse", "HEAD"), head);
   assert.equal(fs.existsSync(empty.worktree!.path), false);
   assert.equal(branchExists(s.cwd, empty.worktree!.branch), false);

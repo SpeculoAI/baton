@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
+import spawn from "cross-spawn";
 import { adapters } from "./adapters/index.ts";
 import { which } from "./adapters/common.ts";
 import { redact } from "./redact.ts";
@@ -247,8 +248,7 @@ export async function rulesInit(input: {
     if (choice === "project" && projectUnavailable) {
       return { ...base, status: "failed", detail: `Cannot install rulesync into the project: ${projectUnavailable}` };
     }
-    const npm = process.platform === "win32" ? "npm.cmd" : "npm";
-    const command = choice === "project" ? [npm, "install", "-D", "rulesync"] : [npm, "install", "-g", "rulesync"];
+    const command = choice === "project" ? ["npm", "install", "-D", "rulesync"] : ["npm", "install", "-g", "rulesync"];
     if (input.dryRun) return { ...base, status: "planned", install: { choice, ok: false, command } };
     prompt?.step?.(`Installing rulesync (${command.slice(1).join(" ")})…`);
     const ran = await run(command[0]!, command.slice(1), root ?? input.cwd);

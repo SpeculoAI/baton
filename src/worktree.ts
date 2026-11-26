@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
+import crossSpawn from "cross-spawn";
 import { hasRulesyncSource, resolveRulesync, RULE_ENTRIES } from "./rules.ts";
 import { redact } from "./redact.ts";
 
@@ -144,9 +145,17 @@ export function applyTree(repo: string, base: string, tree: string, message: str
 }
 
 /** Delete a task's worktree and branch regardless of their state; true when both are gone. */
-export function removeTaskWorktree(repo: string, worktreePath: string, branch: string): boolean {
-  cleanupWorktree(repo, worktreePath, branch);
-  return !fs.existsSync(worktreePath) && git(repo, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]).status !== 0;
+/** Removes an --isolate worktree and its branch; null on success, otherwise what stayed behind and what git said. */
+export function removeTaskWorktree(repo: string, worktreePath: string, branch: string): string | null {
+  const problems = cleanupWorktree(repo, worktreePath, branch);
+  // Windows keeps a deleted directory visible ("delete pending", or git leaves it) until the last handle on it closes, e.g. a worker that is still exiting.
+  for (let wait = 0; process.platform === "win32" && wait < 20 && fs.existsSync(worktreePath); wait++) {
+    try { fs.rmSync(worktreePath, { recursive: true, force: true }); } catch { /* still held */ }
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+  }
+  if (fs.existsSync(worktreePath)) problems.push(`${worktreePath} still exists`);
+  if (git(repo, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]).status === 0) problems.push(`branch ${branch} still exists`);
+  return problems.length ? problems.join("; ") : null;
 }
 
 function strings(value: unknown): string[] {
@@ -205,8 +214,8 @@ export function assertNotNestedWorktree(cwd: string): void {
   const common = git(cwd, ["rev-parse", "--git-common-dir"]);
   if (dir.status !== 0 || common.status !== 0) throw new Error("Current directory is not a git repository.");
   // realpath: on macOS /var vs /private/var must not look like a linked worktree.
-  const gitDir = fs.realpathSync(path.resolve(cwd, dir.stdout.trim()));
-  const gitCommon = fs.realpathSync(path.resolve(cwd, common.stdout.trim()));
+  const gitDir = fs.realpathSync.native(path.resolve(cwd, dir.stdout.trim()));
+  const gitCommon = fs.realpathSync.native(path.resolve(cwd, common.stdout.trim()));
   if (gitDir === gitCommon) return;
   const superproject = git(cwd, ["rev-parse", "--show-superproject-working-tree"]);
   if (superproject.status === 0 && superproject.stdout.trim()) return;
@@ -229,8 +238,8 @@ export function batonWorktreeExemptPaths(cwd: string): Set<string> {
   const dir = git(cwd, ["rev-parse", "--git-dir"]);
   const common = git(cwd, ["rev-parse", "--git-common-dir"]);
   if (dir.status !== 0 || common.status !== 0) return new Set();
-  const gitDir = fs.realpathSync(path.resolve(cwd, dir.stdout.trim()));
-  const gitCommon = fs.realpathSync(path.resolve(cwd, common.stdout.trim()));
+  const gitDir = fs.realpathSync.native(path.resolve(cwd, dir.stdout.trim()));
+  const gitCommon = fs.realpathSync.native(path.resolve(cwd, common.stdout.trim()));
   if (gitDir === gitCommon) return new Set(); // main checkout
   const top = git(cwd, ["rev-parse", "--show-toplevel"]);
   if (top.status !== 0) return new Set();
@@ -333,7 +342,7 @@ function applyWorktreeRulesync(repo: string, worktreePath: string, cfg: Worktree
   if (!bin) {
     return { rulesync: "skipped", detail: "rulesync not found in node_modules/.bin or PATH", missing, dirtied: [] };
   }
-  const ran = spawnSync(bin, ["generate"], {
+  const ran = crossSpawn.sync(bin, ["generate"], {
     cwd: worktreePath,
     encoding: "utf8",
     env: { ...process.env, BATON_DELEGATION: "1" },
@@ -395,7 +404,13 @@ function prepareWorktree(repo: string, worktreePath: string, cfg: WorktreeConfig
       const dest = path.join(worktreePath, name);
       if (!fs.existsSync(src)) continue;
       if (fs.existsSync(dest)) fs.rmSync(dest, { recursive: true, force: true });
-      fs.symlinkSync(src, dest);
+      try {
+        // junction: Windows lets any user link a directory this way; file links need Developer Mode or admin.
+        fs.symlinkSync(src, dest, fs.statSync(src).isDirectory() ? "junction" : "file");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EPERM") throw error;
+        throw new Error(`cannot symlink ${name}: Windows needs Developer Mode or admin rights for file links; list it under "copy" in .baton.json instead.`);
+      }
     }
   }
   for (const command of cfg.post_create) {
@@ -413,10 +428,13 @@ function prepareWorktree(repo: string, worktreePath: string, cfg: WorktreeConfig
   }
 }
 
-function cleanupWorktree(repo: string, worktreePath: string, branch: string): void {
-  git(repo, ["worktree", "remove", "--force", worktreePath]);
-  git(repo, ["branch", "-D", branch]);
-  git(repo, ["worktree", "prune"]);
+function cleanupWorktree(repo: string, worktreePath: string, branch: string): string[] {
+  const errors: string[] = [];
+  for (const args of [["worktree", "remove", "--force", worktreePath], ["branch", "-D", branch], ["worktree", "prune"]]) {
+    const ran = git(repo, args);
+    if (ran.status !== 0) errors.push(`git ${args.slice(0, 2).join(" ")}: ${(ran.stderr || ran.stdout).trim()}`);
+  }
+  return errors;
 }
 
 function resolveManagedPath(cwd: string, nameOrPath: string): { repo: string; root: string; worktreePath: string; meta: WorktreeMeta } {

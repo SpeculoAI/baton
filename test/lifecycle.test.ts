@@ -2,8 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { once } from "node:events";
+import { pathToFileURL } from "node:url";
 import { sandbox, exec, cli, sleep } from "./helpers.ts";
 import type { TaskMeta } from "../src/types.ts";
 
@@ -34,7 +35,7 @@ test("start returns before the worker finishes; supervisor still writes success 
   assert.equal(s.turn(done.task_id).prompt, "parent lifetime");
   assert.deepEqual(s.events(done.task_id).map((event) => event.type), ["turn_started", "message", "turn_ended"]);
   assert.match(fs.readFileSync(path.join(s.dir(done.task_id), "raw/1.stdout.log"), "utf8"), /thread.started/);
-  assert.equal(fs.statSync(path.join(s.dir(done.task_id), "raw/1.stdout.log")).mode & 0o777, 0o600);
+  if (process.platform !== "win32") assert.equal(fs.statSync(path.join(s.dir(done.task_id), "raw/1.stdout.log")).mode & 0o777, 0o600);
   assert.equal((await s.run("status", done.task_id)).status, "success");
 });
 
@@ -124,12 +125,79 @@ test("supervisor exit after stop_reason still finalizes as that stop, once", asy
   }
 });
 
+test("a cancel request file alone cancels the task: no signal needed (the Windows path)", async (t) => {
+  const s = sandbox(t);
+  const pidFile = path.join(s.home, "request.pid");
+  s.env.FAKE_CHILD_PID_FILE = pidFile;
+  s.env.FAKE_HANG = "1";
+  const started = await s.run("start", "--target", "codex", "--prompt", "hi");
+  await s.until(started.task_id, (m) => !!m.child_pid && fs.existsSync(pidFile));
+  const grandchild = Number(fs.readFileSync(pidFile, "utf8"));
+  fs.writeFileSync(path.join(s.dir(started.task_id), "cancel_requested.1"), "");
+  const done = await s.until(started.task_id);
+  assert.equal(done.status, "cancelled");
+  assert.equal(done.summary, "Cancelled.");
+  await assertProcessGone(grandchild);
+  assert.equal(s.events(started.task_id).filter((event) => event.type === "turn_ended").length, 1);
+});
+
+test("a supervisor that dies after a cancel request leaves the task cancelled, not failed", async (t) => {
+  const s = sandbox(t);
+  const pidFile = path.join(s.home, "stuck.pid");
+  s.env.FAKE_CHILD_PID_FILE = pidFile;
+  s.env.FAKE_HANG = "1";
+  const started = await s.run("start", "--target", "codex", "--prompt", "hi");
+  const running = await s.until(started.task_id, (m) => !!m.child_pid && fs.existsSync(pidFile));
+  const grandchild = Number(fs.readFileSync(pidFile, "utf8"));
+  process.kill(running.supervisor_pid!, "SIGKILL");
+  await assertProcessGone(running.supervisor_pid!);
+  fs.writeFileSync(path.join(s.dir(started.task_id), "cancel_requested.1"), "");
+  const done = await s.run("status", started.task_id);
+  assert.equal(done.status, "cancelled");
+  assert.equal(done.summary, "Cancelled.");
+  await assertProcessGone(grandchild);
+});
+
+test("cancel kills a supervisor that never reacts and still records cancelled", { skip: process.platform === "win32" }, async (t) => {
+  const s = sandbox(t);
+  const pidFile = path.join(s.home, "frozen.pid");
+  s.env.FAKE_CHILD_PID_FILE = pidFile;
+  s.env.FAKE_HANG = "1";
+  const started = await s.run("start", "--target", "codex", "--prompt", "hi");
+  const running = await s.until(started.task_id, (m) => !!m.child_pid && fs.existsSync(pidFile));
+  const grandchild = Number(fs.readFileSync(pidFile, "utf8"));
+  process.kill(running.supervisor_pid!, "SIGSTOP"); // frozen: neither SIGTERM nor the request file is seen
+  const done = await s.run("cancel", started.task_id);
+  assert.equal(done.status, "cancelled");
+  await assertProcessGone(running.supervisor_pid!);
+  await assertProcessGone(grandchild);
+});
+
+test("a cancel request from an earlier turn does not touch the next turn", async (t) => {
+  const s = sandbox(t);
+  const first = await s.run("start", "--target", "codex", "--prompt", "hi");
+  assert.equal((await s.until(first.task_id)).status, "success");
+  fs.writeFileSync(path.join(s.dir(first.task_id), "cancel_requested.1"), "");
+  await s.run("reply", first.task_id, "--prompt", "again");
+  const done = await s.until(first.task_id, (m) => m.turn === 2 && m.status !== "running");
+  assert.equal(done.status, "success");
+});
+
 async function assertProcessGone(pid: number) {
   for (let i = 0; i < 100; i++) {
     try { process.kill(pid, 0); } catch { return; }
     await sleep(20);
   }
-  assert.fail(`process ${pid} did not exit`);
+  assert.fail(`process ${pid} did not exit${describeProcess(pid)}`);
+}
+
+// On Windows say what is still holding the pid; a bare "did not exit" cannot be debugged from CI logs.
+function describeProcess(pid: number): string {
+  if (process.platform !== "win32") return "";
+  try {
+    const out = execFileSync("powershell", ["-NoProfile", "-Command", `Get-CimInstance Win32_Process -Filter "ProcessId=${pid}" | Format-List ProcessId,ParentProcessId,Name,CreationDate,CommandLine`], { encoding: "utf8", timeout: 15000 });
+    return `\n${out.trim()}`;
+  } catch (error) { return ` (could not describe it: ${(error as Error).message})`; }
 }
 
 test("after supervisor is killed, status reports orphaned, kills leftover processes and writes the terminal state only once", async (t) => {
@@ -230,11 +298,11 @@ test("needs_input → reply continues the same session, records human/host autho
   const s = sandbox(t);
   const decision = { type: "item.completed", item: { type: "agent_message", text: "BATON_DECISION\nquestion: Which one?\noptions: A | B\nBATON_END" } };
   fs.writeFileSync(s.fixture, `${JSON.stringify({ type: "thread.started", thread_id: "thread-fake-1" })}\n${JSON.stringify(decision)}\n`);
-  const first = await s.run("start", "--target", "codex", "--prompt", "ask", "--max-duration", "0.6");
+  const first = await s.run("start", "--target", "codex", "--prompt", "ask", "--max-duration", "2");
   const pending = await s.until(first.task_id);
   assert.equal(pending.status, "needs_input");
   assert.deepEqual(pending.decision, { question: "Which one?", options: ["A", "B"] });
-  await sleep(650);
+  await sleep(2100);
   fs.writeFileSync(s.fixture, `${JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "BATON_RESULT\nsummary: continued\nBATON_END" } })}\n`);
   s.env.FAKE_ARGS_FILE = path.join(s.home, "argv.txt");
   s.env.FAKE_INPUT_FILE = path.join(s.home, "stdin.txt");
@@ -330,7 +398,7 @@ test("when supervisor cannot start, meta and the current turn record are both fa
   fs.unlinkSync(path.join(source, "cli.ts"));
   // The copied src still resolves its runtime dependencies (picomatch) through the repo's node_modules.
   fs.symlinkSync(path.resolve(import.meta.dirname, "../node_modules"), path.join(s.home, "node_modules"));
-  const driver = `import { start } from ${JSON.stringify(path.join(source, "tasks.ts"))}; console.log(JSON.stringify(await start({ target: "codex", prompt: "unavailable", cwd: process.cwd() })));`;
+  const driver = `import { start } from ${JSON.stringify(pathToFileURL(path.join(source, "tasks.ts")).href)}; console.log(JSON.stringify(await start({ target: "codex", prompt: "unavailable", cwd: process.cwd() })));`;
   const result = await exec(process.execPath, ["--input-type=module", "-e", driver], { cwd: s.cwd, env: s.env });
   const meta = JSON.parse(result.stdout) as TaskMeta;
   assert.equal(meta.status, "failed");
@@ -343,7 +411,8 @@ test("when supervisor pid exists but heartbeat expired, kill the writer first, t
   s.env.FAKE_HANG = "1";
   const first = await s.run("start", "--target", "codex", "--prompt", "stalled");
   const meta = await s.until(first.task_id, (m) => !!m.session_id);
-  process.kill(meta.supervisor_pid!, "SIGSTOP");
+  // Freezing keeps the supervisor from rewriting meta.json; Windows cannot freeze, but a hung worker emits nothing until the next 10s heartbeat, which is long enough.
+  if (process.platform !== "win32") process.kill(meta.supervisor_pid!, "SIGSTOP");
   fs.writeFileSync(path.join(s.dir(first.task_id), "meta.json"), JSON.stringify({ ...meta, heartbeat_at: new Date(Date.now() - 31_000).toISOString() }));
   const recovered = await s.run("status", first.task_id);
   assert.equal(recovered.liveness, "orphaned");

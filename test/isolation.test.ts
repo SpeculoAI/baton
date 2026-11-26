@@ -233,7 +233,7 @@ test("start --isolate: worktree created; status reports worktree; main untouched
   const started = await s.run("start", "--target", "codex", "--prompt", "hi", "--isolate");
   assert.equal(started.status, "running");
   assert.ok(started.worktree);
-  assert.match(started.worktree!.path, /\.worktrees\/task-[0-9a-f]{8}$/);
+  assert.match(started.worktree!.path, /\.worktrees[\\/]task-[0-9a-f]{8}$/);
   assert.match(started.worktree!.branch, /^baton\/task-[0-9a-f]{8}$/);
   assert.equal(fs.realpathSync(started.worktree!.source_cwd), fs.realpathSync(s.cwd));
   assert.equal(fs.realpathSync(started.cwd), fs.realpathSync(started.worktree!.path));

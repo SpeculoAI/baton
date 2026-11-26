@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fakeBin } from "./helpers.ts";
-import { execFileSync } from "node:child_process";
+import crossSpawn from "cross-spawn";
+import { exe, fakeBin } from "./helpers.ts";
 import { codex } from "../src/adapters/codex.ts";
 import { which, authHit } from "../src/adapters/common.ts";
 import { getAdapter } from "../src/adapters/index.ts";
@@ -47,9 +47,9 @@ test("cursor real stream-json: session, tools, messages; thinking deltas emit no
   const last = events.at(-1);
   assert.equal(last?.type === "message" && last.text, "hi");
   assert.deepEqual(cursor.build({ bin: "c", cwd: "/w", prompt: "p", sessionId: "s1", reasoningEffort: null, model: null }).args,
-    ["--print", "--force", "--trust", "--output-format", "stream-json", "--workspace", "/w", "--resume", "s1", "p"]);
+    ["--print", "--force", "--trust", "--output-format", "stream-json", "--workspace", "/w", "--resume", "s1"]);
   assert.deepEqual(cursor.build({ bin: "c", cwd: "/w", prompt: "p", sessionId: null, reasoningEffort: null, model: "grok-4.7-xhigh" }).args,
-    ["--print", "--force", "--trust", "--output-format", "stream-json", "--workspace", "/w", "--model", "grok-4.7-xhigh", "p"]);
+    ["--print", "--force", "--trust", "--output-format", "stream-json", "--workspace", "/w", "--model", "grok-4.7-xhigh"]);
 });
 
 test("agy real stream-json: tool steps are paired; the full reply comes from result only once; no raw kept", () => {
@@ -63,7 +63,8 @@ test("agy real stream-json: tool steps are paired; the full reply comes from res
   const failed = agy.parseLine(JSON.stringify({ event: "result", result: { status: "ERROR", response: "boom" } }));
   assert.deepEqual(failed?.map((e) => e.type), ["error"]);
   assert.deepEqual(agy.build({ bin: "a", cwd: "/w", prompt: "p", sessionId: "c1", reasoningEffort: "ultra" }).args,
-    ["--print", "p", "--mode", "accept-edits", "--output-format", "stream-json", "--effort", "max", "--conversation", "c1"]);
+    ["--print=", "--mode", "accept-edits", "--input-format", "stream-json", "--output-format", "stream-json", "--effort", "max", "--conversation", "c1"]);
+  assert.deepEqual(JSON.parse(agy.build({ bin: "a", cwd: "/w", prompt: "a\nb", sessionId: null, reasoningEffort: null }).stdin!), { event: "user", message: { content: "a\nb" } });
 });
 
 test("claude real stream-json: hook/init/thinking/rate-limit emit no events; tools are paired; no raw kept", () => {
@@ -79,7 +80,8 @@ test("claude real stream-json: hook/init/thinking/rate-limit emit no events; too
   const failed = claude.parseLine(JSON.stringify({ type: "result", subtype: "error_during_execution", is_error: true, result: "boom" }));
   assert.deepEqual(failed?.map((e) => e.type), ["error"]);
   assert.deepEqual(claude.build({ bin: "c", cwd: "/w", prompt: "p", sessionId: "s1", reasoningEffort: "ultra" }).args,
-    ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits", "--permission-prompts", "none", "--effort", "max", "--resume", "s1", "p"]);
+    ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits", "--permission-prompts", "none", "--effort", "max", "--resume", "s1"]);
+  assert.equal(claude.build({ bin: "c", cwd: "/w", prompt: "p", sessionId: null, reasoningEffort: null }).stdin, "p");
 });
 
 test("cursor resolves cursor-agent first, then falls back to agent", () => {
@@ -141,18 +143,29 @@ test("readonly mode: argv mapping for all four; codex resume still has no sandbo
     ["--print", "--mode", "ask", "--trust", "--output-format", "stream-json", "--workspace"]);
   assert.ok(!getAdapter("cursor")!.build(input).args.includes("--force"));
   assert.deepEqual(getAdapter("agy")!.build(input).args.slice(0, 5),
-    ["--print", "p", "--mode", "plan", "--output-format"]);
+    ["--print=", "--mode", "plan", "--input-format", "stream-json"]);
 });
 
 test("fake CLI resolves via PATH, outputs per fixture and supports exit codes", () => {
   const dir = path.join(import.meta.dirname, "fake-cli");
   const env = { ...process.env, PATH: dir, BATON_TEST_NODE: process.execPath, FAKE_FIXTURE: path.join(import.meta.dirname, "fixtures/codex.stream.jsonl"), FAKE_SLEEP: "0", FAKE_EXIT: "0", FAKE_HANG: "0" };
   const bin = which(["codex"], env);
-  assert.equal(bin, path.join(dir, "codex"));
-  assert.match(execFileSync(bin!, [], { env, encoding: "utf8", input: "prompt" }), /thread.started/);
-  assert.throws(() => execFileSync(bin!, [], { env: { ...env, FAKE_EXIT: "3" }, input: "prompt" }), (error: unknown) => (error as { status: number }).status === 3);
+  assert.equal(bin, path.join(dir, exe("codex")));
+  assert.match(crossSpawn.sync(bin!, [], { env, encoding: "utf8", input: "prompt" }).stdout, /thread.started/);
+  assert.equal(crossSpawn.sync(bin!, [], { env: { ...env, FAKE_EXIT: "3" }, input: "prompt" }).status, 3);
   assert.equal(which(["missing"], env), null);
   assert.ok(authHit("NOT LOGGED IN", ["not logged in"]));
+});
+
+test("which on Windows finds .exe and .cmd by PATHEXT, never the extensionless npm shim", { skip: process.platform !== "win32" }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "baton-bin-"));
+  fs.writeFileSync(path.join(dir, "tool"), "#!/bin/sh\n"); // what npm puts next to tool.cmd
+  fs.writeFileSync(path.join(dir, "tool.cmd"), "@exit /b 0\r\n");
+  fs.writeFileSync(path.join(dir, "other.exe"), "");
+  assert.equal(which(["tool"], { PATH: dir }), path.join(dir, "tool.cmd"));
+  assert.equal(which(["other"], { Path: dir, PATHEXT: ".EXE;.CMD" }), path.join(dir, "other.exe"));
+  assert.equal(which(["tool"], { PATH: dir, PATHEXT: ".EXE" }), null);
+  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test("adapter rules: coverage matrix and rulesyncTarget / gates", () => {

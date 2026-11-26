@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync, readFileSync, existsSync, lstatSync, realpathSync as fsRealpath } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync, readFileSync, existsSync, lstatSync, realpathSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import {
@@ -14,6 +14,9 @@ import {
   removeWorktree,
   matchBasename,
 } from "../src/worktree.ts";
+
+// Windows temp dirs come as 8.3 short names (RUNNER~1); only the native variant expands them.
+const fsRealpath = realpathSync.native;
 
 function tempRepo(): { cwd: string; git: (args: string[]) => string; cleanup: () => void } {
   const cwd = mkdtempSync(path.join(os.tmpdir(), "baton-wt-"));

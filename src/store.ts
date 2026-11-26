@@ -10,6 +10,11 @@ export function batonHome(): string {
   return path.resolve(process.env.BATON_HOME || path.join(os.homedir(), ".baton"));
 }
 
+/** A cancel request is a file, not a signal: Windows cannot deliver one, and a file also survives a supervisor that has not started yet. One per turn, so a later reply is not hit by an old request. */
+export function cancelRequestPath(id: string, turn: number): string {
+  return path.join(taskDir(id), `cancel_requested.${turn}`);
+}
+
 export function taskDir(id: string): string {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw new Error("task_id must be a UUID.");
   return path.join(batonHome(), "tasks", id);
@@ -24,11 +29,23 @@ export function ensureTask(id: string): string {
   return dir;
 }
 
+// Windows refuses to replace a file another process has open (EPERM/EBUSY/EACCES), and `start` polls meta.json while the supervisor rewrites it.
+// Readers hold it for microseconds, so a short bounded retry is enough. POSIX never needs it.
+function renameReplacing(from: string, to: string): void {
+  for (let attempt = 0; ; attempt++) {
+    try { return fs.renameSync(from, to); } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (process.platform !== "win32" || (code !== "EPERM" && code !== "EBUSY" && code !== "EACCES") || attempt >= 20) throw error;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+    }
+  }
+}
+
 function writeJson(file: string, value: unknown): void {
   const tmp = `${file}.${randomUUID()}.tmp`;
   try {
     fs.writeFileSync(tmp, JSON.stringify(value), { mode: 0o600, flag: "wx" });
-    fs.renameSync(tmp, file);
+    renameReplacing(tmp, file);
   } finally {
     fs.rmSync(tmp, { force: true });
   }
