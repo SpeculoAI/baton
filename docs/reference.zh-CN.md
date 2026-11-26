@@ -292,7 +292,7 @@ baton agents
 
 ### 命令行
 
-所有命令都只输出一个 JSON 对象（`tail` 和 `result` 除外），出错时退出码非 0。`baton` 是 `@speculoai/baton` 提供的全局命令。
+所有命令都只输出一个 JSON 对象（`tail`、`result`、`diff` 和帮助除外），出错时退出码非 0。`baton` 是 `@speculoai/baton` 提供的全局命令。`baton --help` 列出全部命令；`baton <命令> -h` / `--help` 以纯文本输出该命令的选项、默认值和示例，退出码为 0。
 
 ```bash
 baton agents
