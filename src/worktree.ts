@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
+import crossSpawn from "cross-spawn";
 import { hasRulesyncSource, resolveRulesync, RULE_ENTRIES } from "./rules.ts";
 import { redact } from "./redact.ts";
 
@@ -333,7 +334,7 @@ function applyWorktreeRulesync(repo: string, worktreePath: string, cfg: Worktree
   if (!bin) {
     return { rulesync: "skipped", detail: "rulesync not found in node_modules/.bin or PATH", missing, dirtied: [] };
   }
-  const ran = spawnSync(bin, ["generate"], {
+  const ran = crossSpawn.sync(bin, ["generate"], {
     cwd: worktreePath,
     encoding: "utf8",
     env: { ...process.env, BATON_DELEGATION: "1" },

@@ -61,6 +61,9 @@ function failureSummary(stdout: string, stderr: string) {
   return (withoutHtml(stderr) || withoutHtml(stdout)).slice(-8192);
 }
 
+// Only POSIX needs a process group (killGroup). On Windows a detached child under a .cmd shim never produces output, and taskkill /T finds the tree through parent pids anyway.
+const DETACHED = process.platform !== "win32";
+
 export async function supervise(id: string): Promise<void> {
   // Test hook: simulate a slow ("<ms>") or crashing ("exit") supervisor start.
   const hook = process.env.BATON_TEST_SUPERVISE_START;
@@ -113,7 +116,7 @@ export async function supervise(id: string): Promise<void> {
     const beat = setInterval(() => { meta.heartbeat_at = new Date().toISOString(); save(); }, 10_000);
     let idleTimer: NodeJS.Timeout | undefined;
     try {
-      const child = spawn(command, { shell: true, cwd: meta.cwd, env: { ...process.env, BATON_DELEGATION: "1" }, detached: true, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+      const child = spawn(command, { shell: true, cwd: meta.cwd, env: { ...process.env, BATON_DELEGATION: "1" }, detached: DETACHED, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
       childPid = child.pid ?? null;
       meta.child_pid = childPid;
       save();
@@ -199,7 +202,7 @@ export async function supervise(id: string): Promise<void> {
       fs.writeFileSync(spec.lastMessagePath, "", { mode: 0o600, flag: "wx" });
       lastMessageCreated = true;
     }
-    const child = spawn(spec.command, spec.args, { cwd: meta.cwd, env: { ...process.env, BATON_DELEGATION: "1" }, detached: true, windowsHide: true, stdio: [spec.stdin == null ? "ignore" : "pipe", "pipe", "pipe"] });
+    const child = spawn(spec.command, spec.args, { cwd: meta.cwd, env: { ...process.env, BATON_DELEGATION: "1" }, detached: DETACHED, windowsHide: true, stdio: [spec.stdin == null ? "ignore" : "pipe", "pipe", "pipe"] });
     childPid = child.pid ?? null;
     meta.child_pid = childPid;
     if (stopped) killGroup(childPid);
