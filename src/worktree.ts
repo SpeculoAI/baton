@@ -147,9 +147,10 @@ export function applyTree(repo: string, base: string, tree: string, message: str
 /** Delete a task's worktree and branch regardless of their state; true when both are gone. */
 /** Removes an --isolate worktree and its branch; null on success, otherwise what stayed behind and what git said. */
 export function removeTaskWorktree(repo: string, worktreePath: string, branch: string): string | null {
-  const errors = cleanupWorktree(repo, worktreePath, branch);
-  const gone = !fs.existsSync(worktreePath) && git(repo, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]).status !== 0;
-  return gone ? null : errors.join("; ") || "worktree or branch still present";
+  const problems = cleanupWorktree(repo, worktreePath, branch);
+  if (fs.existsSync(worktreePath)) problems.push(`${worktreePath} still exists`);
+  if (git(repo, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]).status === 0) problems.push(`branch ${branch} still exists`);
+  return problems.length ? problems.join("; ") : null;
 }
 
 function strings(value: unknown): string[] {
