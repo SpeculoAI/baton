@@ -327,6 +327,8 @@ test("when supervisor cannot start, meta and the current turn record are both fa
   const source = path.join(s.home, "src");
   fs.cpSync(path.resolve(import.meta.dirname, "../src"), source, { recursive: true });
   fs.unlinkSync(path.join(source, "cli.ts"));
+  // The copied src still resolves its runtime dependencies (picomatch) through the repo's node_modules.
+  fs.symlinkSync(path.resolve(import.meta.dirname, "../node_modules"), path.join(s.home, "node_modules"));
   const driver = `import { start } from ${JSON.stringify(path.join(source, "tasks.ts"))}; console.log(JSON.stringify(await start({ target: "codex", prompt: "unavailable", cwd: process.cwd() })));`;
   const result = await exec(process.execPath, ["--input-type=module", "-e", driver], { cwd: s.cwd, env: s.env });
   const meta = JSON.parse(result.stdout) as TaskMeta;

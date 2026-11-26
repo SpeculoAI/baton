@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import picomatch from "picomatch";
 import type { TaskStatus } from "./types.ts";
 
 export type ScopeMatchOptions = {
@@ -51,7 +52,8 @@ export function pathInScope(filePath: string, globs: string[], opts: ScopeMatchO
     const glob = normalizeRel(raw);
     if (!glob) continue;
     if (hasWildcard(glob)) {
-      if (path.matchesGlob(file, glob)) return true;
+      // dot: `dir/**` must cover dotfiles like `.env.example` (#72); path.matchesGlob cannot opt in.
+      if (picomatch.isMatch(file, glob, { dot: true })) return true;
       continue;
     }
     if (file === glob) return true;
