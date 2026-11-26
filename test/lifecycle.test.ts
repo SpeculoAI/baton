@@ -153,9 +153,10 @@ test("after supervisor is killed, status reports orphaned, kills leftover proces
 
 test("without max_duration, continuous output is not killed; idle timer counts bytes, not whole lines", async (t) => {
   const s = sandbox(t);
-  s.env.FAKE_TICKS = "12";
-  s.env.FAKE_TICK_SLEEP = "0.08";
-  const started = await s.run("start", "--target", "codex", "--prompt", "hi", "--idle-timeout", "0.3");
+  // Ticks arrive every 0.1s, the idle limit is 1s, and the run lasts 3s: wide margins on a slow runner, but a line-based timer would still fire.
+  s.env.FAKE_TICKS = "30";
+  s.env.FAKE_TICK_SLEEP = "0.1";
+  const started = await s.run("start", "--target", "codex", "--prompt", "hi", "--idle-timeout", "1");
   const done = await s.until(started.task_id);
   assert.equal(done.status, "success");
   assert.equal(done.max_duration_s, null);

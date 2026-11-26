@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fakeBin } from "./helpers.ts";
 import { execFileSync } from "node:child_process";
 import { codex } from "../src/adapters/codex.ts";
 import { which, authHit } from "../src/adapters/common.ts";
@@ -83,10 +84,11 @@ test("claude real stream-json: hook/init/thinking/rate-limit emit no events; too
 
 test("cursor resolves cursor-agent first, then falls back to agent", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "baton-bin-"));
-  for (const name of ["agent", "cursor-agent"]) { fs.writeFileSync(path.join(dir, name), "#!/bin/sh\n"); fs.chmodSync(path.join(dir, name), 0o755); }
-  assert.equal(getAdapter("cursor")!.resolve({ PATH: dir }), path.join(dir, "cursor-agent"));
-  fs.rmSync(path.join(dir, "cursor-agent"));
-  assert.equal(getAdapter("cursor")!.resolve({ PATH: dir }), path.join(dir, "agent"));
+  const agent = fakeBin(dir, "agent");
+  const cursorAgent = fakeBin(dir, "cursor-agent");
+  assert.equal(getAdapter("cursor")!.resolve({ PATH: dir }), cursorAgent);
+  fs.rmSync(cursorAgent);
+  assert.equal(getAdapter("cursor")!.resolve({ PATH: dir }), agent);
 });
 
 test("codex build keeps fresh/resume and the four effort-level arguments", () => {
@@ -144,7 +146,7 @@ test("readonly mode: argv mapping for all four; codex resume still has no sandbo
 
 test("fake CLI resolves via PATH, outputs per fixture and supports exit codes", () => {
   const dir = path.join(import.meta.dirname, "fake-cli");
-  const env = { ...process.env, PATH: dir, FAKE_FIXTURE: path.join(import.meta.dirname, "fixtures/codex.stream.jsonl"), FAKE_SLEEP: "0", FAKE_EXIT: "0", FAKE_HANG: "0" };
+  const env = { ...process.env, PATH: dir, BATON_TEST_NODE: process.execPath, FAKE_FIXTURE: path.join(import.meta.dirname, "fixtures/codex.stream.jsonl"), FAKE_SLEEP: "0", FAKE_EXIT: "0", FAKE_HANG: "0" };
   const bin = which(["codex"], env);
   assert.equal(bin, path.join(dir, "codex"));
   assert.match(execFileSync(bin!, [], { env, encoding: "utf8", input: "prompt" }), /thread.started/);

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fakeBin } from "./helpers.ts";
 import { spawnSync } from "node:child_process";
 import {
   buildRulesyncReport,
@@ -150,10 +151,7 @@ test("readRulesyncConfig: local overlay, array/object/*, parse failure", () => {
 test("resolveRulesync: project bin before PATH", () => {
   const root = tmp();
   const binDir = path.join(root, "node_modules", ".bin");
-  fs.mkdirSync(binDir, { recursive: true });
-  const local = path.join(binDir, "rulesync");
-  fs.writeFileSync(local, "#!/bin/sh\n");
-  fs.chmodSync(local, 0o755);
+  const local = fakeBin(binDir, "rulesync");
   assert.equal(resolveRulesync(root, undefined, { PATH: "/nope" }), local);
   assert.equal(resolveRulesync(tmp(), undefined, { PATH: "" }), null);
 });

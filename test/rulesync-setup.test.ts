@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { exec } from "./helpers.ts";
+import { exec, fakeBin } from "./helpers.ts";
 import { classifyPlan, detectSources, rulesInit, rulesyncTargets, type Preview, type RulesPrompter, type RunFn } from "../src/rulesync-setup.ts";
 
 const cli = path.resolve(import.meta.dirname, "../src/cli.ts");
@@ -28,8 +28,7 @@ function write(root: string, rel: string, text: string) {
 }
 
 function installLocalBin(root: string) {
-  write(root, "node_modules/.bin/rulesync", "#!/bin/sh\n");
-  fs.chmodSync(path.join(root, "node_modules/.bin/rulesync"), 0o755);
+  fakeBin(path.join(root, "node_modules/.bin"), "rulesync");
 }
 
 /** In-process stand-in for npm and rulesync. `ops` is what `generate --dry-run --json` reports. */
