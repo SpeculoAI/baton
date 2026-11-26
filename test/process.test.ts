@@ -34,3 +34,21 @@ test("killGroup ignores a process that already exited", async () => {
   await once(child, "exit");
   assert.doesNotThrow(() => killGroup(child.pid!));
 });
+
+test("killGroup kills the children of a root that is already gone (Windows: libuv's job ends cmd.exe, its child lives on)", { skip: process.platform !== "win32" }, async (t) => {
+  // P (a node with libuv's kill-on-close job) starts cmd.exe, which starts node N. Killing P ends cmd.exe; N keeps cmd.exe's dead pid as parent.
+  const code = "const c=require('child_process').spawn('cmd.exe',['/d','/s','/c','\"'+process.execPath+'\" -e \"console.log(process.pid);setInterval(()=>{},1000)\"'],{windowsVerbatimArguments:true,stdio:['ignore','pipe','inherit']});console.log('C '+c.pid);c.stdout.on('data',(d)=>console.log('N '+d));setInterval(()=>{},1000)";
+  const parent = spawn(process.execPath, ["-e", code], { stdio: ["ignore", "pipe", "inherit"] });
+  t.after(() => { try { parent.kill("SIGKILL"); } catch { /* gone */ } });
+  let seen = "";
+  while (!/C \d+\s+N \d+/.test(seen)) { const [chunk] = await once(parent.stdout, "data"); seen += chunk; }
+  const [, root, orphan] = /C (\d+)\s+N (\d+)/.exec(seen)!.map(Number);
+  t.after(() => { try { process.kill(orphan!, "SIGKILL"); } catch { /* gone */ } });
+  parent.kill("SIGKILL");
+  for (let i = 0; i < 100 && isAlive(root!); i++) await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.ok(!isAlive(root!), "cmd.exe should end with its parent");
+  assert.ok(isAlive(orphan!), "its child should have survived");
+  killGroup(root!);
+  for (let i = 0; i < 100 && isAlive(orphan!); i++) await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.ok(!isAlive(orphan!), "orphan still alive");
+});
