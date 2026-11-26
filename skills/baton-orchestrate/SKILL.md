@@ -70,7 +70,7 @@ Do not use (prefer `baton-rescue` or stay in the host):
 6. While jobs are `running`, `liveness` tells you whether each is `active`, `quiet` (alive, silent for `quiet_for_s`), or `orphaned` (supervisor died; finalized as `failed` on the next read). `reply` on a running job returns `busy`.
 7. When every node is terminal, return one summary: vendors, statuses, summaries, `git_changes`, reworks, fail-overs, worktree path/branch if isolated.
 
-Tell the user they can watch any job with `baton tail -f <id>` and list them with `baton ls`.
+Tell the user they can watch any job with `baton tail -f <id>` and list them with `baton ls`. If baton itself misbehaves (crash, stuck state, MCP error, doc mismatch), run `baton report [task_id]`, show the redacted output to the user, and ask before submitting an issue (never run `--submit` or `gh issue create` silently).
 
 ## Notify the host
 

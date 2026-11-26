@@ -130,6 +130,15 @@ export const COMMANDS = {
     options: UNINSTALL_OPTIONS,
   },
   mcp: { usage: "baton mcp", summary: "Start the MCP server on stdio." },
+  report: {
+    usage: "baton report [task_id] [--title <text>] [--submit]",
+    summary: "Generate a redacted diagnostic report and GitHub issue link (optionally submit).",
+    options: {
+      title: { type: "string", arg: "text", desc: "Issue title override" },
+      submit: { type: "boolean", desc: "Create the issue via gh if logged in, otherwise open the prefilled form in a browser" },
+    },
+    notes: ["Never includes prompts, raw logs, file names, or credentials; still review before posting."],
+  },
 } as const satisfies Record<string, Cmd>;
 
 export type CommandName = keyof typeof COMMANDS;

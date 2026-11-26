@@ -116,6 +116,7 @@ If no target is named, the task goes to `codex`, or to `claude` when you are alr
 | `baton cancel` / `ls` / `prune` | Stops a job, lists jobs, or deletes old ones. |
 | `baton worktree add/ls/rm` | Gives a job its own git worktree so it doesn't touch your checkout. |
 | `baton rules init` | Installs and initializes rulesync for the current project, previewing changes before writing. |
+| `baton report [id]` | Prints a redacted diagnostic report and prefilled GitHub issue link (`--submit` uses `gh` or opens a browser). |
 | `baton mcp` | Runs the same operations as an MCP server for hosts that can't run shell commands. |
 
 Every command prints exactly one JSON object, so the host agent can read it reliably. See the [full flag list and statuses](docs/reference.md#command-line).

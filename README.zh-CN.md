@@ -116,6 +116,7 @@ baton tail -f <task_id>
 | `baton cancel` / `ls` / `prune` | 停止任务、列出任务、清理旧任务。 |
 | `baton worktree add/ls/rm` | 给任务单独开一个 git worktree，不碰你的工作目录。 |
 | `baton rules init` | 为当前项目安装并初始化 rulesync，写入前先预览改动。 |
+| `baton report [id]` | 生成脱敏诊断报告和预填 GitHub issue 链接（`--submit` 有 `gh` 直接提，否则在浏览器打开）。 |
 | `baton mcp` | 以 MCP 服务器的形式提供同样的操作，给不能跑 shell 的宿主用。 |
 
 每个命令都只输出一个 JSON 对象，主控 Agent 读起来不会出错。全部参数和状态见[完整手册](docs/reference.zh-CN.md#命令行)。

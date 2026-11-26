@@ -107,3 +107,4 @@ While `running`, read `liveness`:
 - `baton tail <task_id> [-f] [--raw]`: readable event log; `-f` follows until the job stops.
 - `baton cancel <task_id>`: stop it (kills the whole process group). Use when the user wants to stop.
 - `baton ls [--all]`: jobs for this directory (or all), newest first.
+- `baton report [task_id]`: generate a redacted diagnostic report and GitHub issue link. Only use when baton itself misbehaves (crash, stuck state, MCP error, doc mismatch) — show the report to the user and ask before running `--submit` or filing an issue.
