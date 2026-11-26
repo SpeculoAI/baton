@@ -26,7 +26,7 @@ Spec: `SPEC-native-windows.md` · Plan: `tasks/plan.md`
 **Verification**：
 - [x] 输出里能看到复述的第二行，与原文逐字节一致。
 
-**Result（2026-11-25）**：已完成，详见 spec 的 "T0 验证结果"。agy 带 `--conversation` 续接时是否正常，T8 时因 agy 额度用完未能验证，待额度恢复后补测。
+**Result（2026-11-25 / 2026-11-26）**：已完成，详见 spec 的 "T0 验证结果"。agy 带 `--conversation` 续接已于 2026-11-26（macOS，`agy 1.5.18`）经 `baton start` → `reply` 补测通过，两轮上下文和特殊字符均逐字节一致。
 
 **Dependencies**：无
 **Files likely touched**：`SPEC-native-windows.md`
