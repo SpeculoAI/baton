@@ -83,7 +83,7 @@ export function createServer(): McpServer {
     inputSchema: { task_id: z.string(), remove: z.boolean().optional() },
   }, (args) => respond(() => apply(args.task_id, { remove: args.remove })));
   server.registerTool("task_reply", {
-    description: "After a task stops at needs_input, success, scope_violation, readonly_violation or check_failed, start the next turn in the same session. as=human means a human said it; default host. Returns busy while running.",
+    description: "Start the next turn when the task has a session and its status is needs_input, success, scope_violation, readonly_violation, check_failed, quota_exceeded, or not_authenticated. Use as=human for the user's words. The default is host. Returns busy while running.",
     inputSchema: { task_id: z.string(), prompt: z.string(), as: z.enum(["host", "human"]).optional(), files: FILES_SCHEMA },
   }, (args) => respond(() => reply(args.task_id, args.prompt, (args.as ?? "host") as Author, args.files)));
   server.registerTool("task_cancel", {

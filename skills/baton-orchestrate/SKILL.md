@@ -96,8 +96,9 @@ Tools hint: If you have codegraph available, prefer it over repeated grep.
    - **Acceptance failed after `success`:** rework in the same conversation with `baton reply <id> --prompt "<focused fix>"`, up to the rework cap (default 1); then wait again.
    - **Cannot verify:** report what remains unverified; do **not** claim accepted; do not unblock dependents that need a verified pass (ask the host if the graph is stuck).
    - **`failed` / `timed_out`:** the task is closed. Start a new task for the same job, either the same vendor with a larger `--idle-timeout` (for `timed_out`) or the next vendor once (for `failed`). Do not dual-run the same edit without cause.
-   - **`not_installed` / `not_authenticated`:** try the next vendor.
-   - **`quota_exceeded`:** stop and ask the host before switching vendor.
+   - **`not_installed`:** try the next vendor.
+   - **`not_authenticated`:** when the task has a session, ask the host to arrange sign-in and use `baton reply` once authentication is restored. If there is no session, try the next vendor.
+   - **`quota_exceeded`:** relay `summary`, including any reset time. Wait for quota to reset, then use `baton reply` when the task has a session. Ask the host before switching vendor.
 6. While jobs are `running`, `liveness` tells you whether each is `active`, `quiet` (alive, silent for `quiet_for_s`), or `orphaned` (supervisor died; finalized as `failed` on the next read). `reply` on a running job returns `busy`.
 7. When every node is terminal, return one summary: vendors, statuses, summaries, `git_changes`, reworks, fail-overs, worktree path/branch if isolated.
 
@@ -116,7 +117,7 @@ Do **not** decide alone when:
 - Rework hits the cap and still fails review (`acceptance failed`)
 - A job is `unverified` and dependents need a verified pass
 - New dependencies appear that were not in the graph
-- `quota_exceeded`
+- A job hits `quota_exceeded` and switching vendors is under consideration
 - Push / open PR / any other irreversible publish step is required
 
 Everything else: notify and keep going.
@@ -172,6 +173,7 @@ Rules:
 - Pass the project's acceptance command as --check "<cmd>"; a passed check counts as verified — do not re-run it; check_failed means rework, not failover
 - Prefer background `wait <ids...> --until-done` when the host wakes on shell exit; else `wait <ids...> --for 50` repeating; never wait one job after another
 - needs_input: ask the host unless earlier instructions decide it; relay the answer with `reply --as human`
+- quota_exceeded or not_authenticated: wait for quota to reset or have the host arrange sign-in, then `reply` when the task has a session
 - Advance per job: wait → Review → verified pass: notify and start newly ready dependents; acceptance failed or scope_violation or readonly_violation or success+scope_violations: `reply` with a focused fix up to cap (default 1); cannot verify: report unverified items, do not claim accepted, do not unblock acceptance-gated dependents
 - failed / timed_out: start a new task (larger --idle-timeout, or next vendor once); do not treat scope_violation or readonly_violation as vendor failover
 - Notify the host after each job conclusion; ask only for the stop-and-ask cases
@@ -183,7 +185,7 @@ Rules:
 - User named a target: honor it
 - Otherwise implementation/debug defaults to `codex`; if the host is already Codex, `claude`
 - Long-context reading may use `agy`; local edits may use `cursor`
-- `not_installed` / `not_authenticated`: try the next vendor; do not stick
+- `not_installed`, or `not_authenticated` without a session: try the next vendor
 
 ## Versus baton-rescue
 

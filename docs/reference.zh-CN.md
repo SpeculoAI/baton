@@ -318,7 +318,7 @@ baton diff <id> [--stat]              # 纯文本：--isolate 任务的净改动
 baton apply <id> [--remove]           # 把 --isolate 任务的改动做成源仓库当前分支上的一个本地 commit；不 push
 baton tail <id> [-f] [--raw]          # 人读格式的事件；-f 跟到任务停下；--raw 输出 events.jsonl 原行
 baton stats [--target <agent>] [--since <date|Nd>] [--all]  # 按执行者汇总首轮指标和任务结果
-baton reply <id> [--prompt <text> | stdin] [--as host|human] [--file <path>[:N[-M]]]...   # scope_violation / readonly_violation 后也可续轮
+baton reply <id> [--prompt <text> | stdin] [--as host|human] [--file <path>[:N[-M]]]...   # 需要已有会话
 baton cancel <id>
 baton ls [--all]                      # 默认只列当前目录的任务，按更新时间倒序
 baton prune --older <天数>            # 删除早于 N 天的非 running 任务目录（不级联删 worktree）
@@ -441,7 +441,8 @@ JSON 输出是稳定接口，后续版本只增加字段，已有字段的名称
 | `readonly_violation` | `--mode readonly` 但工作区有净变更；可 `reply` |
 | `check_failed` | `--check` 命令失败或超时，见 `check`；可 `reply` |
 | `failed` / `timed_out` / `cancelled` | 终态，不能再 `reply` |
-| `not_authenticated` / `quota_exceeded` | 对方 CLI 没登录 / 额度用尽 |
+| `not_authenticated` | 目标 CLI 需要登录。重新登录后，有会话的任务可用 `reply` 继续。 |
+| `quota_exceeded` | 目标 CLI 的额度已用尽。额度恢复后，有会话的任务可用 `reply` 继续。 |
 | `not_installed` | `start` 时就返回，目标不在 `PATH` 里 |
 | `dirty_worktree` | `start` 返回；脏工作区上拒绝原地 write——见 `dirty_paths`；改用 `--isolate` 或 `--allow-dirty` |
 
@@ -466,7 +467,7 @@ baton reply <id> --as human --prompt "选 A"
 ```
 
 - 在原会话上开下一轮。`--as human` 表示这是人说的话；主 Agent 依据用户先前指示代答时用默认的 `--as host`。
-- `success` 之后也能 `reply` 追问。任务 `running` 时 `reply` 返回 `busy`。
+- `reply` 需要已有会话。`success`、`scope_violation`、`readonly_violation`、`check_failed`、`quota_exceeded` 或 `not_authenticated` 之后也可续轮。任务 `running` 时，`reply` 返回 `busy`。
 - 每一轮的作者、输入和结果都记在 `turns/<n>.json`，事后可回看。
 
 ### MCP 工具

@@ -318,7 +318,7 @@ baton diff <id> [--stat]             # plain text: net change of an --isolate ta
 baton apply <id> [--remove]          # --isolate task -> one local commit on the source repo's current branch; never pushes
 baton tail <id> [-f] [--raw]         # readable events; -f follows until the job stops; --raw prints events.jsonl lines
 baton stats [--target <agent>] [--since <date|Nd>] [--all]  # aggregate first-turn metrics and task outcomes by target
-baton reply <id> [--prompt <text> | stdin] [--as host|human] [--file <path>[:N[-M]]]...   # also after scope_violation / readonly_violation
+baton reply <id> [--prompt <text> | stdin] [--as host|human] [--file <path>[:N[-M]]]...   # requires an existing session
 baton cancel <id>
 baton ls [--all]                     # jobs for the current directory by default, newest first
 baton prune --older <days>           # delete non-running task dirs older than N days (does not remove worktrees)
@@ -441,7 +441,8 @@ First-turn metrics come from `turns/1.json`. If it has no `activity`, Baton repl
 | `readonly_violation` | `--mode readonly` but the tree changed; `reply` allowed |
 | `check_failed` | The `--check` command failed or timed out; see `check`; `reply` allowed |
 | `failed` / `timed_out` / `cancelled` | Terminal; cannot be replied to |
-| `not_authenticated` / `quota_exceeded` | The target CLI is not logged in / out of quota |
+| `not_authenticated` | The target CLI needs sign-in. After signing in, use `reply` if the task has a session. |
+| `quota_exceeded` | The target CLI ran out of quota. After quota resets, use `reply` if the task has a session. |
 | `not_installed` | Returned by `start`; the target is not on `PATH` |
 | `dirty_worktree` | Returned by `start`; in-place write refused on a dirty tree — see `dirty_paths`; use `--isolate` or `--allow-dirty` |
 
@@ -466,7 +467,7 @@ baton reply <id> --as human --prompt "A"
 ```
 
 - Starts the next turn in the same conversation. `--as human` marks the words as the user's; the default `--as host` is for answers the host gives from the user's earlier instructions.
-- `reply` also works after `success` for a follow-up. While the job is `running`, `reply` returns `busy`.
+- `reply` requires an existing session. It also works after `success`, `scope_violation`, `readonly_violation`, `check_failed`, `quota_exceeded`, or `not_authenticated`. While the job is `running`, `reply` returns `busy`.
 - Each turn's author, input, and result are stored in `turns/<n>.json`.
 
 ### MCP tools

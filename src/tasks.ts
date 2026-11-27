@@ -458,7 +458,7 @@ export async function reply(id: string, prompt: string, author: Author = "host",
   try {
     const meta = readMeta(id)!;
     if (meta.status === "running") return busy;
-    if (!["success", "needs_input", "scope_violation", "readonly_violation", "check_failed"].includes(meta.status)) throw new Error(`Cannot continue a task in status ${meta.status}.`);
+    if (!["success", "needs_input", "scope_violation", "readonly_violation", "check_failed", "quota_exceeded", "not_authenticated"].includes(meta.status)) throw new Error(`Cannot continue a task in status ${meta.status}.`);
     if (!meta.session_id) throw new Error("No session_id; cannot resume the session.");
     if (!getAdapter(meta.target)?.resolve(process.env)) throw new Error(`${meta.target} is not on PATH.`);
     const prepared = prepareTurnPrompt(meta.cwd, prompt, files);

@@ -42,7 +42,9 @@ Task ids are UUIDs; every id is validated before it is used in a path. Directori
 | `success` | Turn finished |
 | `scope_violation` / `readonly_violation` / `check_failed` | Post-check failed; `reply` allowed |
 | `failed` / `timed_out` / `cancelled` | Terminal |
-| `not_authenticated` / `quota_exceeded` / `not_installed` | Target CLI problem |
+| `not_authenticated` | Target CLI needs sign-in. After signing in, use `reply` if the task has a session. |
+| `quota_exceeded` | Target CLI ran out of quota. After quota resets, use `reply` if the task has a session. |
+| `not_installed` | Target CLI is unavailable |
 
 While `running`, `liveness` is `active` (output within 60s), `quiet` (alive but silent), or `orphaned` (supervisor gone; the next read finalizes as `failed`). If that meta already has `stop_reason` `idle` or `max_duration`, the read finalizes as `timed_out` with summary `Timed out: idle.` or `Timed out: max_duration.`. `stop_reason` `cancelled` finalizes as `cancelled` / `Cancelled.`. With no `stop_reason`, it still finalizes as `failed`.
 
