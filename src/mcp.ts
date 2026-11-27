@@ -23,11 +23,11 @@ export function createServer(): McpServer {
   server.registerTool("delegate_task", {
     description: "Delegate a bounded task to another local AI CLI. Returns task_id immediately (status=running); the task runs in a separate process and survives exit of this MCP process or the host session. Then use task_wait for a bounded wait.",
     inputSchema: {
-      target_agent: z.enum(["codex", "claude", "cursor", "agy"]),
+      target_agent: z.enum(["codex", "claude", "cursor", "agy", "kimi"]),
       prompt: z.string(),
       files: z.array(z.string()).optional(),
       reasoning_effort: z.enum(["low", "medium", "high", "ultra"]).optional(),
-      model: z.string().optional().describe("Per-task model (cursor, codex and claude; stored in meta and carried over by reply)."),
+      model: z.string().optional().describe("Per-task model (cursor, codex, claude and kimi; stored in meta and carried over by reply)."),
       idle_timeout_seconds: z.number().optional().describe("Stop after this long with no output at all; default 600."),
       max_duration_seconds: z.number().optional().describe("Maximum total duration per turn; default unlimited."),
       cwd: z.string().optional(),

@@ -6,6 +6,7 @@ import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { sandbox, cli } from "./helpers.ts";
+import { adapters } from "../src/adapters/index.ts";
 
 function gitInit(cwd: string) {
   execFileSync("git", ["init"], { cwd });
@@ -144,4 +145,13 @@ test("MCP task_diff / task_apply match the CLI for an --isolate task", async (t)
   const again = await call(client, "task_apply", { task_id: started.task_id });
   assert.equal(again.status, "failed");
   assert.match(again.summary, /no longer exists/);
+});
+
+test("delegate_task target_agent lists exactly the registered adapters", async (t) => {
+  const s = sandbox(t);
+  const client = await connect(s.env);
+  t.after(() => client.close());
+  const tool = (await client.listTools()).tools.find((item) => item.name === "delegate_task")!;
+  const target = (tool.inputSchema.properties as Record<string, { enum?: string[] }>).target_agent;
+  assert.deepEqual([...(target.enum ?? [])].sort(), Object.keys(adapters).sort());
 });
