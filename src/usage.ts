@@ -151,10 +151,12 @@ export const COMMANDS = {
   },
   mcp: { usage: "baton mcp", summary: "Start the MCP server on stdio." },
   report: {
-    usage: "baton report [task_id] [--title <text>] [--submit]",
+    usage: "baton report [task_id] [--title <text>] [--body <text>] [--label <name>]... [--submit]",
     summary: "Generate a redacted diagnostic report and GitHub issue link (optionally submit).",
     options: {
       title: { type: "string", arg: "text", desc: "Issue title override" },
+      body: { type: "string", arg: "text", desc: "What happened: expected vs. actual, repro (redacted like the rest)" },
+      label: { type: "string", multiple: true, arg: "name", desc: "Existing repo label to apply (repeatable; default: bug)" },
       submit: { type: "boolean", desc: "Create the issue via gh if logged in, otherwise open the prefilled form in a browser" },
     },
     notes: ["Never includes prompts, raw logs, file names, or credentials; still review before posting."],
