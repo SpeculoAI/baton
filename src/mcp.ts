@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -18,7 +19,7 @@ async function respond(run: () => unknown): Promise<{ content: { type: "text"; t
 }
 
 export function createServer(): McpServer {
-  const server = new McpServer({ name: "baton", version: "0.3.0" });
+  const server = new McpServer({ name: "baton", version: JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")).version });
   server.registerTool("list_agents", { description: "List local CLIs available for delegation and whether each is installed." }, () => respond(() => ({ agents: agents() })));
   server.registerTool("delegate_task", {
     description: "Delegate a bounded task to another local AI CLI. Returns task_id immediately (status=running); the task runs in a separate process and survives exit of this MCP process or the host session. Then use task_wait for a bounded wait.",
