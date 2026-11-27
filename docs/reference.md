@@ -16,6 +16,7 @@ The full manual: every install path, flag, status, and calling convention. For t
   - [Skills in the host](#skills-in-the-host)
   - [Command line](#command-line)
     - [File excerpts](#file-excerpts)
+    - [Handoff briefs and source tags](#handoff-briefs-and-source-tags)
     - [`baton stats`](#baton-stats)
   - [Statuses and liveness](#statuses-and-liveness)
   - [Questions and follow-up turns (needs_input / reply)](#questions-and-follow-up-turns-needs_input--reply)
@@ -350,7 +351,7 @@ Repeat `--file <path>[:N[-M]]` on `start` or `reply` to attach files to that tur
 - **Plain path** goes only into the turn's `Focus on these files` list, as before.
 - **Path with line numbers** adds the excerpt after the host prompt. The original argument is recorded in `turn.excerpts`.
 
-The worker prompt orders the blocks as Focus → scope prefix → rules pointer → host prompt → Code excerpts → output contract. Optional blocks appear when present.
+The worker prompt orders the blocks as Focus → scope prefix → rules pointer → host prompt → Code excerpts → input contract (when a source tag matches) → output contract. Optional blocks appear when present.
 
 Baton reads excerpts synchronously during `start` or `reply` and stores the rendered text in `prompt` in `turns/<n>.json`. Relative paths resolve from the task's `cwd`. With `--isolate`, `start` reads from the new worktree created from `HEAD`. By default, this excludes uncommitted edits in the source checkout. `reply` reads the current contents of that same worktree.
 
@@ -369,6 +370,30 @@ Baton checks the supplied path and its resolved path (`realpath`) for sensitive 
 - Files in a `.ssh/`, `.aws/`, or `.gnupg/` directory segment.
 
 For a file on this list, name its location in the prompt and let the worker read it. In MCP, `delegate_task.files` and `task_reply.files` accept the same syntax.
+
+#### Handoff briefs and source tags
+
+Use the fixed English tags below to mark the source of facts in a handoff brief. Write the rest of the brief in the host's language.
+
+| Tag | Meaning | Worker action |
+| --- | --- | --- |
+| `[read <path>:<lines>]` | Source code the host just read for the handoff | Use directly. |
+| `[ran <cmd>]` | A command the host ran and its result | Use directly. |
+| `[user]` | An explicit statement from the user in the conversation | Use directly. Stop and ask if it conflicts with what you see. |
+| `[mem <source>]` | A past record from Hindsight or another memory source | Verify before relying on it. |
+| `[codegraph]` | A structural finding from a code index, such as a call path or affected code | Verify before relying on it. |
+| `[guess]` | The host's hypothesis | Verify before relying on it. |
+
+When the current turn's prompt contains a tag matching `/\[(read|ran|user|mem|codegraph|guess)\b[^\]\n]*\]/`, Baton inserts the input contract immediately before the output contract. The same rule applies to `reply` turns. Tags in code excerpts count because the excerpts are appended to the prompt. The separate Focus list is outside the match. Prompts without a matching tag are unchanged.
+
+```text
+Facts in this prompt carry source tags.
+- [read …], [ran …], [user] and the code excerpts are current: use them directly and do not search the repository again to re-confirm them.
+- [mem …], [codegraph] and [guess] may be stale or wrong: verify them before relying on them.
+- If what you see contradicts a fact, stop and ask with BATON_DECISION.
+```
+
+The template sections are `Goal`, `Done when`, `Known facts`, `Already ruled out`, `Change points`, `Constraints`, and the optional `Tools hint`. See [Handoff brief in the baton-rescue skill](../skills/baton-rescue/SKILL.md#handoff-brief).
 
 #### `baton stats`
 

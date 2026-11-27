@@ -16,6 +16,7 @@
   - [宿主内的技能](#宿主内的技能)
   - [命令行](#命令行)
     - [文件摘录](#文件摘录)
+    - [交接简报与来源标签](#交接简报与来源标签)
     - [`baton stats`](#baton-stats)
   - [状态与存活判定](#状态与存活判定)
   - [停下提问与续轮 (needs_input / reply)](#停下提问与续轮-needs_input--reply)
@@ -350,7 +351,7 @@ baton mcp                             # 启动 MCP 服务（stdio）
 - **普通路径**沿用原行为，只进入本轮的 `Focus on these files` 列表。
 - **带行号的路径**将摘录接在宿主 prompt 后。原始参数记录在 `turn.excerpts`。
 
-执行者收到的 prompt 按以下顺序排列，未启用的部分省略。Focus → scope 前缀 → rules pointer → 宿主 prompt → Code excerpts → output contract。
+执行者收到的 prompt 按以下顺序排列，未启用的部分省略。Focus → scope 前缀 → rules pointer → 宿主 prompt → Code excerpts → input contract（匹配来源标签时）→ output contract。
 
 Baton 在 `start` 或 `reply` 时同步读取摘录，并将渲染后的内容写入 `turns/<n>.json` 的 `prompt`。相对路径以任务的 `cwd` 为基准。使用 `--isolate` 时，`start` 从基于 `HEAD` 新建的 worktree 读取，默认不包含源工作区未提交的改动。`reply` 读取同一 worktree 当时的内容。
 
@@ -369,6 +370,30 @@ Baton 在读取摘录前检查用户给的原路径和解析后的实际路径�
 - 路径中包含 `.ssh/`、`.aws/` 或 `.gnupg/` 目录段的文件。
 
 遇到名单内的文件，请在 prompt 里写明位置，由子任务自行读取。MCP 的 `delegate_task.files` 和 `task_reply.files` 使用相同语法。
+
+#### 交接简报与来源标签
+
+用下表中的固定英文标签标记交接简报里事实的来源。简报的其余部分使用宿主惯用的语言。
+
+| 标签 | 含义 | 子任务怎么处理 |
+| --- | --- | --- |
+| `[read <path>:<lines>]` | 宿主交接时刚读过的源码 | 直接使用。 |
+| `[ran <cmd>]` | 宿主运行过的命令及其结果 | 直接使用。 |
+| `[user]` | 用户在对话里明确说过的话 | 直接使用。与实际看到的情况冲突时，停下来询问。 |
+| `[mem <source>]` | 来自 Hindsight 等记忆来源的过去记录 | 核对后再依赖。 |
+| `[codegraph]` | 来自代码索引的结构性结论，例如调用路径或受影响的代码 | 核对后再依赖。 |
+| `[guess]` | 宿主的推测 | 核对后再依赖。 |
+
+本轮 prompt 出现与 `/\[(read|ran|user|mem|codegraph|guess)\b[^\]\n]*\]/` 匹配的标签时，Baton 在输出合约前插入输入合约。`reply` 轮同样适用。代码摘录接在 prompt 后，因此其中的标签也计入。单独的 Focus 列表不参与匹配。没有匹配标签的 prompt 不受影响。
+
+```text
+Facts in this prompt carry source tags.
+- [read …], [ran …], [user] and the code excerpts are current: use them directly and do not search the repository again to re-confirm them.
+- [mem …], [codegraph] and [guess] may be stale or wrong: verify them before relying on them.
+- If what you see contradicts a fact, stop and ask with BATON_DECISION.
+```
+
+模板包含 `Goal`、`Done when`、`Known facts`、`Already ruled out`、`Change points`、`Constraints` 和可选的 `Tools hint`。见 [baton-rescue skill 的 Handoff brief 章节](../skills/baton-rescue/SKILL.md#handoff-brief)。
 
 #### `baton stats`
 

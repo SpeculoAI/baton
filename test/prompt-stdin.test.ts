@@ -26,3 +26,17 @@ for (const [target, decode] of decoders) {
     assert.ok(!fs.readFileSync(s.env.FAKE_ARGS_FILE, "utf8").includes("first line"), "prompt leaked into argv");
   });
 }
+
+test("reply injects the input contract when an excerpt carries a source tag", async (t) => {
+  const s = sandbox(t);
+  const inputFile = path.join(s.home, "input.txt");
+  s.env.FAKE_INPUT_FILE = inputFile;
+  fs.writeFileSync(path.join(s.cwd, "notes.txt"), "[user] Keep the existing API.\n");
+  const { task_id } = await s.run("start", "--target", "codex", "--prompt", "First turn");
+  assert.equal((await s.until(task_id)).status, "success");
+  assert.doesNotMatch(fs.readFileSync(inputFile, "utf8"), /Facts in this prompt carry source tags/);
+
+  await s.run("reply", task_id, "--prompt", "Follow up", "--file", "notes.txt:1");
+  assert.equal((await s.until(task_id)).status, "success");
+  assert.match(fs.readFileSync(inputFile, "utf8"), /^Follow up\n\n[\s\S]*\[user\] Keep the existing API\.\n```\n\nFacts in this prompt carry source tags\.[\s\S]*\n\nBefore finishing,/);
+});

@@ -294,12 +294,12 @@ Source spec: `SPEC-handoff-context.md` · Plan: `tasks/plan.md`
 **Description:** 在 `src/contract.ts` 加标签检测正则和输入合约文本（spec D11）。`buildPrompt` 在本轮 prompt（含 reply）检测到标签时，在输出合约之前注入输入合约。
 
 **Acceptance criteria:**
-- [ ] 六种标签都能被检测；`[readme]`、`[x]`、跨行的方括号不算标签
-- [ ] 带标签的 prompt 注入输入合约，位置在输出合约之前；不带标签的 prompt 输出和改动前逐字节一致
-- [ ] reply 轮同样生效
+- [x] 六种标签都能被检测；`[readme]`、`[x]`、跨行的方括号不算标签
+- [x] 带标签的 prompt 注入输入合约，位置在输出合约之前；不带标签的 prompt 输出和改动前逐字节一致
+- [x] reply 轮同样生效
 
 **Verification:**
-- [ ] `node --test test/contract.test.ts test/prompt-stdin.test.ts`
+- [x] `node --test test/contract.test.ts test/prompt-stdin.test.ts`
 
 **Dependencies:** Checkpoint PR 2
 
@@ -323,11 +323,11 @@ Source spec: `SPEC-handoff-context.md` · Plan: `tasks/plan.md`
 现有 `SKILL.md:48` 那条"写清完成标准和看哪些文件"的说法改为引用模板。
 
 **Acceptance criteria:**
-- [ ] `skills.test.ts` 新增断言：模板章节名、六个标签名、reply-first、评审例外，且不含汉字
-- [ ] 两份 skill 的规则一致，不互相矛盾；orchestrate 里的派发示例使用简报模板
+- [x] `skills.test.ts` 新增断言：模板章节名、六个标签名、reply-first、评审例外，且不含汉字
+- [x] 两份 skill 的规则一致，不互相矛盾；orchestrate 里的派发示例使用简报模板
 
 **Verification:**
-- [ ] `node --test test/skills.test.ts test/manifests.test.ts`
+- [x] `node --test test/skills.test.ts test/manifests.test.ts`
 
 **Dependencies:** Task 11
 
@@ -348,11 +348,11 @@ Source spec: `SPEC-handoff-context.md` · Plan: `tasks/plan.md`
 然后用一份带标签和片段的真实简报交给 codex 和 cursor 各一次，用 `stats` 查看这两个任务的 `activity`。
 
 **Acceptance criteria:**
-- [ ] `docs/reference.md`、`docs/reference.zh-CN.md`、`docs/hosts.md`（如涉及宿主用法）更新
-- [ ] 两次冒烟的 `turns/1.json` 里有输入合约，`activity` 已记录，结果写进 `tasks/plan.md` 作为首批数据
+- [x] `docs/reference.md`、`docs/reference.zh-CN.md`、`docs/hosts.md`（如涉及宿主用法）更新
+- [x] 两次冒烟实际发出的 prompt（`buildPrompt(turn.prompt, turn.files)`）里有输入合约，`activity` 已记录，结果写进 `tasks/plan.md` 作为首批数据
 
 **Verification:**
-- [ ] `npm test`
+- [x] `npm test`
 
 **Dependencies:** Task 12
 

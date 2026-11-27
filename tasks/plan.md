@@ -68,14 +68,34 @@ Task list: `tasks/todo.md`
 - [ ] 人工评审后合并
 
 ### Phase 3: handoff-brief（PR 3）
-- [ ] Task 11: 标签检测和输入合约
-- [ ] Task 12: 两份 skill 的简报模板和规则
-- [ ] Task 13: brief 文档和端到端冒烟
+- [x] Task 11: 标签检测和输入合约
+- [x] Task 12: 两份 skill 的简报模板和规则
+- [x] Task 13: brief 文档和端到端冒烟
 
 ### Checkpoint: PR 3
 - [ ] `npm test` 三平台全绿
 - [ ] 带标签的真实交接会注入输入合约，不带标签的 prompt 逐字节不变
 - [ ] 人工评审后合并
+
+### 首批数据：交接简报对照（PR 3，2026-11-27）
+
+同一个小任务：在 `magic.ts` 里加 `double(n)`。用 `--isolate`、`--scope magic.ts` 和同一个 `--check`，四次都一次通过。
+
+- 简报组：带标签的简报 + `--file magic.ts:1-3`
+- 对照组：一句普通 prompt
+
+| target | 组 | tool_calls | before_first_edit | explore | input | 其中 cached | 未缓存 input | output |
+|---|---|---|---|---|---|---|---|---|
+| codex | 简报 | 3 | 1 | 0 | 161,710 | 128,256 | 33,454 | 312 |
+| codex | 对照 | 8 | 5 | 2 | 242,613 | 204,288 | 38,325 | 594 |
+| cursor | 简报 | 1 | 0 | 0 | 44,919 | 9,088 | 35,831 | 986 |
+| cursor | 对照 | 6 | 5 | 3 | 92,347 | 74,240 | 18,107 | 1,072 |
+
+- 首次编辑前的步数：codex 5 → 1，cursor 5 → 0。
+- 首轮总 input：codex 下降 33%，cursor 下降 51%。
+- 未缓存的 input：codex 下降 13%。cursor 反而上升，原因是简报组先跑、缓存是冷的，而对照组复用了缓存。所以未缓存部分需要在缓存状态一致的条件下再比较。
+- 样本只有 n=1，任务也很小，只能说明方向。效果目标仍以 Task 14 在真实任务上的 `baton stats` 对比为准。
+- 输入合约不写进 `turns/1.json`：supervisor 发送前才由 `buildPrompt` 注入。验证方式是用 `buildPrompt(turn.prompt, turn.files)` 重建实际发出的 prompt。
 
 ### Phase 4: 复盘
 - [ ] Task 14: 启用简报的任务 ≥ 20 个后，用 `stats` 对照效果目标，结论回写 spec

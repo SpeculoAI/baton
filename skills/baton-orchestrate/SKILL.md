@@ -13,7 +13,7 @@ description: >-
 
 One orchestrator holds the plan: dependency graph, `task_id` per job, results, and rework counts. Workers are the local CLIs. Every job runs in its own detached process with state on disk under `~/.baton`, so jobs survive the orchestrator, this session, or an MCP restart.
 
-Baton is the transport layer. It does **not** bind any engineering methodology. If the workspace already has `.agents/`, OpenSpec, Speckit, or custom rules, fold them into worker prompts and into the per-job review step; if not, still do a **minimal task-matched verification** (see Review) — never treat transport `success` as acceptance.
+Baton is the transport layer. It does **not** bind any engineering methodology. If the workspace already has `.agents/`, OpenSpec, Speckit, or custom rules, fold them into implementation briefs and the per-job review step; if not, still do a **minimal task-matched verification** (see Review) — never treat transport `success` as acceptance.
 
 For a single one-shot handoff, use `baton-rescue`. Its sections "The command", "Wait", and "After it stops" define the commands and statuses used here.
 
@@ -41,11 +41,42 @@ Do not use (prefer `baton-rescue` or stay in the host):
 - The user already named one vendor and wants a single hop
 - One or two small edits, explaining a diff, or a question
 
+## Handoff brief
+
+Use this template for worker prompts. Tag known facts with their source. Tools hint is optional.
+
+```text
+Goal: <one bounded outcome>
+Done when: <observable acceptance criteria>
+Known facts: <tagged facts already available>
+Already ruled out: <approaches or causes already ruled out>
+Change points: <paths and line ranges>
+Constraints: <allowed paths and limits>
+Tools hint: If you have codegraph available, prefer it over repeated grep.
+```
+
+| Source tag | Worker action |
+| --- | --- |
+| `[read <path>:<lines>]` | Use the source the host just read directly. |
+| `[ran <cmd>]` | Use the host's command result directly. |
+| `[user]` | Use the user's explicit statement directly. Stop and ask if it conflicts with what you see. |
+| `[mem <source>]` | Verify the past record before relying on it. |
+| `[codegraph]` | Verify the indexed finding before relying on it. |
+| `[guess]` | Verify the host's hypothesis before relying on it. |
+
+- Share only what you already know. For locations you have not identified, write "not located by host".
+- Pass change points and required interfaces as `--file path:start-end`. Leave out copied background code.
+- Give only locations for sensitive values, such as `NPM_TOKEN` in `.env`. Baton saves the brief verbatim in `turns/<n>.json`.
+- Keep every Tools hint conditional. The worker's environment determines which tools it has.
+- Pass executable Done when criteria as `--check` and allowed paths as `--scope`.
+- Use `reply` first for follow-ups, rework, and questions about the same work. For a resumable task, start a new one only when the work moves to a different area, the conversation context is contaminated, or you need an independent perspective.
+- For independent reviews and adversarial checks, give only the goal and scope. Omit the host's conclusions.
+
 ## Per-job loop
 
 1. `baton agents`; use only installed targets.
 2. Build the graph of bounded jobs (prompt, files, edges). Pick a target per job and say why in one sentence.
-3. `baton start` every job whose dependencies are satisfied and whose paths do not overlap another live job. Pass the job’s declared paths as repeated `--scope <glob>` (same data as the plan). Optional `--scope-on-violation warn|fail` (default `warn`). Review-only jobs: `--mode readonly`. When the project has an existing acceptance command (typecheck, unit tests), pass it as `--check "<cmd>"` so Baton runs it after each successful turn. For Cursor, Codex or Claude, pass `--model <id>` when the user names a model or the job needs a specific one. Default max 3 running at once; ask before going higher.
+3. `baton start` every job whose dependencies are satisfied and whose paths do not overlap another live job. Use the [Handoff brief](#handoff-brief) template for its prompt and follow the independent review exception. Pass the job’s declared paths as repeated `--scope <glob>` (same data as the plan). Optional `--scope-on-violation warn|fail` (default `warn`). Review-only jobs: `--mode readonly`. When the project has an existing acceptance command (typecheck, unit tests), pass it as `--check "<cmd>"` so Baton runs it after each successful turn. For Cursor, Codex or Claude, pass `--model <id>` when the user names a model or the job needs a specific one. Default max 3 running at once; ask before going higher.
 4. Wait on all live jobs at once. If the host can run a background shell and wake this session when it exits, start once and end the current turn:
    ```
    baton wait <id1> <id2> <id3> --until-done
@@ -95,7 +126,7 @@ Everything else: notify and keep going.
 For write jobs in a git repo, pass `--isolate` on each `baton start` so the job runs in a fresh worktree from `HEAD`. `status` / `wait` report `worktree.path` and `worktree.branch`. Changes stay in that worktree until applied. Review them with `baton diff <id> --stat` (full patch without `--stat`) instead of running git in the worktree yourself. Once a job passes review, bring it back with `baton apply <id> --remove` **only when the user agreed, or asked up front for accepted jobs to be applied**: it creates one local commit on the user's current branch (never pushes) and deletes the worktree and branch. Tell the user the commit sha and that `git revert <sha>` undoes it. If `apply` refuses (staged changes, overlapping uncommitted files, conflict, operation in progress), relay the reason and paths; do not merge another way. Apply jobs one at a time. If `worktree.gitignore_updated` is true, remind them to commit `.gitignore`.
 
 ```
-baton start --isolate --target <t> --prompt "..." ...
+baton start --isolate --target <t> --prompt "<handoff brief>" ...
 baton diff <id> --stat             # what the job changed
 baton apply <id> --remove          # with the user's consent: one local commit, then remove the worktree
 baton worktree rm <name-or-path> [-f|--force]  # clean/merged by default; --force discards dirty/unmerged (user consent only); does not cascade from task prune
@@ -129,7 +160,8 @@ Rules:
 - Command: baton (agents, start, wait, status, result, tail, reply, cancel, ls, worktree)
 - Hold: dependency graph, task_id per job, results, rework counts
 - Do not implement worker coding tasks yourself
-- Do not require Speckit / OpenSpec / agent-skills; if the workspace has rules, copy them into worker prompts and use them for review; if not, still do minimal task-matched verification — never treat transport success as verified pass
+- Use the Handoff brief template in the baton-orchestrate skill for each worker prompt. For independent reviews and adversarial checks, give only the goal and scope. Omit the host's conclusions.
+- Do not require Speckit / OpenSpec / agent-skills; if the workspace has rules, include them in implementation briefs and use them for review; if not, still do minimal task-matched verification — never treat transport success as verified pass
 - Do not delegate to the CLI vendor this host session already is
 - Max 3 jobs running at once unless the host approves more
 - Use --effort low for mechanical subtasks; raise --idle-timeout for slow, silent models
