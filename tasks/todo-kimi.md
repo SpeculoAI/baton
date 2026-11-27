@@ -184,11 +184,11 @@ Spec: `SPEC-kimi-adapter.md` · Plan: `tasks/plan-kimi.md`
 **Description:** 在 scratchpad 的一个 git 仓库里，用真实 kimi 跑一次 `node src/cli.ts start --target kimi`（多行提示词，含 `& | > ^ " %`），然后 `wait`，再 `reply` 问上一轮的内容。把结果写进 spec 的 T0 小节，Status 改为 `implemented`。
 
 **Acceptance criteria:**
-- [ ] 两轮都是 `success`；reply 能回忆首轮内容；提示词逐字节一致。
-- [ ] spec 已回写。
+- [x] 两轮都是 `success`；reply 能回忆首轮内容；提示词逐字节一致。
+- [x] spec 已回写。
 
 **Verification:**
-- [ ] `node src/cli.ts result <task_id>` 的输出符合预期
+- [x] `node src/cli.ts result <task_id>` 的输出符合预期
 
 **Dependencies:** T1–T6
 

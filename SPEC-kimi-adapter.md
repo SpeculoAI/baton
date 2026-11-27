@@ -78,6 +78,11 @@ Plan: `tasks/plan-kimi.md` · Tasks: `tasks/todo-kimi.md`
   - skills → `.kimi-code/skills/<name>/SKILL.md`
   - hooks 只支持全局，项目级报 `supports the feature 'hooks' only in global scope … Skipping.`
 
+### 真机冒烟（2026-11-26，macOS，`kimi` 2.8.0，本分支 `node src/cli.ts`）
+
+- `start --target kimi`：提示词三行，第二行是 `Remember the codeword: PELICAN & | > ^ " %`，要求不调用工具、原样复述第二行。结果 `success`，回复逐字节一致，记下的 session id 为 `session_03d1762e-…`。
+- `reply`：要求原样引用上一轮的 codeword 行。结果 `success`，turn 2 用的是同一个 session id，引用逐字节一致。
+
 ### 其他
 
 - **思考强度**：没有命令行参数。只有 config 里的 `[thinking] effort`，以及环境变量 `KIMI_MODEL_THINKING_EFFORT`（仅 kimi provider，文档）。
