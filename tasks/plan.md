@@ -1,100 +1,81 @@
-# Implementation Plan: 原生 Windows 支持
+# Implementation Plan: 交接上下文
 
-Source spec: `SPEC-native-windows.md`
+Source spec: `SPEC-handoff-context.md`
 Task list: `tasks/todo.md`
 
 ## Overview
 
-分四个阶段交付：
+分五个阶段交付，每个模块一个 PR：
 
-- **阶段 0**：只做验证，用真实 CLI 确认能否从 stdin 读提示词。
-- **阶段 1（PR A）**：把测试脚手架改成跨平台，运行时代码一行不动。
-- **阶段 2（PR B）**：先打开 Windows CI 作为反馈环，再按决策逐片改运行时代码，直到三个平台的 CI 全绿。
-- **阶段 3（PR C）**：处理 install、补文档、真机冒烟测试。
+- **阶段 0**：只做验证，不写代码。用真实 CLI 确认 claude 的 usage 字段、agy 的搜索工具名、kimi 的工具名和 usage，以及续轮（resume）时各家 usage 是"本轮"还是"会话累计"。结果回写 spec 的 D1、D3，并沉淀成测试 fixture。
+- **阶段 1（PR 1 `handoff-metrics`）**：工具调用分类、usage 解析、turn 汇总、`baton stats`。合并后立刻记录基线。
+- **阶段 2（PR 2 `file-snippets`）**：`--file path:start-end`，覆盖 start、reply、MCP 三处入口。
+- **阶段 3（PR 3 `handoff-brief`）**：来源标签、输入合约、两份 skill。
+- **阶段 4**：复盘。启用简报的任务跑满 20 个以上后，用 `stats` 对照效果目标。
 
 ## Architecture Decisions
 
-实现必须遵守 spec 里的 D1–D9，这里不重复。下面三条是实施层面的约定：
-
-- **先开 Windows CI 再修。** PR B 的第一个提交就把 `windows-latest` 加进 matrix。之后每推送一次，都能看到 Windows 上还剩哪些失败。只有三个平台全绿，PR B 才能合并。
-- **假 CLI 启动器是提交进仓库的静态文件，不在运行时生成。**
-  - 现在的 `agent`、`claude`、`codex`、`cursor-agent` 是指向 `fake.sh` 的 git 符号链接。Windows 检出时，符号链接默认会变成普通文本文件，所以必须换掉。
-  - POSIX 启动器是可执行的 sh 文件，Windows 启动器是对应的 `.cmd` 文件。POSIX 上的 `which` 不看 `PATHEXT`，所以 `.cmd` 文件在 POSIX 上不会被误用。
-- **平台差异就地写分支。** 直接用 `process.platform === "win32"` 判断，不新建平台抽象层。
-
-## Dependency Graph
-
-```
-T0 验证 stdin ──────────────────────────────┐
-                                             ▼
-T1 fake.mjs+启动器 ─► T2 helpers ─► T3 内联桩 ─► T4 check 命令/计时/.gitattributes
-                                             │
-                                  [Checkpoint A：PR A]
-                                             │
-                     T5 Windows CI（预期红）
-                                             │
-     T6 cross-spawn+which ─► T7 其余 spawn 点
-                    │
-                    ├─► T8 提示词走 stdin（依赖 T0）
-                    ├─► T9 killGroup+windowsHide ─► T10 cancel 取消文件
-                    └─► T11 --check shell + junction
-                                             │
-                                  [Checkpoint B：PR B]
-                                             │
-                     T12 install+文档 ─► T13 真机冒烟（设备待定）
-                                             │
-                                  [Checkpoint C：PR C]
-```
-
-T8、T9/T10、T11 都只依赖 T6，相互之间独立，可以按任意顺序做。不过它们都会改 `src/supervisor.ts`，所以按顺序做，避免冲突。
+- **一个纯函数服务两个入口。** `summarizeEvents(events)` 放在 `src/metrics.ts`。supervisor 在 turn 结束时调用它；`stats` 回放旧任务的 raw 日志时也调用它。两边口径不会分叉。
+- **分类在 adapter 里、截断之前完成。** `kind` 来自各 adapter 自己的映射表，`intent` 在 `detail` 被截到 200 字符之前用完整命令计算。下游只读字段，不再猜测。
+- **usage 以每轮最后一个事件为准。** 如果阶段 0 发现某家续轮报的是会话累计值，在 `summarizeEvents` 之外做"减去上一轮"的修正，修正规则写回 spec D3。`summarizeEvents` 本身保持纯函数。
+- **片段在 `start()`/`reply()` 里同步读取并渲染，写进 `turn.prompt`。** 这和现有 scope、rules pointer 前缀的做法一致，`turns/N.json` 就是子任务实际看到的内容。读文件和校验集中在新文件 `src/snippets.ts`。
+- **输入合约在 `buildPrompt` 里按需注入。** 只有检测到来源标签才加，所以不带标签的 prompt 逐字节不变。
+- **构建顺序**：metrics → snippets → brief。brief 的 skill 要引用 `--file` 的行号语法，所以排在 snippets 之后。metrics 放最前，是为了先有基线。
 
 ## Task List
 
-详见 `tasks/todo.md`。
-
 ### Phase 0: 验证
-- [x] T0：在 Mac 上验证 claude、cursor-agent、agy 能否从 stdin 读提示词
+- [ ] Task 0: T0 真实 CLI 验证，回写 spec，沉淀 fixture
 
-### Phase 1: 测试脚手架跨平台（PR A）
-- [x] T1：`fake.mjs` 加启动器，替换 sh 假 CLI
-- [x] T2：`helpers.ts` 跨平台
-- [x] T3：测试里内联的 sh 桩改用 helper
-- [x] T4：`--check` 测试命令改用 node；放大计时余量；加 `.gitattributes`
+### Phase 1: handoff-metrics（PR 1）
+- [ ] Task 1: 类型、`shellIntent`、`summarizeEvents`（纯函数）
+- [ ] Task 2: codex、cursor adapter 输出 `kind`/`intent`/`usage`
+- [ ] Task 3: claude、agy、kimi adapter 输出 `kind`/`intent`/`usage`
+- [ ] Task 4: supervisor 写入 turn 的 `activity`/`usage`；终止视图和 `tail` 展示
+- [ ] Task 5: `baton stats` 命令（含 raw 回放）
+- [ ] Task 6: metrics 文档、真实 CLI 冒烟、记录基线
 
-### Checkpoint A
-- [ ] macOS、Linux CI 全绿；`git diff main -- src/` 为空
+### Checkpoint: PR 1
+- [ ] `npm test` 三平台 CI 全绿
+- [ ] `baton stats --all` 在现有 `~/.baton` 上 `measured ≥ 75`，基线写进本文件
+- [ ] 人工评审后合并
 
-### Phase 2: 运行时（PR B）
-- [x] T5：CI matrix 加 `windows-latest`（预期红）
-- [x] T6：引入 cross-spawn；`which` 支持 `PATHEXT`；改造 worker 启动和 `agents()`
-- [x] T7：rules、rulesync-setup、install 改用 cross-spawn
-- [x] T8：提示词走 stdin（D1/D2），加逐字节一致测试
-- [x] T9：`killGroup` 的 taskkill 分支；加 `windowsHide`
-- [x] T10：cancel 改为写取消文件，配套兜底和孤儿收尾
-- [x] T11：`--check` 改用 `shell: true`；目录链接改用 junction
+### Phase 2: file-snippets（PR 2）
+- [ ] Task 7: `src/snippets.ts` 解析、校验、敏感名单、渲染
+- [ ] Task 8: 接入 `start` 和 MCP `delegate_task`
+- [ ] Task 9: `reply --file` 和 MCP `task_reply.files`
+- [ ] Task 10: snippets 文档和冒烟
 
-### Checkpoint B
-- [x] 三个平台 CI 全绿；满足 Success Criteria 1、2、3、5
+### Checkpoint: PR 2
+- [ ] `npm test` 三平台全绿
+- [ ] 真实 CLI 收到的 prompt 里有片段原文；`.env:1-3` 被拒绝，`turns/` 下没有它的内容
+- [ ] 人工评审后合并
 
-### Phase 3: install、文档、真机（PR C）
-- [ ] T12：install 去掉 `npm.cmd` 特判；文档写明平台支持和已知限制
-- [ ] T13：真机冒烟（设备待定）
+### Phase 3: handoff-brief（PR 3）
+- [ ] Task 11: 标签检测和输入合约
+- [ ] Task 12: 两份 skill 的简报模板和规则
+- [ ] Task 13: brief 文档和端到端冒烟
 
-### Checkpoint C
-- [ ] 满足 Success Criteria 4、6
+### Checkpoint: PR 3
+- [ ] `npm test` 三平台全绿
+- [ ] 带标签的真实交接会注入输入合约，不带标签的 prompt 逐字节不变
+- [ ] 人工评审后合并
+
+### Phase 4: 复盘
+- [ ] Task 14: 启用简报的任务 ≥ 20 个后，用 `stats` 对照效果目标，结论回写 spec
 
 ## Risks and Mitigations
 
-| 风险 | 影响 | 应对 |
+| 风险 | 影响 | 缓解 |
 |---|---|---|
-| 某个 CLI 不支持从 stdin 读提示词 | 中 | T0 先验证。不支持的 adapter 走 D2：`.exe` 继续用 argv，`.cmd` 遇到不安全的提示词就报错 |
-| Windows CI 每轮 5–10 分钟，调试慢 | 中 | T5 最先打开 CI。每个任务完成就推送一次，不攒到最后。本地先在 Mac 上跑通 POSIX 一侧 |
-| Windows runner 慢，计时类用例偶发失败 | 中 | T4 统一放大余量。在 Windows 上新暴露的计时问题，同样只放大余量，不放宽断言语义 |
-| `taskkill /T` 漏杀孙进程 | 低 | 测试覆盖中间层进程仍存活的常见情况；漏杀的情况写进文档（spec 已声明） |
-| 原子写 `renameSync` 被杀毒软件占用，报 `EPERM` | 低 | 不预先处理。CI 或真机出现了，再按 spec 的 Ask first 加有上限的重试 |
-| D1 改变了 POSIX 上提示词的传递方式 | 中 | T0 用真实 CLI 验证；macOS、Linux 现有测试必须保持全绿，断言不放宽 |
-| `.gitattributes` 会让已有文件的换行被重新归一化 | 低 | T4 跑 `git add --renormalize .`，确认 diff 为空或只涉及预期的文件 |
+| 某家续轮的 usage 是会话累计值，会让多轮任务的 token 重复计算 | 高 | 阶段 0 用现有多轮任务的 `raw/2.stdout.log` 和 claude/agy 的 reply 实测确认，再决定是否做差分修正 |
+| `shellIntent` 误分类，codex 的探索数会偏低或偏高 | 中 | 规则用表格测试固定；用 Task 5 的回放结果和统计脚本对比量级；误差在文档里写明 |
+| claude/agy/kimi 的工具名或 usage 字段和预期不符，或 kimi 不输出 usage | 中 | 阶段 0 先确认；映射表里没有的名字记为 `other`，不报错 |
+| 符号链接逃逸测试在 Windows 上需要特权 | 低 | 沿用现有做法，只在 POSIX 跑，并写明 |
+| 旧任务目录缺字段，导致 `status`/`stats` 报错 | 中 | 新字段全部可选；`stats` 用临时 `BATON_HOME` 构造三类旧数据做测试 |
+| 片段让 prompt 变长，每一步重复发送反而更贵 | 中 | 400 行和 64 KB 的限额；skill 规定只给改动位置和必须看的接口；阶段 4 用 `stats` 检查 |
+| 子 CLI 不理会输入合约，照样重新探索 | 高 | 这是效果层面的风险，不影响合并；阶段 4 按 CLI 看数据，再调整合约措辞或 skill |
 
 ## Open Questions
 
-- T13 的 Windows 真机待定（spec Open Questions 1）。
+- 三个 T0 探测任务（claude `db2266e0`、agy `f965f2fd`、kimi `26cdef6b`）各跑了两轮，Task 0 直接读取它们的 raw 日志。

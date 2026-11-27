@@ -1,303 +1,389 @@
-# Todo: 原生 Windows 支持
+# Todo: 交接上下文
 
-Spec: `SPEC-native-windows.md` · Plan: `tasks/plan.md`
+Source spec: `SPEC-handoff-context.md` · Plan: `tasks/plan.md`
 
-每个任务完成都要满足 Definition of Done：
-
-- `npm test` 通过，且没有回归；
-- 运行时行为经过验证，不能只靠单元测试；
-- 行为有变化的地方，文档已同步。
-
----
+通用验证命令：`npm test`（即 `tsc --noEmit && node --test "test/**/*.test.ts"`）。单个文件用 `node --test test/<name>.test.ts`。
 
 ## Phase 0: 验证
 
-### T0：验证 claude、cursor-agent、agy 能否从 stdin 读提示词
+### Task 0: T0 真实 CLI 验证
 
-**Description**：在 Mac 上，用真实 CLI 和 adapter 实际使用的参数（去掉 argv 里的提示词）各跑一次：
+**Description:** 不写代码，确认 spec 里还没坐实的四件事：
+- claude `result.usage` 的字段名
+- agy 搜索类工具的名字
+- kimi（#92 新增的 adapter）的工具名和 usage，以及它的输出里是否带 usage
+- 五家续轮的 usage 是本轮值还是会话累计值
+- 每轮是否只有一个 usage 事件
 
-- 提示词：两行，带 `& | > ^ " %`，要求回复 `ok` 并原样复述第二行。
-- agy：先试纯文本 stdin，不行再试 `--input-format stream-json`。
+结果回写 spec 的 D1、D3，并把真实输出片段沉淀成测试 fixture。
 
-**Acceptance criteria**：
-- [x] 每个 CLI 都得出结论：claude、cursor-agent 纯文本 stdin 可用；agy 只能用 stream-json。
-- [x] 把结论写回 spec 的 D1/D2，并标明每个 adapter 采用哪种方式。
+已经准备好的两轮只读探测任务（第 2 轮的 `readonly_violation` 是宿主同时改了工作区造成的，不影响数据）：claude `db2266e0-2e63-4ad9-a236-e6513fd47e00`、agy `f965f2fd-1b48-41f9-8807-410563c9e47b`、kimi `26cdef6b-16ee-4f8e-bf78-f93544262717`。raw 日志在 `~/.baton/tasks/<id>/raw/{1,2}.stdout.log`。
 
-**Verification**：
-- [x] 输出里能看到复述的第二行，与原文逐字节一致。
+**Acceptance criteria:**
+- [ ] spec D1 的 agy search 一列和 kimi 一行、D3 的 claude 和 kimi 两行改成实测值；D3 写明各家续轮的 usage 语义，需要差分修正的写出修正规则
+- [ ] `test/fixtures/usage/{codex,cursor,agy,claude,kimi}.jsonl` 各包含至少一个 tool_call 行和终止 usage 行，已脱敏（不含路径里的用户名、token、提示词正文）
 
-**Result（2026-11-25 / 2026-11-26）**：已完成，详见 spec 的 "T0 验证结果"。agy 带 `--conversation` 续接已于 2026-11-26（macOS，`agy 1.5.18`）经 `baton start` → `reply` 补测通过，两轮上下文和特殊字符均逐字节一致。
+**Verification:**
+- [ ] 读取三个探测任务的 `raw/1.stdout.log` 和 `raw/2.stdout.log`，比较两轮的 usage
+- [ ] 从现有的 codex、cursor 多轮任务里比较 `raw/1` 和 `raw/2` 的 usage
 
-**Dependencies**：无
-**Files likely touched**：`SPEC-native-windows.md`
-**Estimated scope**：XS
+**Dependencies:** None
 
----
+**Files likely touched:**
+- `SPEC-handoff-context.md`
+- `test/fixtures/usage/*.jsonl`
 
-## Phase 1: 测试脚手架跨平台（PR A，`src/` 不改动）
+**Estimated scope:** S
 
-### T1：用 `fake.mjs` 加启动器替换 sh 假 CLI
+## Phase 1: handoff-metrics（PR 1）
 
-**Description**：
-- 新增 `test/fake-cli/fake.mjs`，实现 `fake.sh` 的全部 `FAKE_*` 行为：ARGS_FILE、INPUT_FILE、CHILD_PID_FILE（留下一个忽略 TERM 的孙进程）、TICKS/TICK_SLEEP、SLEEP、WRITE、FIXTURE、HANG、REMOVE_LAST、EXIT。
-- 新增 `fake-git.mjs` 和 `fake-rulesync.mjs`。fake-git 在 PATH 中排除自己所在的目录后，再找真实的 git 执行。
-- `agent`、`claude`、`codex`、`cursor-agent`、`git`、`rulesync` 都改成：
-  - POSIX 上是可执行 sh 启动器，`exec node "$(dirname "$0")/<x>.mjs" "$@"`；
-  - Windows 上加同名 `.cmd`，内容为 `@node "%~dp0<x>.mjs" %*`。
-- 删除 `fake.sh` 和原来的符号链接。
+### Task 1: 类型、`shellIntent`、`summarizeEvents`
 
-**Acceptance criteria**：
-- [x] `test/fake-cli/` 下没有符号链接；除启动器的 shebang 和 POSIX 专用的 `git` 垫片外，没有 `/bin/` 路径。Windows 上不使用 `git` 垫片，所以 `FAKE_GIT_SLEEP` 用例在 Windows 上怎么处理，等 T5 的 CI 结果再定。
-- [x] 每个假 CLI 都有 sh 和 `.cmd` 两个启动器。
-- [x] `fake.mjs` 覆盖 `fake.sh` 的全部行为。
+**Description:** 先把纯函数和类型立住，后面的任务都用它们。内容包括：
+- `ToolKind`、`TurnActivity`、`TurnUsage`
+- `EventData` 增加 `usage`，`tool_call` 增加可选的 `kind`/`intent`
+- `Turn` 增加可选的 `activity`/`usage`
+- `shellIntent` 按 spec D2 实现
+- `summarizeEvents` 按 spec D4 实现（若 Task 0 结论需要，加差分修正）
 
-**Verification**：
-- [x] `npm test` 全绿（Mac）。
-- [x] `find test/fake-cli -type l` 没有输出。
+**Acceptance criteria:**
+- [ ] `shellIntent` 的表格测试覆盖：外层包装、复合命令、管道、heredoc、只读和写命令混用、空命令
+- [ ] `summarizeEvents` 覆盖：没有编辑（`before_first_edit` 为 null）、首个调用就是编辑、各类计数、多个 usage 以最后一个为准
+- [ ] 所有新字段都是可选的，现有测试不改断言
 
-**Dependencies**：无
-**Files likely touched**：`test/fake-cli/fake.mjs`、`test/fake-cli/fake-git.mjs`、`test/fake-cli/fake-rulesync.mjs`，以及启动器 ×12（这些是机械性的小文件）
-**Estimated scope**：M
+**Verification:**
+- [ ] `node --test test/metrics.test.ts`
+- [ ] `npm run typecheck`
 
-### T2：`test/helpers.ts` 跨平台
+**Dependencies:** Task 0
 
-**Description**：
-- sandbox 的 PATH 改用 `path.delimiter` 拼接：
-  - POSIX 上保持现在的 `fake-cli:/usr/bin:/bin`；
-  - win32 上是 fake-cli、`dirname(process.execPath)`、git 所在目录、`%SystemRoot%\System32`。
-- 测试结束时的清理改用 `src/process.ts` 的 `killGroup`，替换 `process.kill(-pid)`。
+**Files likely touched:**
+- `src/types.ts`
+- `src/adapters/common.ts`
+- `src/metrics.ts`（新）
+- `test/metrics.test.ts`（新）
 
-**Acceptance criteria**：
-- [x] `helpers.ts` 里没有硬编码的 `:` 分隔符，没有 `/usr/bin`（POSIX 分支除外），也没有负数 PID。
+**Estimated scope:** M
 
-**Verification**：
-- [x] `npm test` 全绿（Mac）。
+### Task 2: codex、cursor adapter 输出 kind/intent/usage
 
-**Dependencies**：T1
-**Files likely touched**：`test/helpers.ts`
-**Estimated scope**：S
+**Description:** codex 解析 `turn.completed.usage`，cursor 解析 `result.usage`，两家都按 spec D1 的映射表给 `tool_call` 填 `kind`，shell 类填 `intent`。`intent` 必须用截断前的完整命令计算。
 
-### T3：测试里内联的 sh 桩改用 helper
+**Acceptance criteria:**
+- [ ] 用 Task 0 的 fixture 回放，`kind`/`intent` 和 usage 的归一值与 spec D1、D3 一致
+- [ ] 映射表里没有的工具名（如 cursor 的 `mcp`、`webFetch`）记为 `other`
+- [ ] 原有的 message/tool_result/error 事件输出不变
 
-**Description**：
-- 在 `helpers.ts` 里新增 `fakeBin(dir, name, js)`。它写出 `<name>.mjs` 和对应的 sh/`.cmd` 启动器。
-- 把下面这些地方内联的 `#!/bin/sh` 桩迁移过去：
-  - `adapters.test.ts:86`
-  - `install.test.ts:15,183`
-  - `rules.test.ts:155`
-  - `rulesync-setup.test.ts:31`
+**Verification:**
+- [ ] `node --test test/adapters.test.ts`
 
-**Acceptance criteria**：
-- [x] `test/*.ts` 里没有 `#!/bin/sh`，也没有 `chmodSync(…, 0o755)`。
-- [x] 断言语义不变。
+**Dependencies:** Task 1
 
-**Verification**：
-- [x] `npm test` 全绿（Mac）。
-- [x] `grep -n '#!/bin/sh' test/*.ts` 没有输出。
+**Files likely touched:**
+- `src/adapters/codex.ts`
+- `src/adapters/cursor.ts`
+- `test/adapters.test.ts`
 
-**Dependencies**：T2
-**Files likely touched**：`test/helpers.ts`、`test/adapters.test.ts`、`test/install.test.ts`、`test/rules.test.ts`、`test/rulesync-setup.test.ts`
-**Estimated scope**：M
+**Estimated scope:** S
 
-### T4：`--check` 测试命令改用 node；放大计时余量；加 `.gitattributes`
+### Task 3: claude、agy、kimi adapter 输出 kind/intent/usage
 
-**Description**：
-- `test/check.test.ts` 里的 `test -f`、`head | tr`、`sleep`、`echo >&2; exit` 改写成 `node -e "…"`。
-- 放大 `lifecycle.test.ts:154` 的余量：`--idle-timeout 1`，`FAKE_TICKS=30`。
-- 新增 `.gitattributes`，内容为 `* text=auto eol=lf`，然后跑 `git add --renormalize .`。
+**Description:** 和 Task 2 相同，对象换成 claude（`result.usage`）、agy（`result.usage`）和 kimi。字段以 Task 0 的实测为准；kimi 没有 usage 时只做 `kind`/`intent`。
 
-**Acceptance criteria**：
-- [x] check 用例不依赖 sh 语法。
-- [x] renormalize 之后没有意外的 diff。
-- [x] 计时用例仍然验证"输出持续、超过空闲阈值时不会被杀"。
+**Acceptance criteria:**
+- [ ] 用 Task 0 的 fixture 回放，结果与 spec 一致
+- [ ] claude 的 `Bash`、agy 的 `run_command`、kimi 的 shell 工具带 `intent`
+- [ ] 原有事件输出不变
 
-**Verification**：
-- [x] `npm test` 全绿（Mac）。
-- [x] `git status` 只出现预期的文件。
+**Verification:**
+- [ ] `node --test test/adapters.test.ts`
 
-**Dependencies**：T2
-**Files likely touched**：`test/check.test.ts`、`test/lifecycle.test.ts`、`.gitattributes`
-**Estimated scope**：S
+**Dependencies:** Task 1
 
-## Checkpoint A：PR A
+**Files likely touched:**
+- `src/adapters/claude.ts`
+- `src/adapters/agy.ts`
+- `src/adapters/kimi.ts`
+- `test/adapters.test.ts`
 
-- [ ] `git diff main --stat -- src/` 为空。
-- [ ] PR A 的 CI 在 macOS 和 Linux 上全绿。
-- [ ] 交给你评审，合并后再开始 Phase 2。
+**Estimated scope:** M
 
----
+### Task 4: supervisor 写入 activity/usage，展示到终止视图和 tail
 
-## Phase 2: 运行时（PR B）
+**Description:** supervisor 在流式处理时收集当前 turn 的 `tool_call`/`usage` 事件，turn 结束时调用 `summarizeEvents`，和 `git_changes` 在同一处写进 turn。`finished()` 附带当前 turn 的 `activity`/`usage`。`tail` 把 usage 事件显示成一行。
 
-### T5：CI matrix 加 `windows-latest`
+**Acceptance criteria:**
+- [ ] 用 `FAKE_FIXTURE` 回放 codex fixture，跑一次 start，`turns/1.json` 里有 `activity`/`usage`，且 `activity.tool_calls` 等于 `events.jsonl` 里的 `tool_call` 数
+- [ ] `baton status`、`baton wait` 的终止视图带上这两个字段；MCP `task_status` 测试也覆盖到
+- [ ] 孤儿收尾的 turn 不写这两个字段，`status` 不报错
 
-**Description**：在 `ci.yml` 的 test matrix 里加上 `windows-latest`。之后每次推送都能拿到 Windows 上的失败清单。
+**Verification:**
+- [ ] `node --test test/observe.test.ts test/lifecycle.test.ts test/mcp.test.ts`
 
-**Acceptance criteria**：
-- [x] Windows job 能跑起来，失败原因都出在测试上，不是 CI 配置错误。
-- [x] 不修改 `ci-ok` 的判断规则。
+**Dependencies:** Task 2
 
-**Verification**：
-- [x] 推送后看 job 日志，确认失败都落在预期的模块上。
+**Files likely touched:**
+- `src/supervisor.ts`
+- `src/tasks.ts`
+- `src/tail.ts`
+- `test/observe.test.ts`
 
-**Dependencies**：Checkpoint A
-**Files likely touched**：`.github/workflows/ci.yml`
-**Estimated scope**：XS
+**Estimated scope:** M
 
-### T6：引入 cross-spawn；`which` 支持 `PATHEXT`；改造 worker 启动和 `agents()`
+### Task 5: `baton stats` 命令
 
-**Description**：
-- 新增依赖 `cross-spawn` 和 `@types/cross-spawn`。
-- `which` 在 win32 上按 `PATHEXT` 依次尝试后缀，跳过 `X_OK` 检查。
-- supervisor 启动 worker 改用 cross-spawn。
-- `agents()` 调用 `--version` 改用 cross-spawn 的同步版本。
+**Description:** 按 spec D6 实现：
+- 参数 `--target`、`--since`（ISO 日期或 `Nd`）、`--all`，cwd 过滤和 `ls` 一致
+- 输出 JSON，顶层字段为 `schema_version: 1`、`generated_at`、`note`、`targets`
+- turn 里没有 `activity` 时，用 adapter 的 `parseLine` 回放 `raw/N.stdout.log`；raw 也不存在时，计入 `tasks`，不计入 `measured`
 
-**Acceptance criteria**：
-- [x] Windows 上 `baton agents` 能识别 `.cmd` 和 `.exe`。
-- [x] Windows 上能启动 `.cmd` 形式的 worker。
-- [x] POSIX 上行为不变。
+**Acceptance criteria:**
+- [ ] 在临时 `BATON_HOME` 下构造三类任务（有 activity、只有 raw、两者都没有），断言分组、中位数、p75、`explore_share`、`cached_share`、`rework_rate`、`check_failed_rate`、`measured`
+- [ ] `--since`、`--target`、`--all`、cwd 过滤各有用例
+- [ ] `baton stats -h` 由 `src/usage.ts` 的选项表生成，`help.test.ts` 通过
 
-**Verification**：
-- [x] `npm test` 在三个平台上通过 which 和 start 相关用例。
-- [x] 新增用例：`which` 能找到 `x.cmd` 和 `x.exe`，只在 win32 上运行。
+**Verification:**
+- [ ] `node --test test/stats.test.ts test/help.test.ts`
+- [ ] `node src/cli.ts stats --all` 在真实 `~/.baton` 上只读运行成功
 
-**Dependencies**：T5
-**Files likely touched**：`package.json`、`package-lock.json`、`src/adapters/common.ts`、`src/supervisor.ts`、`src/tasks.ts`、`test/adapters.test.ts`
-**Estimated scope**：M
+**Dependencies:** Task 4
 
-### T7：rules、rulesync-setup、install 改用 cross-spawn
+**Files likely touched:**
+- `src/metrics.ts`
+- `src/usage.ts`
+- `src/cli.ts`
+- `test/stats.test.ts`（新）
 
-**Description**：把这三处启动外部程序的 `spawn` 和 `spawnSync` 替换成 cross-spawn。`git` 调用保持不变。
+**Estimated scope:** M
 
-**Acceptance criteria**：
-- [x] Windows 上 rulesync 和 npm 的 `.cmd` 能正常启动。
-- [x] 现有测试全绿。
+### Task 6: metrics 文档、冒烟、基线
 
-**Verification**：
-- [x] 三个平台上 `npm test` 的 rules、rulesync-setup、install 用例通过。
+**Description:** 文档写明以下内容：
+- `activity`、`usage` 字段
+- `baton stats` 的用法、JSON 结构和口径说明
+- `tail` 里的 usage 行
 
-**Dependencies**：T6
-**Files likely touched**：`src/rules.ts`、`src/rulesync-setup.ts`、`src/install.ts`
-**Estimated scope**：S
+然后用 codex、cursor、agy、claude、kimi 各跑一次真实任务做冒烟。最后记录基线。
 
-### T8：提示词走 stdin（D1/D2），加逐字节一致测试
+**Acceptance criteria:**
+- [ ] `docs/reference.md`、`docs/reference.zh-CN.md` 更新
+- [ ] 五家冒烟：`turns/1.json` 的 usage 和 raw 原值换算一致，`activity.tool_calls` 和 `tool_call` 事件数一致
+- [ ] `baton stats --all` 的基线（每个 target 的 `measured`、`before_first_edit` 中位/p75、`explore_share`、`first_turn.input` 中位）写进 `tasks/plan.md`，并满足 `measured ≥ 75`、中位数和统计脚本的 42 同一量级
 
-**Description**：
-- 按 T0 的结论，把 claude、cursor、agy 的 `build()` 改成从 stdin 传提示词。
-- 需要走 D2 的 adapter，在启动前检查：程序是 `.cmd`/`.bat`，且提示词含换行或元字符时，直接报错。
-- 新增测试：提示词包含换行和 `& | > ^ " %`，经过每个 adapter 后，由假 CLI 的 `FAKE_INPUT_FILE` 收到的内容与原文逐字节一致。
+**Verification:**
+- [ ] `npm test`
+- [ ] `npm run build && node dist/cli.js stats --all`
 
-**Acceptance criteria**：
-- [x] 三个平台上，提示词都逐字节到达 worker。
-- [x] argv 里不再出现提示词（D2 的 `.exe` 回退除外）。
+**Dependencies:** Task 5
 
-**Verification**：
-- [x] 三个平台上 `npm test` 通过新增用例。
-- [x] 现有 adapter 参数断言已按新行为同步更新。
+**Files likely touched:**
+- `docs/reference.md`
+- `docs/reference.zh-CN.md`
+- `tasks/plan.md`
 
-**Dependencies**：T0、T6
-**Files likely touched**：`src/adapters/claude.ts`、`src/adapters/cursor.ts`、`src/adapters/agy.ts`、`test/adapters.test.ts`、`test/lifecycle.test.ts`
-**Estimated scope**：M
+**Estimated scope:** S
 
-### T9：`killGroup` 的 taskkill 分支；加 `windowsHide`
+### Checkpoint: PR 1
+- [ ] `npm test` 在 ubuntu、macOS、Windows CI 全绿
+- [ ] 基线已记录
+- [ ] 人工评审后合并
 
-**Description**：
-- win32 上，`killGroup` 执行 `taskkill /PID <pid> /T /F`，进程不存在时视为成功。
-- supervisor launch、worker、check 三处 `detached` 启动都加上 `windowsHide: true`。
+## Phase 2: file-snippets（PR 2）
 
-**Acceptance criteria**：
-- [x] Windows 上 idle timeout 和 max duration 能杀掉整棵 worker 进程树，包括孙进程。
-- [x] POSIX 分支不变。
+### Task 7: `src/snippets.ts`
 
-**Verification**：
-- [x] 三个平台上，lifecycle 的超时和孙进程用例通过。
-- [x] `process.test.ts` 新增 win32 用例：对已退出的 PID 调用不报错。
+**Description:** 按 spec D7–D9 实现以下内容：
+- `parseFileArg`：先整体当作路径；不存在时用行尾正则拆行号；`:N` 等同 `:N-N`
+- `loadExcerpts(cwd, args)`：负责全部校验（cwd 内、普通文件、二进制检测、行号范围、400 行和 64 KB 限额、敏感名单）
+- `renderExcerpts`：渲染标题和围栏，计算围栏长度
 
-**Dependencies**：T6
-**Files likely touched**：`src/process.ts`、`src/supervisor.ts`、`src/tasks.ts`、`test/process.test.ts`
-**Estimated scope**：S
+**Acceptance criteria:**
+- [ ] 解析：普通路径、`:N`、`:N-M`、Windows 盘符、文件名带冒号
+- [ ] 校验失败直接抛错，错误信息具体：越界时带出实际行数，敏感文件提示"在 prompt 里写明位置"。覆盖 `start > end`、401 行、超过 64 KB、NUL 字节、`..` 逃逸、符号链接逃逸（仅 POSIX）
+- [ ] 敏感名单：每个命中项和每个放行项（`.env.example`、`.env.sample`、`.env.template`、`.env.dist`）都有用例；内容里含反引号时围栏会加长
 
-### T10：cancel 改为写取消文件，配套兜底和孤儿收尾
+**Verification:**
+- [ ] `node --test test/snippets.test.ts`
 
-**Description**：
-- `cancel` 在任务目录创建 `cancel_requested.<turn>`，用 `wx` 方式，文件已存在也不报错。POSIX 上继续发 SIGTERM。
-- supervisor 启动时检查一次，之后每 250ms 检查一次，发现文件就调用 `stop("cancelled")`。
-- 兜底：5 秒内没有收尾、且 supervisor 仍存活，就强杀 supervisor。
-- 孤儿收尾时，如果当前 turn 存在取消文件，就记为 `cancelled`。
+**Dependencies:** Checkpoint PR 1
 
-**Acceptance criteria**：
-- [x] Windows 上 cancel 后状态记为 `cancelled`，并且杀掉孙进程。
-- [x] supervisor 卡死时，兜底仍能记为 `cancelled`。
-- [x] `reply` 之后，上一轮的取消文件不影响新的一轮。
+**Files likely touched:**
+- `src/snippets.ts`（新）
+- `test/snippets.test.ts`（新）
 
-**Verification**：
-- [x] 三个平台上 cancel 相关用例通过，另新增 3 条：兜底、孤儿收尾识别取消文件、reply 不受影响。
+**Estimated scope:** M
 
-**Dependencies**：T9
-**Files likely touched**：`src/tasks.ts`、`src/supervisor.ts`、`test/lifecycle.test.ts`
-**Estimated scope**：M
+### Task 8: 接入 start 和 MCP delegate_task
 
-### T11：`--check` 改用 `shell: true`；目录链接改用 junction
+**Description:** `start()` 对带行号的 `--file` 调用 `loadExcerpts`，用 task cwd 解析路径（`--isolate` 时是 worktree），把渲染结果接在宿主 prompt 之后，写进 `turn.prompt`。`turn.files` 保留原始参数，不带行号的路径照旧进 Focus 列表。同时更新 CLI 和 MCP 里 `--file`/`files` 的描述。
 
-**Description**：
-- `runCheck` 改成 `spawn(command, { shell: true, detached: true, windowsHide: true })`。
-- worktree 的目录链接用 `"junction"` 类型。文件链接遇到 `EPERM` 时报错，并提示改用 `copy`。
+**Acceptance criteria:**
+- [ ] 用 `FAKE_INPUT_FILE` 断言子进程收到的 prompt 布局和 spec D9 一致，片段原文完整出现
+- [ ] `--isolate` 时片段从 worktree 读取（构造源目录有未提交改动的场景，片段里不应出现这些改动）
+- [ ] `.env:1-3` 让 `start` 同步失败，任务目录里不存在这个文件的内容；不带行号的 `--file` 行为逐字节不变
 
-**Acceptance criteria**：
-- [x] 三个平台上 check 用例通过。
-- [x] Windows 上 worktree add/rm 和 `--isolate` + `diff` + `apply` 通过。
+**Verification:**
+- [ ] `node --test test/snippets-start.test.ts test/prompt-stdin.test.ts test/mcp.test.ts`
 
-**Verification**：
-- [x] 三个平台上 `npm test` 的 check、worktree、isolation、diff-apply 用例通过。
+**Dependencies:** Task 7
 
-**Dependencies**：T6
-**Files likely touched**：`src/supervisor.ts`、`src/worktree.ts`、`test/worktree.test.ts`
-**Estimated scope**：S
+**Files likely touched:**
+- `src/tasks.ts`
+- `src/mcp.ts`
+- `src/usage.ts`
+- `test/snippets-start.test.ts`（新）
 
-## Checkpoint B：PR B
+**Estimated scope:** M
 
-- [x] 三个平台的 CI 全绿（#77，最终 Windows 215 通过 / 0 失败 / 2 跳过）。
-- [x] Success Criteria 1、2、3、5 逐条核对，见 PR 描述。
-- [x] Windows 上暴露了 rename `EPERM`：`start` 轮询 `meta.json` 时 supervisor 被拒绝替换文件而崩溃。已加有上限的重试（单独一个提交 fdc9d30，可单独撤回），**待你确认保留**。路径大小写问题没有出现。
-- [ ] 交给你评审。
+### Task 9: reply --file 和 MCP task_reply.files
 
----
+**Description:** `reply()` 增加 `files` 参数：带行号的渲染进该轮 prompt，不带行号的写进该轮 `turn.files`。CLI 的 `reply` 增加 `--file`（可重复），MCP 的 `task_reply` 增加 `files`。
 
-## Phase 3: install、文档、真机（PR C）
+**Acceptance criteria:**
+- [ ] reply 轮带片段时，子进程收到的 prompt 里有片段；不带 `--file` 的 reply 行为不变
+- [ ] 校验失败时 reply 同步失败，任务状态不变（不进入 running）
+- [ ] `baton reply -h` 和 MCP schema 更新
 
-### T12：install 去掉 `npm.cmd` 特判；文档写明平台支持和已知限制
+**Verification:**
+- [ ] `node --test test/snippets-start.test.ts test/help.test.ts test/mcp.test.ts`
 
-**Description**：
-- 去掉 `install.ts:147` 和 `rulesync-setup.ts:250` 的 `npm.cmd` 判断，统一写 `npm`，由 cross-spawn 解析。
-- 在 README、README.zh-CN、`docs/reference.md`、`docs/reference.zh-CN.md` 里写明：
-  - 支持的平台；
-  - Windows 上文件权限 `0600`/`0700` 不生效，由用户目录的 ACL 保护；
-  - `taskkill` 可能漏杀孙进程；
-  - `--check` 和 `post_create` 在 Windows 上通过 `cmd.exe` 执行。
+**Dependencies:** Task 8
 
-**Acceptance criteria**：
-- [x] Success Criteria 6 满足。
-- [x] install 测试通过（`npm.cmd` 特判已在 PR B 移除，`src/` 中无残留）。
+**Files likely touched:**
+- `src/tasks.ts`
+- `src/cli.ts`
+- `src/usage.ts`
+- `src/mcp.ts`
+- `test/snippets-start.test.ts`
 
-**Verification**：
-- [x] `npm test` 通过（macOS 本地全过；三平台待 PR C CI 验证）。
-- [x] 中英文文档内容一致。
+**Estimated scope:** M
 
-**Dependencies**：Checkpoint B
-**Files likely touched**：`src/install.ts`、`src/rulesync-setup.ts`、`README.md`、`README.zh-CN.md`、`docs/reference.md`、`docs/reference.zh-CN.md`（文档文件为机械同步）
-**Estimated scope**：M
+### Task 10: snippets 文档和冒烟
 
-### T13：Windows 真机冒烟（暂跳过）
+**Description:** 文档写明以下内容：
+- 行号语法
+- 限额
+- 敏感名单
+- `--isolate` 时从 worktree 读取的说明
 
-**Description**：在 Windows 真机上依次验证：
+然后用真实 CLI 冒烟一次。
 
-- `npx @speculoai/baton install` 能装上 Claude Code 和 Codex；
-- `baton agents` 能识别它们；
-- codex 和 claude 各完成一次真实的 start → wait → reply，提示词为多行并带特殊字符。
+**Acceptance criteria:**
+- [ ] `docs/reference.md`、`docs/reference.zh-CN.md` 更新
+- [ ] 真实 CLI（任选两家）收到片段，并在回复里引用了片段内容；`turns/1.json` 记录的 prompt 和发出的一致
 
-**Status（2026-11-26）**：因当前无可用 Windows 真机，经确认暂跳过；发版后通过 #79（`baton report`）收集真实环境问题并按独立 issue 跟进。
+**Verification:**
+- [ ] `npm test`
 
-## Checkpoint C：PR C
+**Dependencies:** Task 9
 
-- [x] Success Criteria 6 满足（Success Criteria 4 真机冒烟暂跳过，见 T13）。
-- [x] 把 spec 的 Status 改为 implemented（注明真机冒烟延后至 #79 反馈）。
+**Files likely touched:**
+- `docs/reference.md`
+- `docs/reference.zh-CN.md`
+
+**Estimated scope:** S
+
+### Checkpoint: PR 2
+- [ ] `npm test` 三平台全绿
+- [ ] 人工评审后合并
+
+## Phase 3: handoff-brief（PR 3）
+
+### Task 11: 标签检测和输入合约
+
+**Description:** 在 `src/contract.ts` 加标签检测正则和输入合约文本（spec D11）。`buildPrompt` 在本轮 prompt（含 reply）检测到标签时，在输出合约之前注入输入合约。
+
+**Acceptance criteria:**
+- [ ] 六种标签都能被检测；`[readme]`、`[x]`、跨行的方括号不算标签
+- [ ] 带标签的 prompt 注入输入合约，位置在输出合约之前；不带标签的 prompt 输出和改动前逐字节一致
+- [ ] reply 轮同样生效
+
+**Verification:**
+- [ ] `node --test test/contract.test.ts test/prompt-stdin.test.ts`
+
+**Dependencies:** Checkpoint PR 2
+
+**Files likely touched:**
+- `src/contract.ts`
+- `test/contract.test.ts`
+
+**Estimated scope:** S
+
+### Task 12: 两份 skill 的简报模板和规则
+
+**Description:** `baton-rescue`、`baton-orchestrate` 两份 skill 按 spec D12 写入以下内容（英文）：
+- 简报模板和标签表
+- 只交已经知道的
+- 代码用 `--file path:start-end` 给坐标
+- 敏感值只写位置
+- 工具提示只能写成条件句
+- 续会话优先
+- 评审例外
+
+现有 `SKILL.md:48` 那条"写清完成标准和看哪些文件"的说法改为引用模板。
+
+**Acceptance criteria:**
+- [ ] `skills.test.ts` 新增断言：模板章节名、六个标签名、reply-first、评审例外，且不含汉字
+- [ ] 两份 skill 的规则一致，不互相矛盾；orchestrate 里的派发示例使用简报模板
+
+**Verification:**
+- [ ] `node --test test/skills.test.ts test/manifests.test.ts`
+
+**Dependencies:** Task 11
+
+**Files likely touched:**
+- `skills/baton-rescue/SKILL.md`
+- `skills/baton-orchestrate/SKILL.md`
+- `test/skills.test.ts`
+
+**Estimated scope:** S
+
+### Task 13: brief 文档和端到端冒烟
+
+**Description:** 文档写明以下内容：
+- 标签表
+- 输入合约
+- 简报模板入口
+
+然后用一份带标签和片段的真实简报交给 codex 和 cursor 各一次，用 `stats` 查看这两个任务的 `activity`。
+
+**Acceptance criteria:**
+- [ ] `docs/reference.md`、`docs/reference.zh-CN.md`、`docs/hosts.md`（如涉及宿主用法）更新
+- [ ] 两次冒烟的 `turns/1.json` 里有输入合约，`activity` 已记录，结果写进 `tasks/plan.md` 作为首批数据
+
+**Verification:**
+- [ ] `npm test`
+
+**Dependencies:** Task 12
+
+**Files likely touched:**
+- `docs/reference.md`
+- `docs/reference.zh-CN.md`
+- `docs/hosts.md`
+- `tasks/plan.md`
+
+**Estimated scope:** S
+
+### Checkpoint: PR 3
+- [ ] `npm test` 三平台全绿
+- [ ] 人工评审后合并
+
+## Phase 4: 复盘
+
+### Task 14: 对照效果目标
+
+**Description:** 启用简报的任务累计 ≥ 20 个后，运行 `baton stats --all --since <PR 3 合并日>`，按 CLI 和基线对比 spec 的效果目标，结论和调整建议回写 spec。
+
+**Acceptance criteria:**
+- [ ] 四项效果指标逐项给出"达标 / 未达标 + 原因"
+- [ ] 对未达标项提出具体调整：合约措辞、skill 规则或限额
+
+**Verification:**
+- [ ] 人工评审结论
+
+**Dependencies:** Checkpoint PR 3
+
+**Files likely touched:**
+- `SPEC-handoff-context.md`
+
+**Estimated scope:** XS
