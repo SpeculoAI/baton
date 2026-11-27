@@ -316,7 +316,7 @@ baton prune --older <days>           # delete non-running task dirs older than N
 baton worktree add [--name <id>] [--branch <name>] [--base <ref>]
 baton worktree ls
 baton worktree rm <name-or-path> [-f | --force]  # refuses dirty/unmerged unless --force; removes tree + deletes local branch
-baton report [id] [--title <t>] [--submit]  # plain text: redacted diagnostic report + GitHub issue URL (--submit uses gh or opens browser)
+baton report [id] [--title <t>] [--body <text>] [--label <name>]... [--submit]  # plain text: redacted diagnostic report + GitHub issue URL (label default: bug; --submit uses gh or opens browser)
 baton mcp                            # start the MCP server (stdio)
 ```
 

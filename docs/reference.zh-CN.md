@@ -316,7 +316,7 @@ baton prune --older <天数>            # 删除早于 N 天的非 running 任�
 baton worktree add [--name <id>] [--branch <name>] [--base <ref>]
 baton worktree ls
 baton worktree rm <name-or-path> [-f | --force]  # 默认拒绝脏或未合并；--force 强制移除并 git branch -D 删本地分支
-baton report [id] [--title <t>] [--submit]  # 纯文本：脱敏诊断报告与 GitHub issue 预填链接（--submit 有 gh 直接提，否则打开浏览器）
+baton report [id] [--title <t>] [--body <text>] [--label <name>]... [--submit]  # 纯文本：脱敏诊断报告与 GitHub issue 预填链接（--body 填写现象，--label 默认 bug；--submit 有 gh 直接提，否则打开浏览器）
 baton mcp                             # 启动 MCP 服务（stdio）
 ```
 

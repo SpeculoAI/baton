@@ -47,7 +47,7 @@ async function main(): Promise<void> {
     const { values, positionals } = parseArgs({ args, allowPositionals: true, options: COMMANDS.report.options });
     if (positionals.length > 1) throw new Error("report takes at most one task_id.");
     const { buildReport, submitReport } = await import("./report.ts");
-    const report = buildReport(positionals[0], { title: values.title });
+    const report = buildReport(positionals[0], { title: values.title, body: values.body, labels: values.label });
     if (values.submit) {
       result = submitReport(report);
       process.stdout.write(`${JSON.stringify(result)}\n`);

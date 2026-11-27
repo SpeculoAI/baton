@@ -15,8 +15,17 @@ const MAX_TEXT = 200;
 
 export interface DiagnosticReport {
   title: string;
+  labels: string[];
   markdown: string;
   issueUrl: string;
+}
+
+export interface ReportOptions {
+  title?: string;
+  /** Replaces the "What happened" placeholder; sanitized like everything else. */
+  body?: string;
+  /** Repo labels to apply; defaults to `bug`. */
+  labels?: string[];
 }
 
 export interface SubmitResult {
@@ -102,13 +111,13 @@ function readEventSkeleton(id: string, cwd?: string): string[] {
   return lines.slice(-MAX_EVENTS);
 }
 
-function makeIssueUrl(title: string, body: string, shortBody: string): string {
-  const full = `${ISSUE_NEW_URL}?${new URLSearchParams({ labels: "bug", title, body }).toString()}`;
-  if (full.length <= MAX_URL_LEN) return full;
-  return `${ISSUE_NEW_URL}?${new URLSearchParams({ labels: "bug", title, body: shortBody }).toString()}`;
+function makeIssueUrl(title: string, labels: string[], body: string, shortBody: string): string {
+  const make = (b: string) => `${ISSUE_NEW_URL}?${new URLSearchParams({ title, labels: labels.join(","), body: b }).toString()}`;
+  const full = make(body);
+  return full.length <= MAX_URL_LEN ? full : make(shortBody);
 }
 
-export function buildReport(taskId?: string, opts: { title?: string } = {}): DiagnosticReport {
+export function buildReport(taskId?: string, opts: ReportOptions = {}): DiagnosticReport {
   const meta = taskId ? readMeta(taskId) : null;
   if (taskId && !meta) throw new Error("No such task.");
 
@@ -155,19 +164,21 @@ export function buildReport(taskId?: string, opts: { title?: string } = {}): Dia
     "> Review before posting: remove any project-specific terms if present.",
     "",
     "### What happened",
-    "<!-- Describe what you expected vs. what happened -->",
+    opts.body?.trim() ? sanitize(opts.body.trim(), meta?.cwd) : "<!-- Describe what you expected vs. what happened -->",
     "",
   ];
   const markdown = [...header, ...envSection, ...taskSection].join("\n");
   const title = opts.title?.trim() || (meta ? `bug(${meta.target}): ${meta.status}` : "bug: <describe issue>");
+  const given = (opts.labels ?? []).map((l) => l.trim()).filter(Boolean);
+  const labels = given.length ? given : ["bug"];
   const shortBody = [
     ...header,
     ...envSection,
     "",
     "<!-- Full task timeline omitted for URL length; paste the output of `baton report` here -->",
   ].join("\n");
-  const issueUrl = makeIssueUrl(title, markdown, shortBody);
-  return { title, markdown, issueUrl };
+  const issueUrl = makeIssueUrl(title, labels, markdown, shortBody);
+  return { title, labels, markdown, issueUrl };
 }
 
 function defaultOpenBrowser(url: string): boolean {
@@ -193,10 +204,11 @@ export function submitReport(report: DiagnosticReport, deps: SubmitDeps = {}): S
   const auth = runSync("gh", ["auth", "status"], { stdio: "ignore", windowsHide: true });
   if (auth.status === 0) {
     const ghOpts = { input: report.markdown, encoding: "utf8" as const, windowsHide: true };
-    let created = runSync("gh", ["issue", "create", "-R", REPO, "--label", "bug", "--title", report.title, "--body-file", "-"], ghOpts);
+    const args = (labels: string[]) => ["issue", "create", "-R", REPO, "--title", report.title, ...labels.flatMap((l) => ["--label", l]), "--body-file", "-"];
+    let created = runSync("gh", args(report.labels), ghOpts);
     // External users without triage/label rights may fail on --label; retry once without it.
-    if (created.status !== 0 && /label|permission/i.test(created.stderr ?? "")) {
-      created = runSync("gh", ["issue", "create", "-R", REPO, "--title", report.title, "--body-file", "-"], ghOpts);
+    if (created.status !== 0 && report.labels.length && /label|permission/i.test(created.stderr ?? "")) {
+      created = runSync("gh", args([]), ghOpts);
     }
     const url = (created.stdout ?? "").trim();
     if (created.status === 0 && url) return { method: "gh", url, submitted: true };

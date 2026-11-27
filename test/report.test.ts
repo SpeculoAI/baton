@@ -89,8 +89,32 @@ test("buildReport with task_id keeps strict whitelist and omits prompts, busines
   assert.ok(!okRep.markdown.includes("- summary:"));
 });
 
+test("buildReport defaults to the bug label, takes --label overrides, and sanitizes --body into What happened", (t) => {
+  const s = sandbox(t);
+  const prevHome = process.env.BATON_HOME;
+  process.env.BATON_HOME = s.home;
+  t.after(() => {
+    if (prevHome === undefined) delete process.env.BATON_HOME;
+    else process.env.BATON_HOME = prevHome;
+  });
+
+  const plain = buildReport();
+  assert.deepEqual(plain.labels, ["bug"]);
+  assert.match(plain.markdown, /<!-- Describe what you expected vs\. what happened -->/);
+  assert.equal(new URL(plain.issueUrl).searchParams.get("labels"), "bug");
+
+  const rep = buildReport(undefined, {
+    body: `Expected X, got Y in ${os.homedir()}/proj with Bearer abc.def.ghi`,
+    labels: ["enhancement", " area: cli ", ""],
+  });
+  assert.deepEqual(rep.labels, ["enhancement", "area: cli"]);
+  assert.match(rep.markdown, /### What happened\nExpected X, got Y in ~\/proj with Bearer \[REDACTED\]\n/);
+  assert.ok(!rep.markdown.includes("<!-- Describe"));
+  assert.equal(new URL(rep.issueUrl).searchParams.get("labels"), "enhancement,area: cli");
+});
+
 test("submitReport uses gh when authenticated, and falls back to browser or url otherwise", () => {
-  const sample = { title: "bug: sample", markdown: "body text", issueUrl: "https://github.com/SpeculoAI/baton/issues/new?title=bug" };
+  const sample = { title: "bug: sample", labels: ["bug", "area: cli"], markdown: "body text", issueUrl: "https://github.com/SpeculoAI/baton/issues/new?title=bug" };
 
   // Authenticated gh path
   const calls: [string, readonly string[] | undefined][] = [];
@@ -104,8 +128,7 @@ test("submitReport uses gh when authenticated, and falls back to browser or url 
   });
   assert.deepEqual(ghRes, { method: "gh", url: "https://github.com/SpeculoAI/baton/issues/999", submitted: true });
   assert.equal(calls.length, 2);
-  assert.ok(calls[1]?.[1]?.includes("--label"));
-  assert.ok(calls[1]?.[1]?.includes("bug"));
+  assert.deepEqual(calls[1][1], ["issue", "create", "-R", "SpeculoAI/baton", "--title", "bug: sample", "--label", "bug", "--label", "area: cli", "--body-file", "-"]);
 
   // Authenticated gh without label permission retries once without --label
   const retryCalls: (readonly string[] | undefined)[] = [];
@@ -145,6 +168,7 @@ test("CLI baton report prints markdown and issue url without task_id, and reject
   assert.match(stdout, /### Environment/);
   assert.match(stdout, /Open issue: https:\/\/github\.com\/SpeculoAI\/baton\/issues\/new\?/);
   assert.match(stdout, /title=bug%3A\+custom/);
+  assert.match(stdout, /labels=bug&/);
 
   await assert.rejects(
     exec(process.execPath, [cli, "report", randomUUID()], { cwd: s.cwd, env: s.env, timeout: 15_000 }),
