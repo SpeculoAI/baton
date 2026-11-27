@@ -6,7 +6,7 @@ import path from "node:path";
 import crossSpawn from "cross-spawn";
 import { exe, fakeBin } from "./helpers.ts";
 import { codex } from "../src/adapters/codex.ts";
-import { which, authHit } from "../src/adapters/common.ts";
+import { which, authHit, assertArgvSafe } from "../src/adapters/common.ts";
 import { getAdapter } from "../src/adapters/index.ts";
 import { unseenRules } from "../src/rules.ts";
 
@@ -188,4 +188,23 @@ test("adapter rules: coverage matrix and rulesyncTarget / gates", () => {
   assert.deepEqual(unseenRules(["CLAUDE.md"], cursor.rules), []);
   assert.deepEqual(unseenRules(["AGENTS.md"], claude.rules), []);
   assert.deepEqual(unseenRules(["AGENTS.md", "CLAUDE.md"], claude.rules), ["AGENTS.md"]);
+});
+
+test("assertArgvSafe: argv prompts pass on POSIX and to a Windows .exe; a .cmd shim refuses newlines and cmd.exe metacharacters", () => {
+  const multi = ["-p", "line one & two\nline two"];
+  assert.doesNotThrow(() => assertArgvSafe("/usr/bin/kimi", multi, "linux"));
+  assert.doesNotThrow(() => assertArgvSafe("C:\\bin\\kimi.exe", multi, "win32"));
+  assert.doesNotThrow(() => assertArgvSafe("C:\\bin\\kimi.cmd", ["-p", "plain one line"], "win32"));
+  for (const bad of ["a\nb", "a\rb", "a & b", "a | b", "a < b", "a > b", "a ^ b", "100%", "hi!", 'say "x"', "(x)"]) {
+    assert.throws(() => assertArgvSafe("C:\\bin\\KIMI.CMD", ["-p", bad], "win32", "use install.ps1"), (err: Error) => {
+      assert.match(err.message, /kimi\.cmd/i);
+      assert.match(err.message, /cmd\.exe/);
+      assert.match(err.message, /use install\.ps1/);
+      return true;
+    }, JSON.stringify(bad));
+  }
+  assert.throws(() => assertArgvSafe("C:\\bin\\kimi.bat", ["-p", "a\nb"], "win32"), /\.bat/);
+  const long = ["-p", "x".repeat(32767)];
+  assert.doesNotThrow(() => assertArgvSafe("/usr/bin/kimi", long, "darwin"));
+  assert.throws(() => assertArgvSafe("C:\\bin\\kimi.exe", long, "win32"), /32767/);
 });
