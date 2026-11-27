@@ -35,11 +35,15 @@ The full manual: every install path, flag, status, and calling convention. For t
 npx @speculoai/baton install
 ```
 
-This installs the `baton` command globally and the plugin into the agent CLIs you select. In a TTY, `install` / `update` / `uninstall` show a short interactive flow (multi-select on install, progress, ✓/✗) and **do not** print the JSON blob — exit code is enough. Scripts and non-TTY runs still get one JSON object on stdout. `--only <agent>` is repeatable (`claude`, `codex`, `cursor`, `agy`, `gemini`), `--force` reinstalls, and `--dry-run` prints the commands. Update everything later with:
+This installs the `baton` command globally and the plugin into the agent CLIs you select. In a TTY, `install` / `update` / `uninstall` show a short interactive flow (multi-select on install, progress, ✓/✗) and **do not** print the JSON blob — exit code is enough. Scripts and non-TTY runs still get one JSON object on stdout. `--only <agent>` is repeatable (`claude`, `codex`, `cursor`, `agy`, `gemini`), and `--force` reinstalls. `--dry-run` prints the commands, including update steps that may run during `install`.
+
+`npm i -g @speculoai/baton` upgrades the CLI only. Use `baton update` or the following command to update both the CLI and the recorded host plugins.
 
 ```bash
 npx @speculoai/baton@latest update
 ```
+
+Restart open agent sessions afterward to load the updated skills and MCP.
 
 Remove the plugin from those CLIs with `npx @speculoai/baton uninstall`. That leaves the global command; remove it with `npm uninstall -g @speculoai/baton`.
 
@@ -129,7 +133,7 @@ From inside your local `baton` directory:
 agy plugin install .
 ```
 
-> **Update**: Re-running the same install command updates the plugin to the latest version.
+> **Update**: Re-running the same install command updates the plugin to the latest version. Restart open agent sessions to load the updated skills and MCP.
 
 ---
 

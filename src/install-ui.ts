@@ -67,6 +67,10 @@ export function logInfo(message: string): void {
   p.log.info(message, opts);
 }
 
+export function logWarning(message: string): void {
+  p.log.warn(message, opts);
+}
+
 export function createSpinner() {
   return p.spinner(opts);
 }

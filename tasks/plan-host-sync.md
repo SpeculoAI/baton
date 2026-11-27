@@ -13,6 +13,8 @@ Spec: `SPEC-host-plugin-sync.md` · Tasks: `tasks/todo-host-sync.md` · Issue: #
 - 风险：某宿主对已装插件重跑 install 返回 exit 0、不报 already installed，却没有刷新到新版，这种情况会被漏掉。T0 逐个宿主实测；实测命中这种情况时，给该宿主加一个 `refresh: true` 一类的标记，install 后无条件补跑，并在计划里补记，不改其他宿主。
 - `agy` 的 `update` 和 `install` 是同一条命令。已安装时再跑一遍 update 没有意义，跳过（update 步骤与 install 步骤相同时不补跑），依据 T0 结果决定 agy 是否需要特殊处理。
 
+T0 确认：Claude 返回 0 仍可能报告 `already installed`，判定需覆盖该情况。Codex 的 Git 市场重装返回 0，未报告 `already installed` 且仍为 0.6.0，按预案单独标记，成功安装后固定补跑 update。Antigravity 重跑 install 已换成 0.8.0，保留相同步骤去重。Cursor 隔离配置下缺少认证，Gemini 沿用样例，暂无证据为两者增加例外。实测记录见规格。
+
 ### 2. `runInstall` 改动（`src/install.ts`）
 
 - 宿主循环里，install 步骤命中 already installed 后，接着顺序执行 `commandsFor(id, "update")`。失败时设置 `error`，结果行 `ok: false`。

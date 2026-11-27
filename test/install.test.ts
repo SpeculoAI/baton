@@ -96,8 +96,9 @@ test("--dry-run only lists commands, does not run them, and does not write insta
   const out = JSON.parse((await exec(process.execPath, [cli, "install", "--dry-run", "--only", "claude", "--skip-global"], { env, timeout: 8000 })).stdout);
   assert.equal(out.dry_run, true);
   assert.equal(out.global, undefined);
+  assert.equal(out.note, undefined);
   assert.equal(out.hosts[0].id, "claude");
-  assert.deepEqual(out.hosts[0].commands, commandsFor("claude", "install").map((step) => step.args));
+  assert.deepEqual(out.hosts[0].commands, [...argsOf("claude", "install"), ...argsOf("claude", "update")]);
   assert.equal(out.hosts[0].bin, path.join(dir, exe("claude")));
   assert.equal(fs.existsSync(log), false);
   assert.equal(fs.existsSync(path.join(home, "installed.json")), false);
@@ -138,29 +139,73 @@ test("install calls global npm and the agent, and writes the record on success",
   const out = JSON.parse((await exec(process.execPath, [cli, "install", "--only", "gemini"], { env, timeout: 8000 })).stdout);
   assert.equal(out.hosts[0].ok, true);
   assert.equal(out.global.ok, true);
+  assert.equal(out.note, "Restart open agent sessions to load the updated skills and MCP.");
   assert.deepEqual(readInstalled(home), ["gemini"]);
   const text = fs.readFileSync(log, "utf8");
   const version = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
   assert.match(text, new RegExp(`npm install -g @speculoai/baton@${version.replaceAll(".", "\\.")}`));
   assert.match(text, /extensions install https:\/\/github.com\/SpeculoAI\/baton/);
+  assert.doesNotMatch(text, /extensions update/);
 });
 
-test("an already-installed target counts as success and is recorded", async (t) => {
+test("install updates and records an already-installed target", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "baton-home-"));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
-  const { dir } = bins(t, ["gemini"]);
+  const { dir } = bins(t, ["claude", "gemini"]);
+  for (const [id, status] of [["claude", 0], ["gemini", 1]] as const) {
+    const calls: string[][] = [];
+    const ran = await runInstall({
+      action: "install", only: [id], skipGlobal: true, env: { PATH: dir }, home,
+      spawn(_command, args) {
+        calls.push(args);
+        return args[1] === "install" ? { status, stdout: "Plugin is already installed." } : { status: 0 };
+      },
+    });
+    assert.deepEqual(calls, [...argsOf(id, "install"), ...argsOf(id, "update")]);
+    assert.equal(ran.exitCode, 0);
+    assert.deepEqual(ran.result.hosts, [{ id, ok: true, note: "already installed, updated" }]);
+  }
+  assert.deepEqual(readInstalled(home), ["claude", "gemini"]);
+});
+
+test("a failed follow-up update fails install but preserves the host record", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "baton-home-"));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const { dir } = bins(t, ["claude"]);
+  const calls: string[][] = [];
   const ran = await runInstall({
-    action: "install",
-    only: ["gemini"],
-    skipGlobal: true,
-    env: { PATH: dir },
-    home,
-    spawn: () => ({ status: 1, stderr: 'Extension "baton" is already installed.' }),
+    action: "install", only: ["claude"], skipGlobal: true, env: { PATH: dir }, home,
+    spawn(_command, args) {
+      calls.push(args);
+      if (args[1] === "install") return { status: 0, stdout: "Plugin is already installed." };
+      if (args[2] === "update") return { status: 1, stderr: "marketplace update failed" };
+      return { status: 0 };
+    },
   });
+  assert.deepEqual(calls, [...argsOf("claude", "install"), argsOf("claude", "update")[0]]);
+  assert.equal(ran.exitCode, 1);
+  assert.deepEqual(ran.result.hosts, [{ id: "claude", ok: false, error: "marketplace update failed" }]);
+  assert.equal(ran.result.note, undefined);
+  assert.deepEqual(readInstalled(home), ["claude"]);
+});
+
+test("Codex refreshes after a silent install and Antigravity does not repeat install", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "baton-home-"));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const { dir } = bins(t, ["codex", "agy"]);
+  const calls: string[][] = [];
+  const ran = await runInstall({
+    action: "install", only: ["codex", "agy"], skipGlobal: true, env: { PATH: dir }, home,
+    spawn(command, args) {
+      calls.push(args);
+      return path.basename(command) === exe("agy") ? { status: 1, stderr: "already installed" } : { status: 0 };
+    },
+  });
+  const expected = [...argsOf("codex", "install"), ...argsOf("codex", "update"), ...argsOf("agy", "install")];
   assert.equal(ran.exitCode, 0);
-  assert.equal(ran.result.hosts[0].ok, true);
-  assert.equal(ran.result.hosts[0].note, "already installed, skipped");
-  assert.deepEqual(readInstalled(home), ["gemini"]);
+  assert.deepEqual(calls, expected);
+  assert.deepEqual(planInstall({ action: "install", only: ["codex", "agy"], env: { PATH: dir } })
+    .hosts.flatMap((host) => host.commands), expected);
 });
 
 test("cancelling host selection does not run the install", async (t) => {
@@ -173,6 +218,47 @@ test("cancelling host selection does not run the install", async (t) => {
   });
   assert.equal(ran.exitCode, 0);
   assert.deepEqual(ran.result.hosts, []);
+});
+
+test("update with no recorded hosts warns and still runs global npm", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "baton-home-"));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const { dir } = bins(t, ["claude"]);
+  const calls: string[][] = [];
+  const input = {
+    action: "update" as const, env: { PATH: dir }, home,
+    spawn(command: string, args: string[]) {
+      calls.push([command, ...args]);
+      return { status: 0 };
+    },
+  };
+  const dry = await runInstall({ ...input, dryRun: true });
+  assert.deepEqual(calls, []);
+  assert.equal(dry.result.note, undefined);
+  const ran = await runInstall(input);
+  assert.equal(ran.exitCode, 0);
+  assert.deepEqual(calls, [["npm", "install", "-g", "@speculoai/baton@latest"]]);
+  assert.deepEqual(ran.result.hosts, []);
+  assert.equal(ran.result.note, undefined);
+  const warning = ["no recorded hosts; run `baton install` to install the plugin into agent CLIs"];
+  assert.deepEqual(ran.result.warnings, warning);
+  assert.deepEqual(dry.result.warnings, warning);
+});
+
+test("update of selected or recorded hosts includes a restart note without warnings", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "baton-home-"));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const { dir } = bins(t, ["claude"]);
+  for (const only of [["claude"], undefined]) {
+    if (!only) writeInstalled(["claude"], home);
+    const ran = await runInstall({
+      action: "update", only, skipGlobal: true, env: { PATH: dir }, home,
+      spawn: () => ({ status: 0 }),
+    });
+    assert.deepEqual(ran.result.hosts, [{ id: "claude", ok: true }]);
+    assert.equal(ran.result.warnings, undefined);
+    assert.equal(ran.result.note, "Restart open agent sessions to load the updated skills and MCP.");
+  }
 });
 
 test("soft migrate failures stay quiet on stderr when the host still succeeds", async (t) => {

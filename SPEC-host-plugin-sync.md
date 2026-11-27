@@ -1,6 +1,6 @@
 # Spec: install 时同步宿主插件 — V1
 
-Status: approved（2026-11-26）
+Status: implemented
 Issue: #93
 Plan: `tasks/plan-host-sync.md` · Tasks: `tasks/todo-host-sync.md`
 
@@ -14,12 +14,19 @@ Plan: `tasks/plan-host-sync.md` · Tasks: `tasks/todo-host-sync.md`
 
 **原则**（用户 2026-11-26 确认）：只在 install 时处理宿主插件版本；其他命令（`start`、`mcp`、`update` 等）不做检测、不自动同步。不加 npm `postinstall`。
 
-## 实测依据（2026-11-26，macOS，隔离 `CLAUDE_CONFIG_DIR`，本地市场从 `v0.6.0` 切到 `v0.8.0`）
+## 实测依据（2026-11-26，macOS，隔离宿主配置，本地市场从 `v0.6.0` 切到 `v0.8.0`）
 
-- `claude plugin install baton@speculoai`（已装 0.6.0）→ `✔ Plugin "baton@speculoai" is already installed … claude plugin update baton@speculoai re-records its version, 0.6.0 to 0.8.0`，登记版本仍为 `0.6.0`。
-- 接着 `claude plugin marketplace update speculoai` + `claude plugin update baton@speculoai` → `Plugin "baton" updated from 0.6.0 to 0.8.0 … Restart to apply changes.`，`installPath` 切到 `.../0.8.0`。
-- 结论：宿主自己的 update 命令可用；缺的是 baton install 在已安装时不调用它，且不提示重开会话。
-- 其他宿主（codex、cursor、agy、gemini）已安装时的输出和退出码未实测，计划阶段 T0 补测。
+用 `git clone` 建本地市场，依次检出 `v0.6.0`、`v0.8.0`。仅在隔离进程中用 Git URL 重写让宿主通过现有 Git 市场命令访问本地仓库。
+
+| 宿主 | 重跑 install 退出码 | 含 `already installed` | 版本与关键输出 |
+| --- | --- | --- | --- |
+| Claude Code 2.1.332 | 0 | 是 | `Plugin "baton@speculoai" is already installed (scope: user)`，仍为 0.6.0。市场更新与插件更新均返回 0，`plugin list --json` 确认升至 0.8.0。 |
+| Codex CLI 0.171.0 | 0 | 否 | ``Added plugin `baton` from marketplace `speculoai`.``，安装目录仍为 `…/baton/0.6.0`。市场 `upgrade` 与再次 `plugin add` 均返回 0，安装目录变为 `…/baton/0.8.0`。 |
+| Cursor Agent 2026.11.22-e9042b2 | 未实测 | 未实测 | 隔离配置下首次添加市场即返回 1 和 `Error: Authentication required.`，未建立 0.6.0 基线。 |
+| Antigravity 1.5.18 | 0 | 否 | `Installed to …/plugins/baton (replaced existing installation)`，`plugin list` 确认从 0.6.0 升至 0.8.0。 |
+| Gemini CLI | 未实测 | 测试桩含该提示 | 现有测试桩返回 1 和 `Extension "baton" is already installed.`，参考文档的更新命令为 `gemini extensions update baton`。 |
+
+结论：Claude 需要识别退出码为 0 的 `already installed`。Codex 命中计划中的例外，成功安装后固定补跑现有 update 步骤。Antigravity 的 install 已能刷新版本，且两组命令相同，只运行一次。Cursor 和 Gemini 证据不足以增加例外，沿用条件补跑。
 
 ## New Behavior
 

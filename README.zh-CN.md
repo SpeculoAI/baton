@@ -70,7 +70,7 @@ npx @speculoai/baton install
 baton agents
 ```
 
-以后用 `npx @speculoai/baton@latest update` 一键更新。安装参数（`--only`、`--force`、`--dry-run`）、各宿主的手动安装方式，以及 Claude Desktop、Windsurf、Zed 的 MCP 配置，见[完整手册](docs/reference.zh-CN.md#安装指南-installation)。
+`npm i -g @speculoai/baton` 只升级 CLI。用 `baton update` 或 `npx @speculoai/baton@latest update` 同时更新 CLI 和已记录的宿主插件。升级后重开已打开的 agent 会话，加载新版 skills 和 MCP。安装时加 `--dry-run` 会列出可能执行的更新步骤。安装参数（`--only`、`--force`、`--dry-run`）、各宿主的手动安装方式，以及 Claude Desktop、Windsurf、Zed 的 MCP 配置，见[完整手册](docs/reference.zh-CN.md#安装指南-installation)。
 
 ## 怎么用
 

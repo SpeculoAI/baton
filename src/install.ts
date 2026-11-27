@@ -1,6 +1,7 @@
 import spawn from "cross-spawn";
 import fs from "node:fs";
 import path from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { which } from "./adapters/common.ts";
 import { batonHome } from "./store.ts";
 
@@ -17,6 +18,7 @@ type Host = {
   label: string;
   bins: string[];
   note?: string;
+  refreshOnInstall?: boolean;
   install: Step[];
   update: Step[];
   uninstall: Step[];
@@ -46,6 +48,7 @@ export const HOSTS: Host[] = [
     id: "codex",
     label: "Codex CLI",
     bins: ["codex"],
+    refreshOnInstall: true,
     migrate: [
       { args: ["plugin", "remove", OLD_ID], soft: true },
       { args: ["plugin", "marketplace", "remove", OLD_MARKET], soft: true },
@@ -97,12 +100,21 @@ export function detectedHosts(env: NodeJS.ProcessEnv = process.env): DetectedHos
   return HOSTS.filter((host) => which(host.bins, env)).map((host) => ({ id: host.id, label: host.label }));
 }
 
-export function commandsFor(id: string, action: Action, opts: { force?: boolean } = {}): Step[] {
+function hostFor(id: string): Host {
   const host = HOSTS.find((item) => item.id === id);
   if (!host) throw new Error(`Unknown agent: ${id}`);
+  return host;
+}
+
+export function commandsFor(id: string, action: Action, opts: { force?: boolean } = {}): Step[] {
+  const host = hostFor(id);
   if (action !== "install") return host[action];
   const forced = opts.force ? host.uninstall.map((step) => ({ ...step, soft: true })) : [];
   return [...(host.migrate ?? []), ...forced, ...host.install];
+}
+
+function installUpdateSteps(host: Host): Step[] {
+  return isDeepStrictEqual(host.install, host.update) ? [] : host.update;
 }
 
 export type PlannedHost = { id: string; bin: string; commands: string[][]; note?: string };
@@ -126,18 +138,19 @@ export function planInstall(input: {
   const hosts: PlannedHost[] = [];
   const missing: string[] = [];
   for (const id of ids) {
-    const host = HOSTS.find((item) => item.id === id);
-    if (!host) throw new Error(`Unknown agent: ${id}`);
+    const host = hostFor(id);
     const bin = which(host.bins, env);
     if (!bin) {
       if (input.only?.length) throw new Error(`${id} not detected.`);
       missing.push(id);
       continue;
     }
+    const steps = commandsFor(id, input.action, { force: input.force });
+    if (input.action === "install") steps.push(...installUpdateSteps(host));
     hosts.push({
       id,
       bin,
-      commands: commandsFor(id, input.action, { force: input.force }).map((step) => step.args),
+      commands: steps.map((step) => step.args),
       ...(host.note && input.action === "install" ? { note: host.note } : {}),
     });
   }
@@ -164,6 +177,15 @@ export function writeInstalled(ids: string[], home = batonHome()): void {
 type SpawnResult = { status: number | null; stdout?: string; stderr?: string };
 type SpawnFn = (command: string, args: string[]) => SpawnResult | Promise<SpawnResult>;
 type HostResult = { id: string; ok: boolean; note?: string; error?: string };
+type InstallResult = {
+  action: Action;
+  dry_run?: boolean;
+  global?: { ok?: boolean; command?: string[]; error?: string };
+  hosts: Array<{ id: string; ok?: boolean; bin?: string; commands?: string[][]; note?: string; error?: string }>;
+  missing?: string[];
+  note?: string;
+  warnings?: string[];
+};
 
 function defaultSpawn(command: string, args: string[], env: NodeJS.ProcessEnv, quiet = false): Promise<SpawnResult> {
   return new Promise((resolve) => {
@@ -199,7 +221,7 @@ export async function runInstall(input: {
   spawn?: SpawnFn;
   /** Suppress live child logs (TTY spinner). Soft migrate steps are always quiet. */
   quiet?: boolean;
-}): Promise<{ exitCode: number; result: { action: Action; dry_run?: boolean; global?: { ok?: boolean; command?: string[]; error?: string }; hosts: Array<{ id: string; ok?: boolean; bin?: string; commands?: string[][]; note?: string; error?: string }>; missing?: string[] } }> {
+}): Promise<{ exitCode: number; result: InstallResult }> {
   const env = input.env ?? process.env;
   const home = input.home ?? batonHome();
   let only = input.only;
@@ -210,11 +232,19 @@ export async function runInstall(input: {
     if (!picked?.length) return { exitCode: 0, result: { action: input.action, hosts: [] } };
     only = picked;
   }
-  const planned = planInstall({ action: input.action, only, force: input.force, skipGlobal: input.skipGlobal, env, recorded: readInstalled(home) });
+  const recorded = readInstalled(home);
+  const planned = planInstall({ action: input.action, only, force: input.force, skipGlobal: input.skipGlobal, env, recorded });
+  const resultBase = {
+    action: input.action,
+    ...(planned.missing.length ? { missing: planned.missing } : {}),
+    ...(input.action === "update" && !only?.length && !recorded.length
+      ? { warnings: ["no recorded hosts; run `baton install` to install the plugin into agent CLIs"] }
+      : {}),
+  };
   if (input.dryRun) {
     return {
       exitCode: 0,
-      result: { action: input.action, dry_run: true, ...(planned.global ? { global: planned.global } : {}), hosts: planned.hosts, ...(planned.missing.length ? { missing: planned.missing } : {}) },
+      result: { ...resultBase, dry_run: true, ...(planned.global ? { global: planned.global } : {}), hosts: planned.hosts },
     };
   }
   const run = (command: string, args: string[], quiet: boolean) =>
@@ -228,34 +258,57 @@ export async function runInstall(input: {
     report?.({ type: "global", phase: "done", ok: global.ok, ...(global.error ? { error: global.error } : {}) });
   }
   const hosts: HostResult[] = [];
+  const installed: string[] = [];
   for (const host of planned.hosts) {
     report?.({ type: "host", phase: "start", id: host.id });
     let error: string | undefined;
-    let skipped = false;
+    let alreadyInstalled = false;
+    const runStep = (step: Step) => run(host.bin, step.args, Boolean(input.quiet || step.soft));
     for (const step of commandsFor(host.id, input.action, { force: input.force })) {
       // Soft steps (old-id migrate) often print "Failed to uninstall…" — hide that when overall install is fine.
-      const ran = await run(host.bin, step.args, Boolean(input.quiet) || Boolean(step.soft));
-      if (ran.status === 0 || step.soft) continue;
-      if (/already installed/i.test(`${ran.stdout || ""}\n${ran.stderr || ""}`)) { skipped = true; continue; }
+      const ran = await runStep(step);
+      if (step.soft) continue;
+      if ((input.action === "install" || ran.status !== 0) && /already installed/i.test(`${ran.stdout || ""}\n${ran.stderr || ""}`)) {
+        alreadyInstalled = true;
+        continue;
+      }
+      if (ran.status === 0) continue;
       error = failText(ran);
       break;
     }
-    const note = skipped ? "already installed, skipped" : host.note;
+    let note = alreadyInstalled ? "already installed, skipped" : host.note;
+    if (input.action === "install" && !error) {
+      installed.push(host.id);
+      const target = hostFor(host.id);
+      if (alreadyInstalled || target.refreshOnInstall) {
+        const steps = installUpdateSteps(target);
+        for (const step of steps) {
+          const ran = await runStep(step);
+          if (ran.status === 0 || step.soft) continue;
+          error = failText(ran);
+          break;
+        }
+        if (steps.length && alreadyInstalled) note = error ? undefined : "already installed, updated";
+      }
+    }
     const row: HostResult = { id: host.id, ok: !error, ...(note ? { note } : {}), ...(error ? { error } : {}) };
     hosts.push(row);
     report?.({ type: "host", phase: "done", id: host.id, ok: row.ok, ...(note ? { note } : {}), ...(error ? { error } : {}) });
   }
   if (input.action !== "update") {
-    const recorded = new Set(readInstalled(home));
-    for (const host of hosts) {
-      if (!host.ok) continue;
-      if (input.action === "install") recorded.add(host.id);
-      else recorded.delete(host.id);
+    const current = new Set(readInstalled(home));
+    if (input.action === "install") {
+      for (const id of installed) current.add(id);
+    } else {
+      for (const host of hosts) if (host.ok) current.delete(host.id);
     }
-    writeInstalled([...recorded], home);
+    writeInstalled([...current], home);
   }
+  const note = input.action !== "uninstall" && hosts.some((host) => host.ok)
+    ? "Restart open agent sessions to load the updated skills and MCP."
+    : undefined;
   return {
     exitCode: hosts.some((host) => !host.ok) ? 1 : 0,
-    result: { action: input.action, ...(global ? { global } : {}), hosts, ...(planned.missing.length ? { missing: planned.missing } : {}) },
+    result: { ...resultBase, ...(global ? { global } : {}), hosts, ...(note ? { note } : {}) },
   };
 }

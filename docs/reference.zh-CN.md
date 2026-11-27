@@ -35,11 +35,15 @@
 npx @speculoai/baton install
 ```
 
-这条命令会把 `baton` 装成全局命令，并把插件装进你选中的 agent。在 TTY 下，`install` / `update` / `uninstall` 会走简短交互（安装时多选、进度、✓/✗），**不再**额外打印 JSON，看退出码即可。脚本 / 非 TTY 仍会在 stdout 输出一个 JSON 对象。`--only <agent>` 可重复（`claude`、`codex`、`cursor`、`agy`、`gemini`），`--force` 重装，`--dry-run` 只打印命令。以后更新：
+这条命令会把 `baton` 装成全局命令，并把插件装进你选中的 agent。在 TTY 下，`install` / `update` / `uninstall` 会走简短交互（安装时多选、进度、✓/✗），**不再**额外打印 JSON，看退出码即可。脚本 / 非 TTY 仍会在 stdout 输出一个 JSON 对象。`--only <agent>` 可重复（`claude`、`codex`、`cursor`、`agy`、`gemini`），`--force` 重装。`--dry-run` 只打印命令，包括 `install` 期间可能执行的更新步骤。
+
+`npm i -g @speculoai/baton` 只升级 CLI。用 `baton update` 或以下命令同时更新 CLI 和已记录的宿主插件。
 
 ```bash
 npx @speculoai/baton@latest update
 ```
+
+升级后重开已打开的 agent 会话，加载新版 skills 和 MCP。
 
 用 `npx @speculoai/baton uninstall` 从这些 CLI 里卸掉插件。全局命令不会被删，需要的话用 `npm uninstall -g @speculoai/baton`。
 
@@ -129,7 +133,7 @@ agy plugin install https://github.com/SpeculoAI/baton
 agy plugin install .
 ```
 
-> **更新**：重新执行一次相同的安装指令即可覆盖更新到最新版本。
+> **更新**：重新执行一次相同的安装指令即可覆盖更新到最新版本。重开已打开的 agent 会话，加载新版 skills 和 MCP。
 
 ---
 

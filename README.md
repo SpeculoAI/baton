@@ -70,7 +70,7 @@ Check which workers Baton can see:
 baton agents
 ```
 
-Update everything later with `npx @speculoai/baton@latest update`. Flags (`--only`, `--force`, `--dry-run`), per-host manual installs, and MCP config for Claude Desktop, Windsurf, and Zed are covered in the [reference](docs/reference.md#installation).
+`npm i -g @speculoai/baton` upgrades the CLI only. Use `baton update` or `npx @speculoai/baton@latest update` to update both the CLI and the recorded host plugins. Restart open agent sessions afterward to load the updated skills and MCP. An install with `--dry-run` lists update steps that may run. Flags (`--only`, `--force`, `--dry-run`), per-host manual installs, and MCP config for Claude Desktop, Windsurf, and Zed are covered in the [reference](docs/reference.md#installation).
 
 ## Use it
 
