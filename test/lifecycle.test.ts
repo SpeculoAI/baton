@@ -217,6 +217,8 @@ test("after supervisor is killed, status reports orphaned, kills leftover proces
   assert.equal((await s.run("status", started.task_id)).status, "failed");
   assert.equal(s.events(started.task_id).length, count);
   assert.equal(s.turn(started.task_id).status, "failed");
+  assert.equal(Object.hasOwn(s.turn(started.task_id), "activity"), false);
+  assert.equal(Object.hasOwn(s.turn(started.task_id), "usage"), false);
 });
 
 test("without max_duration, continuous output is not killed; idle timer counts bytes, not whole lines", async (t) => {

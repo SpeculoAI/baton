@@ -49,6 +49,7 @@ test("worktree subcommand help isolates options and documents rm behavior", asyn
 
 test("-h works after other flags and on nested actions; start does not read stdin", async () => {
   assert.match((await run("start", "--target", "codex", "-h")).stdout, /^Usage: baton start/);
+  assert.equal((await run("stats", "-h")).stdout, (await run("stats", "--help")).stdout);
   assert.match((await run("rules", "init", "--help")).stdout, /^Usage: baton rules init/);
   assert.match((await run("worktree", "ls", "-h")).stdout, /^Usage: baton worktree/);
 });

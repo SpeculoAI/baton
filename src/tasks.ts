@@ -23,7 +23,7 @@ import {
   unseenRules,
 } from "./rules.ts";
 import { addWorktree, applyTree, assertNotNestedWorktree, batonWorktreeExemptPaths, diffTrees, forkPoint, headSha, netTree, removeTaskWorktree, resolveRepoRoot } from "./worktree.ts";
-import type { Author, Effort, Enforcement, GitChanges, RulesMode, RulesReport, ScopeOnViolation, TaskMeta, TaskMode, TaskStatus } from "./types.ts";
+import type { Author, Effort, Enforcement, RulesMode, RulesReport, ScopeOnViolation, TaskMeta, TaskMode, TaskStatus, Turn } from "./types.ts";
 
 export type StartInput = {
   target: string;
@@ -256,11 +256,17 @@ async function launchTurn(meta: TaskMeta): Promise<TaskMeta> {
   return meta;
 }
 
-export type TaskView = TaskMeta & { liveness?: "active" | "quiet" | "orphaned"; quiet_for_s?: number; git_changes?: GitChanges };
+export type TaskView = TaskMeta & Pick<Turn, "git_changes" | "activity" | "usage"> & {
+  liveness?: "active" | "quiet" | "orphaned";
+  quiet_for_s?: number;
+};
 
-// Terminal view includes this turn's git_changes so the host need not read turns/<n>.json.
+// Let hosts read the terminal view without opening turns/<n>.json.
 function finished(meta: TaskMeta): TaskView {
-  try { return { ...meta, git_changes: readTurn(meta.task_id, meta.turn).git_changes }; } catch { return meta; }
+  try {
+    const { git_changes, activity, usage } = readTurn(meta.task_id, meta.turn);
+    return { ...meta, git_changes, activity, usage };
+  } catch { return meta; }
 }
 
 function orphaned(meta: TaskMeta): boolean {
@@ -440,19 +446,23 @@ export async function reply(id: string, prompt: string, author: Author = "host")
   return launchTurn(next);
 }
 
-export function ls(all = false, cwd = process.cwd()): TaskView[] {
+export function taskCwdFilter(cwd = process.cwd()): (meta: TaskMeta) => boolean {
   const here = path.resolve(cwd);
   let hereReal = here;
   try { hereReal = fs.realpathSync.native(here); } catch { /* keep resolved */ }
-  return listTasks().filter((meta) => {
-    if (all) return true;
+  return (meta) => {
     if (meta.cwd === here || meta.worktree?.source_cwd === here) return true;
     try {
       if (fs.realpathSync.native(meta.cwd) === hereReal) return true;
       if (meta.worktree?.source_cwd && fs.realpathSync.native(meta.worktree.source_cwd) === hereReal) return true;
     } catch { /* missing path */ }
     return false;
-  }).map((meta) => status(meta.task_id))
+  };
+}
+
+export function ls(all = false, cwd = process.cwd()): TaskView[] {
+  const tasks = listTasks();
+  return (all ? tasks : tasks.filter(taskCwdFilter(cwd))).map((meta) => status(meta.task_id))
     .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at));
 }
 

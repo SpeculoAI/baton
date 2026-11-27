@@ -87,6 +87,15 @@ export const COMMANDS = {
     summary: "List jobs for the current directory, newest first.",
     options: { all: { type: "boolean", desc: "List jobs from every directory" } },
   },
+  stats: {
+    usage: "baton stats [--target <agent>] [--since <date|Nd>] [--all]",
+    summary: "Show first-turn activity, token usage and rework by agent for stopped jobs.",
+    options: {
+      target: { type: "string", arg: "agent", desc: "Include jobs for this agent only" },
+      since: { type: "string", arg: "date|Nd", desc: "Include jobs created on or after this ISO date or relative cutoff (for example, 7d)" },
+      all: { type: "boolean", desc: "Include jobs from every directory (default: current directory)" },
+    },
+  },
   prune: {
     usage: "baton prune --older <days>",
     summary: "Delete non-running task directories older than N days (worktrees are kept).",

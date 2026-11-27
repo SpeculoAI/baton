@@ -25,20 +25,36 @@ Task list: `tasks/todo.md`
 ## Task List
 
 ### Phase 0: 验证
-- [ ] Task 0: T0 真实 CLI 验证，回写 spec，沉淀 fixture
+- [x] Task 0: T0 真实 CLI 验证，回写 spec，沉淀 fixture
 
 ### Phase 1: handoff-metrics（PR 1）
-- [ ] Task 1: 类型、`shellIntent`、`summarizeEvents`（纯函数）
-- [ ] Task 2: codex、cursor adapter 输出 `kind`/`intent`/`usage`
-- [ ] Task 3: claude、agy、kimi adapter 输出 `kind`/`intent`/`usage`
-- [ ] Task 4: supervisor 写入 turn 的 `activity`/`usage`；终止视图和 `tail` 展示
-- [ ] Task 5: `baton stats` 命令（含 raw 回放）
-- [ ] Task 6: metrics 文档、真实 CLI 冒烟、记录基线
+- [x] Task 1: 类型、`shellIntent`、`summarizeEvents`（纯函数）
+- [x] Task 2: codex、cursor adapter 输出 `kind`/`intent`/`usage`
+- [x] Task 3: claude、agy、kimi adapter 输出 `kind`/`intent`/`usage`
+- [x] Task 4: supervisor 写入 turn 的 `activity`/`usage`；终止视图和 `tail` 展示
+- [x] Task 5: `baton stats` 命令（含 raw 回放）
+- [x] Task 6: metrics 文档、真实 CLI 冒烟、记录基线
 
 ### Checkpoint: PR 1
 - [ ] `npm test` 三平台 CI 全绿
-- [ ] `baton stats --all` 在现有 `~/.baton` 上 `measured ≥ 75`，基线写进本文件
+- [x] `baton stats --all` 在现有 `~/.baton` 上 `measured ≥ 75`，基线写进本文件（见下方「基线」）
 - [ ] 人工评审后合并
+
+### 基线（PR 1，2026-11-27）
+
+`npm run build && node dist/cli.js stats --all`，在本机 `~/.baton` 上运行，共 100 个任务，全部 measured。其中包含 5 个只读冒烟任务（2026-11-27）；它们没有编辑，因此不计入 `before_first_edit`。
+
+| target | tasks | measured | before_first_edit 中位 / p75（n） | explore_share | first_turn.input 中位 |
+|---|---|---|---|---|---|
+| codex | 38 | 38 | 19 / 22（23） | 0.303 | 1,974,279 |
+| cursor | 48 | 48 | 61 / 81（45） | 0.616 | 3,491,964 |
+| agy | 10 | 10 | 37 / 41（5） | 0.623 | 2,180,952 |
+| claude | 2 | 2 | —（0） | 1.0 | 210,376.5 |
+| kimi | 2 | 2 | —（0） | 1.0 | — |
+
+- 和统计脚本的 42 属于同一量级：42 是各家合计的结果，按 target 拆开后分别是 19、61、37。
+- 各 target 之间差距大，效果目标应按同一 target 前后对比来衡量。cursor 和 agy 是主要优化对象；codex 已低于合计目标 20（见 Open Questions）。
+- codex 的 `explore_share` 偏低：它的探索主要通过 shell 完成，而 `rg`/`sed -n` 之外的组合（如含 `awk`）判为无 intent。这符合 D2，属于有意保守。
 
 ### Phase 2: file-snippets（PR 2）
 - [ ] Task 7: `src/snippets.ts` 解析、校验、敏感名单、渲染
@@ -77,5 +93,6 @@ Task list: `tasks/todo.md`
 | 子 CLI 不理会输入合约，照样重新探索 | 高 | 这是效果层面的风险，不影响合并；阶段 4 按 CLI 看数据，再调整合约措辞或 skill |
 
 ## Open Questions
+- 效果目标「before_first_edit 中位 42→≤20」是各家合计口径；基线显示 codex 已是 19、cursor 是 61。是否改为按 target 设目标（例如 cursor、agy 各降 50%，codex 不退化）？待用户确认。
 
 - 三个 T0 探测任务（claude `db2266e0`、agy `f965f2fd`、kimi `26cdef6b`）各跑了两轮，Task 0 直接读取它们的 raw 日志。

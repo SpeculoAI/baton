@@ -1,0 +1,6 @@
+{"type":"system","subtype":"init","cwd":"/Users/u/myself/baton","session_id":"00000000-0000-4000-8000-000000000002","model":"Grok 4.7 256K High"}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"[提示词]"}]},"session_id":"00000000-0000-4000-8000-000000000002"}
+{"type":"tool_call","subtype":"started","call_id":"call_1","tool_call":{"grepToolCall":{"args":{"pattern":"usage","path":"/Users/u/myself/baton","glob":"*.md","outputMode":"content"}}},"session_id":"00000000-0000-4000-8000-000000000002"}
+{"type":"tool_call","subtype":"started","call_id":"call_2","tool_call":{"readToolCall":{"args":{"path":"/Users/u/myself/baton/src/contract.ts"}}},"session_id":"00000000-0000-4000-8000-000000000002"}
+{"type":"tool_call","subtype":"started","call_id":"call_3","tool_call":{"shellToolCall":{"args":{"command":"rg -n buildPrompt src"}}},"session_id":"00000000-0000-4000-8000-000000000002"}
+{"type":"result","subtype":"success","duration_ms":2072293,"duration_api_ms":2072293,"is_error":false,"result":"[模型回复]","session_id":"00000000-0000-4000-8000-000000000002","usage":{"inputTokens":44542,"outputTokens":33635,"cacheReadTokens":5859840,"cacheWriteTokens":0,"reasoningTokens":16133}}

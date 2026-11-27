@@ -1,5 +1,43 @@
 import fs from "node:fs";
 import path from "node:path";
+import type { Adapter, EventData, ShellIntent, TurnUsage } from "../types.ts";
+
+const VERIFY_COMMAND = /^(?:npm|pnpm|yarn|npx|node[ \t]+--test|vitest|jest|tsc|eslint|prettier|pytest|go[ \t]+test|cargo|make)(?=\s|$)/;
+const EXPLORE_COMMAND = /^(?:rg|grep|cat|sed[ \t]+-n|head|tail|ls|find|fd|wc|nl|tree|stat|git[ \t]+(?:status|log|show|diff|grep|ls-files|blame)|codegraph)(?=\s|$)/;
+
+export function shellIntent(command: string): ShellIntent | undefined {
+  const text = command.trim();
+  const wrapper = /^(?:[^\s]+\/)?(?:zsh|bash|sh)[ \t]+-(?:lc|c)[ \t]+(['"])([\s\S]*)\1$/.exec(text);
+  // shortcut: skips common single heredocs, use a shell parser if complex syntax needs accurate classification.
+  const body = (wrapper?.[2] ?? text).replace(
+    /(?<!<)<<-?[ \t]*(['"]?)([A-Za-z_]\w*)\b\1([^\r\n]*)\r?\n[\s\S]*?^\t*\2\r?$/gm,
+    "$3",
+  );
+  const segments: string[] = [];
+  let start = 0;
+  for (const match of body.matchAll(/"(?:\\.|[^"\\])*"|'[^']*'|\\[^\r\n]|(&&|\|\||[;|\n])/g)) {
+    if (!match[1]) continue;
+    segments.push(body.slice(start, match.index));
+    start = match.index + match[0].length;
+  }
+  segments.push(body.slice(start));
+  const commands = segments.map((segment) => segment.trim()).filter(Boolean);
+  if (commands.some((segment) => VERIFY_COMMAND.test(segment))) return "verify";
+  if (commands.length && commands.every((segment) => EXPLORE_COMMAND.test(segment))) return "explore";
+  return undefined;
+}
+
+export function usageEvent(
+  value: unknown,
+  normalize: NonNullable<Adapter["usage"]>,
+): Extract<EventData, { type: "usage" }> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const raw: TurnUsage["raw"] = Object.fromEntries(
+    Object.entries(value).filter(([, count]) => typeof count === "number" && Number.isFinite(count)),
+  );
+  const usage = normalize(raw);
+  return usage && { type: "usage", ...usage, raw };
+}
 
 // Windows variable names are case-insensitive ("Path"), but a copied env object is not.
 const envValue = (env: NodeJS.ProcessEnv, key: string) =>

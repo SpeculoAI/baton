@@ -1,13 +1,21 @@
-import type { Adapter, BatonEvent, EventData } from "../types.ts";
+import type { Adapter, BatonEvent, EventData, TurnUsage } from "../types.ts";
 import { redact } from "../redact.ts";
 import os from "node:os";
 import path from "node:path";
-import { authHit, which } from "./common.ts";
+import { authHit, shellIntent, usageEvent, which } from "./common.ts";
 
 const AUTH = ["not logged in", "please log in", "authentication required", "codex login"];
 
+function normalizeUsage(raw: TurnUsage["raw"]): Omit<TurnUsage, "raw"> | undefined {
+  const { input_tokens: input, cached_input_tokens: cached_input, output_tokens: output, reasoning_output_tokens: reasoning } = raw;
+  if (![input, cached_input, output].every(Number.isFinite)) return undefined;
+  return { input, cached_input, output, ...(reasoning === undefined ? {} : { reasoning }) };
+}
+
 export const codex: Adapter = {
   id: "codex",
+  usage: normalizeUsage,
+  usageCumulative: true,
   readonlyEnforcement: "os-sandbox",
   // Verified 2026-11-21/22: AGENTS.md (+ override). Project .codex/config.toml MCP/hooks need trust.
   rules: {
@@ -83,8 +91,12 @@ export const codex: Adapter = {
     if (!obj || typeof obj !== "object") return null;
     const event = (data: EventData): BatonEvent[] => [{ ts: new Date().toISOString(), turn: 0, ...data }];
     if (obj.type === "turn.failed" && typeof obj.error?.message === "string") return event({ type: "error", text: obj.error.message });
-    // Lifecycle events: the session id comes from sessionIdFrom and turn start/end are recorded by the supervisor, so no events are emitted here.
-    if (["thread.started", "turn.started", "turn.completed"].includes(obj.type)) return [];
+    if (obj.type === "turn.completed") {
+      const usage = usageEvent(obj.usage, normalizeUsage);
+      return usage ? event(usage) : [];
+    }
+    // The session ID and turn lifecycle are handled separately by the supervisor.
+    if (obj.type === "thread.started" || obj.type === "turn.started") return [];
     const item = obj.item;
     if (obj.type === "item.completed" && item?.type === "error" && typeof item.message === "string") {
       return event({ type: "error", text: redact(item.message) });
@@ -93,15 +105,21 @@ export const codex: Adapter = {
     const completed = obj.type === "item.completed";
     if (item.type === "agent_message" && typeof item.text === "string") return completed ? event({ type: "message", text: item.text }) : [];
     if (item.type === "command_execution" && typeof item.command === "string") {
-      return event(completed
-        ? { type: "tool_result", name: "command_execution", ok: item.exit_code === 0, detail: redact(String(item.aggregated_output || item.command)).slice(0, 200) }
-        : { type: "tool_call", name: "command_execution", detail: redact(item.command).slice(0, 200) });
+      if (completed) {
+        return event({ type: "tool_result", name: "command_execution", ok: item.exit_code === 0, detail: redact(String(item.aggregated_output || item.command)).slice(0, 200) });
+      }
+      const intent = shellIntent(item.command);
+      return event({ type: "tool_call", name: "command_execution", kind: "shell", ...(intent ? { intent } : {}), detail: redact(item.command).slice(0, 200) });
     }
     if (item.type === "file_change" && Array.isArray(item.changes)) {
       const detail = redact(JSON.stringify(item.changes)).slice(0, 200);
       return event(completed
         ? { type: "tool_result", name: "file_change", ok: item.status === "completed", detail }
-        : { type: "tool_call", name: "file_change", detail });
+        : { type: "tool_call", name: "file_change", kind: "edit", detail });
+    }
+    if (!completed && typeof item.type === "string" && item.type.endsWith("_tool_call")) {
+      const detail = [item.server, item.tool].filter((value) => typeof value === "string").join(":");
+      return event({ type: "tool_call", name: item.type, kind: "other", detail: redact(detail).slice(0, 200) });
     }
     return null;
   },

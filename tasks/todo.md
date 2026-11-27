@@ -20,12 +20,12 @@ Source spec: `SPEC-handoff-context.md` · Plan: `tasks/plan.md`
 已经准备好的两轮只读探测任务（第 2 轮的 `readonly_violation` 是宿主同时改了工作区造成的，不影响数据）：claude `db2266e0-2e63-4ad9-a236-e6513fd47e00`、agy `f965f2fd-1b48-41f9-8807-410563c9e47b`、kimi `26cdef6b-16ee-4f8e-bf78-f93544262717`。raw 日志在 `~/.baton/tasks/<id>/raw/{1,2}.stdout.log`。
 
 **Acceptance criteria:**
-- [ ] spec D1 的 agy search 一列和 kimi 一行、D3 的 claude 和 kimi 两行改成实测值；D3 写明各家续轮的 usage 语义，需要差分修正的写出修正规则
-- [ ] `test/fixtures/usage/{codex,cursor,agy,claude,kimi}.jsonl` 各包含至少一个 tool_call 行和终止 usage 行，已脱敏（不含路径里的用户名、token、提示词正文）
+- [x] spec D1 的 agy search 一列和 kimi 一行、D3 的 claude 和 kimi 两行改成实测值；D3 写明各家续轮的 usage 语义，需要差分修正的写出修正规则
+- [x] `test/fixtures/usage/{codex,cursor,agy,claude,kimi}.jsonl` 各包含至少一个 tool_call 行和终止 usage 行，已脱敏（不含路径里的用户名、token、提示词正文）
 
 **Verification:**
-- [ ] 读取三个探测任务的 `raw/1.stdout.log` 和 `raw/2.stdout.log`，比较两轮的 usage
-- [ ] 从现有的 codex、cursor 多轮任务里比较 `raw/1` 和 `raw/2` 的 usage
+- [x] 读取三个探测任务的 `raw/1.stdout.log` 和 `raw/2.stdout.log`，比较两轮的 usage
+- [x] 从现有的 codex、cursor 多轮任务里比较 `raw/1` 和 `raw/2` 的 usage
 
 **Dependencies:** None
 
@@ -47,13 +47,13 @@ Source spec: `SPEC-handoff-context.md` · Plan: `tasks/plan.md`
 - `summarizeEvents` 按 spec D4 实现（若 Task 0 结论需要，加差分修正）
 
 **Acceptance criteria:**
-- [ ] `shellIntent` 的表格测试覆盖：外层包装、复合命令、管道、heredoc、只读和写命令混用、空命令
-- [ ] `summarizeEvents` 覆盖：没有编辑（`before_first_edit` 为 null）、首个调用就是编辑、各类计数、多个 usage 以最后一个为准
-- [ ] 所有新字段都是可选的，现有测试不改断言
+- [x] `shellIntent` 的表格测试覆盖：外层包装、复合命令、管道、heredoc、只读和写命令混用、空命令
+- [x] `summarizeEvents` 覆盖：没有编辑（`before_first_edit` 为 null）、首个调用就是编辑、各类计数、多个 usage 以最后一个为准
+- [x] 所有新字段都是可选的，现有测试不改断言
 
 **Verification:**
-- [ ] `node --test test/metrics.test.ts`
-- [ ] `npm run typecheck`
+- [x] `node --test test/metrics.test.ts`
+- [x] `npm run typecheck`
 
 **Dependencies:** Task 0
 
@@ -70,12 +70,12 @@ Source spec: `SPEC-handoff-context.md` · Plan: `tasks/plan.md`
 **Description:** codex 解析 `turn.completed.usage`，cursor 解析 `result.usage`，两家都按 spec D1 的映射表给 `tool_call` 填 `kind`，shell 类填 `intent`。`intent` 必须用截断前的完整命令计算。
 
 **Acceptance criteria:**
-- [ ] 用 Task 0 的 fixture 回放，`kind`/`intent` 和 usage 的归一值与 spec D1、D3 一致
-- [ ] 映射表里没有的工具名（如 cursor 的 `mcp`、`webFetch`）记为 `other`
-- [ ] 原有的 message/tool_result/error 事件输出不变
+- [x] 用 Task 0 的 fixture 回放，`kind`/`intent` 和 usage 的归一值与 spec D1、D3 一致
+- [x] 映射表里没有的工具名（如 cursor 的 `mcp`、`webFetch`）记为 `other`
+- [x] 原有的 message/tool_result/error 事件输出不变
 
 **Verification:**
-- [ ] `node --test test/adapters.test.ts`
+- [x] `node --test test/adapters.test.ts`
 
 **Dependencies:** Task 1
 
@@ -91,12 +91,12 @@ Source spec: `SPEC-handoff-context.md` · Plan: `tasks/plan.md`
 **Description:** 和 Task 2 相同，对象换成 claude（`result.usage`）、agy（`result.usage`）和 kimi。字段以 Task 0 的实测为准；kimi 没有 usage 时只做 `kind`/`intent`。
 
 **Acceptance criteria:**
-- [ ] 用 Task 0 的 fixture 回放，结果与 spec 一致
-- [ ] claude 的 `Bash`、agy 的 `run_command`、kimi 的 shell 工具带 `intent`
-- [ ] 原有事件输出不变
+- [x] 用 Task 0 的 fixture 回放，结果与 spec 一致
+- [x] claude 的 `Bash`、agy 的 `run_command`、kimi 的 shell 工具带 `intent`
+- [x] 原有事件输出不变
 
 **Verification:**
-- [ ] `node --test test/adapters.test.ts`
+- [x] `node --test test/adapters.test.ts`
 
 **Dependencies:** Task 1
 
@@ -113,12 +113,12 @@ Source spec: `SPEC-handoff-context.md` · Plan: `tasks/plan.md`
 **Description:** supervisor 在流式处理时收集当前 turn 的 `tool_call`/`usage` 事件，turn 结束时调用 `summarizeEvents`，和 `git_changes` 在同一处写进 turn。`finished()` 附带当前 turn 的 `activity`/`usage`。`tail` 把 usage 事件显示成一行。
 
 **Acceptance criteria:**
-- [ ] 用 `FAKE_FIXTURE` 回放 codex fixture，跑一次 start，`turns/1.json` 里有 `activity`/`usage`，且 `activity.tool_calls` 等于 `events.jsonl` 里的 `tool_call` 数
-- [ ] `baton status`、`baton wait` 的终止视图带上这两个字段；MCP `task_status` 测试也覆盖到
-- [ ] 孤儿收尾的 turn 不写这两个字段，`status` 不报错
+- [x] 用 `FAKE_FIXTURE` 回放 codex fixture，跑一次 start，`turns/1.json` 里有 `activity`/`usage`，且 `activity.tool_calls` 等于 `events.jsonl` 里的 `tool_call` 数
+- [x] `baton status`、`baton wait` 的终止视图带上这两个字段；MCP `task_status` 测试也覆盖到
+- [x] 孤儿收尾的 turn 不写这两个字段，`status` 不报错
 
 **Verification:**
-- [ ] `node --test test/observe.test.ts test/lifecycle.test.ts test/mcp.test.ts`
+- [x] `node --test test/observe.test.ts test/lifecycle.test.ts test/mcp.test.ts`
 
 **Dependencies:** Task 2
 
@@ -138,13 +138,13 @@ Source spec: `SPEC-handoff-context.md` · Plan: `tasks/plan.md`
 - turn 里没有 `activity` 时，用 adapter 的 `parseLine` 回放 `raw/N.stdout.log`；raw 也不存在时，计入 `tasks`，不计入 `measured`
 
 **Acceptance criteria:**
-- [ ] 在临时 `BATON_HOME` 下构造三类任务（有 activity、只有 raw、两者都没有），断言分组、中位数、p75、`explore_share`、`cached_share`、`rework_rate`、`check_failed_rate`、`measured`
-- [ ] `--since`、`--target`、`--all`、cwd 过滤各有用例
-- [ ] `baton stats -h` 由 `src/usage.ts` 的选项表生成，`help.test.ts` 通过
+- [x] 在临时 `BATON_HOME` 下构造三类任务（有 activity、只有 raw、两者都没有），断言分组、中位数、p75、`explore_share`、`cached_share`、`rework_rate`、`check_failed_rate`、`measured`
+- [x] `--since`、`--target`、`--all`、cwd 过滤各有用例
+- [x] `baton stats -h` 由 `src/usage.ts` 的选项表生成，`help.test.ts` 通过
 
 **Verification:**
-- [ ] `node --test test/stats.test.ts test/help.test.ts`
-- [ ] `node src/cli.ts stats --all` 在真实 `~/.baton` 上只读运行成功
+- [x] `node --test test/stats.test.ts test/help.test.ts`
+- [x] `node src/cli.ts stats --all` 在真实 `~/.baton` 上只读运行成功
 
 **Dependencies:** Task 4
 
@@ -166,13 +166,13 @@ Source spec: `SPEC-handoff-context.md` · Plan: `tasks/plan.md`
 然后用 codex、cursor、agy、claude、kimi 各跑一次真实任务做冒烟。最后记录基线。
 
 **Acceptance criteria:**
-- [ ] `docs/reference.md`、`docs/reference.zh-CN.md` 更新
-- [ ] 五家冒烟：`turns/1.json` 的 usage 和 raw 原值换算一致，`activity.tool_calls` 和 `tool_call` 事件数一致
-- [ ] `baton stats --all` 的基线（每个 target 的 `measured`、`before_first_edit` 中位/p75、`explore_share`、`first_turn.input` 中位）写进 `tasks/plan.md`，并满足 `measured ≥ 75`、中位数和统计脚本的 42 同一量级
+- [x] `docs/reference.md`、`docs/reference.zh-CN.md` 更新
+- [x] 五家冒烟：`turns/1.json` 的 usage 和 raw 原值换算一致，`activity.tool_calls` 和 `tool_call` 事件数一致
+- [x] `baton stats --all` 的基线（每个 target 的 `measured`、`before_first_edit` 中位/p75、`explore_share`、`first_turn.input` 中位）写进 `tasks/plan.md`，并满足 `measured ≥ 75`、中位数和统计脚本的 42 同一量级
 
 **Verification:**
-- [ ] `npm test`
-- [ ] `npm run build && node dist/cli.js stats --all`
+- [x] `npm test`
+- [x] `npm run build && node dist/cli.js stats --all`
 
 **Dependencies:** Task 5
 

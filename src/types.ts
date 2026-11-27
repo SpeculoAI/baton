@@ -96,10 +96,21 @@ export type TaskMeta = {
   /** Result of the latest turn's check. */
   check?: CheckResult;
 };
+export type ToolKind = "read" | "search" | "edit" | "shell" | "other";
+export type ShellIntent = "explore" | "verify";
+export type TurnActivity = {
+  tool_calls: number;
+  by_kind: Record<ToolKind, number>;
+  explore: number;
+  verify: number;
+  before_first_edit: number | null;
+};
+export type TurnUsage = { input: number; cached_input: number; output: number; reasoning?: number; raw: Record<string, number> };
 export type EventData =
   | { type: "turn_started"; author: Author; prompt_preview: string }
   | { type: "message"; text: string }
-  | { type: "tool_call"; name: string; detail: string }
+  | { type: "tool_call"; name: string; detail: string; kind?: ToolKind; intent?: ShellIntent }
+  | ({ type: "usage" } & TurnUsage)
   | { type: "tool_result"; name: string; ok: boolean; detail: string }
   | { type: "raw"; stream: "stdout" | "stderr"; line: string }
   | { type: "error"; text: string }
@@ -118,6 +129,8 @@ export type SpawnSpec = {
 };
 export type Adapter = {
   id: Target;
+  usage?(raw: TurnUsage["raw"]): Omit<TurnUsage, "raw"> | undefined;
+  usageCumulative?: true;
   resolve(env: NodeJS.ProcessEnv): string | null;
   /** Readonly enforcement strength; omit or return null when unsupported. */
   readonlyEnforcement?: Enforcement;
@@ -142,4 +155,6 @@ export type Turn = {
   /** The agent's full last message of this turn (redacted); `baton result` prints it. */
   final_message?: string;
   check?: CheckResult;
+  activity?: TurnActivity;
+  usage?: TurnUsage;
 };

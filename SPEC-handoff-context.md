@@ -35,17 +35,18 @@ Status: proposed
 - **D1 `tool_call` 增加 `kind`，shell 再增加 `intent`。**
   - `kind`：`"read" | "search" | "edit" | "shell" | "other"`。
   - `intent`：只在 `kind` 为 `"shell"` 时出现，取值 `"explore" | "verify"`，两类都不是时不写。
-  - 每个 adapter 用一张工具名到 `kind` 的映射表，表里没有的名字一律记为 `other`。映射依据 `~/.baton/tasks` 里实际出现过的名字：
+  - 每个 adapter 用一张工具名到 `kind` 的映射表，表里没有的名字一律记为 `other`。映射依据真实调用和 CLI 工具清单：
 
     | adapter | read | search | edit | shell |
     |---|---|---|---|---|
     | codex | — | — | `file_change` | `command_execution` |
     | claude | `Read` | `Grep`、`Glob`、`LS` | `Edit`、`MultiEdit`、`Write`、`NotebookEdit` | `Bash` |
     | cursor | `read` | `grep`、`glob` | `edit`、`delete` | `shell` |
-    | agy | `read_file` | 待 T0 确认 | `edit_file`、`write_file` | `run_command` |
-    | kimi | 待 T0 确认 | 待 T0 确认 | 待 T0 确认 | `Bash`（待 T0 确认） |
+    | agy | `read_file` | `grep_search`、`find_by_name`（CLI 清单） | `edit_file`、`write_file` | `run_command` |
+    | kimi | `Read` | `Grep`、`Glob` | `Edit`、`Write` | `Bash` |
 
   - codex 所有的读取都经过 shell，所以 codex 的探索统计完全依赖 `intent`。
+  - agy 的 `init.tools` 声明了 `grep_search`、`find_by_name`，T0 两轮未观察到这两个工具的 `tool_name`，实际走 `run_command` 执行 `rg` 和 `ls`。kimi 的 `Read`、`Grep`、`Glob`、`Bash` 来自 stdout 里的实际调用，`Edit`、`Write` 来自同一会话的 `llm.tools_snapshot`，只读探测未调用这两个编辑工具。
 - **D2 shell 意图分类。** 在 `src/adapters/common.ts` 新增纯函数 `shellIntent(command)`，adapter 在截断 `detail` 到 200 字符**之前**、用完整命令调用它。规则：
   1. 剥掉外层包装 `/bin/zsh -lc '…'`、`bash -lc "…"`、`sh -c …`。
   2. 按 `&&`、`||`、`;`、`|`、换行切成若干段。
@@ -55,7 +56,7 @@ Status: proposed
   - 这是有意接受误差的启发式规则，测试里用一张命令到结果的表格固定下来。
 - **D3 新增 `usage` 事件。**
   - 格式：`{ type: "usage", input, cached_input, output, reasoning?, raw }`。
-  - `input` 是**含缓存的总输入**，`cached_input` 是其中走缓存读取的部分。`raw` 原样保存各家的数值字段。
+  - `input` 是**含缓存的总输入**，`cached_input` 是其中走缓存读取的部分。`raw` 原样保存来源 usage 对象的顶层数值字段。
   - 归一规则：
 
     | adapter | 来源事件 | `input` | `cached_input` | `output` | `reasoning` |
@@ -63,12 +64,21 @@ Status: proposed
     | codex | `turn.completed.usage` | `input_tokens`（已含缓存） | `cached_input_tokens` | `output_tokens` | `reasoning_output_tokens` |
     | cursor | `result.usage` | `inputTokens + cacheReadTokens + cacheWriteTokens` | `cacheReadTokens` | `outputTokens` | `reasoningTokens` |
     | agy | `result.usage` | `input_tokens + cache_read_tokens` | `cache_read_tokens` | `output_tokens` | `thinking_tokens` |
-    | claude | `result.usage` | `input_tokens + cache_read_input_tokens + cache_creation_input_tokens` | `cache_read_input_tokens` | `output_tokens` | — |
-    | kimi | 待 T0 确认（stream-json 是否带 usage 未知） | — | — | — | — |
+    | claude | `result.usage` | `input_tokens + cache_read_input_tokens + cache_creation_input_tokens` | `cache_read_input_tokens` | `output_tokens` | `output_tokens_details.thinking_tokens`（存在时） |
+    | kimi | `stream-json` 两轮均无 usage | — | — | — | — |
 
-  - claude 的字段在历史任务里没有样本，需要 T0 用真实调用确认。
-  - kimi adapter（#92）在本 spec 起草后合入，它的工具名和 usage 都需要 T0 确认。如果 kimi 的输出里没有 usage，就不发 `usage` 事件，`stats` 里 kimi 的 token 指标为 null。
-  - 一个 turn 内出现多个 `usage` 事件时，**最后一个为准**：四家的终止事件都是整次运行的累计值。
+  - T0 首轮和续轮实测的 usage 口径：
+
+    | adapter | 续轮终止 usage | 每轮 raw 日志里的 usage |
+    |---|---|---|
+    | codex | 会话累计。同一 thread 的两轮 `turn.completed.usage` 都与会话日志的 `total_token_usage` 一致 | 各 1 条终止 usage |
+    | cursor | 本轮值 | 各 1 条终止 usage |
+    | agy | 会话累计。续轮每个数值字段的终止值等于首轮终止值加续轮各 step 的该字段之和 | 各 1 条终止 usage，另有各 2 条 `step_update.usage` |
+    | claude | 本轮值 | 各 1 条终止 usage，另有 7 条（首轮）和 2 条（续轮）`assistant.message.usage`，同一消息可重复出现 |
+    | kimi | 无 usage | 两轮各 0 条，输出以 `session.resume_hint` 收尾 |
+
+  - 只从表中指定的终止来源发 `usage` 事件。一个 turn 内若有多个终止 usage，**最后一个为准**。输出没有 usage 就不发事件，`stats` 里 kimi 的 token 指标为 null。
+  - codex、agy 的新会话首轮直接使用终止值。同一会话续轮在 `summarizeEvents` 外做差分，按同一归一公式换算当前轮和上一轮的终止快照，再逐项计算 `input`、`cached_input`、`output`、`reasoning` 的差值。`raw` 保留当前轮的原始累计快照，供下轮取基线。缺失上一轮快照、计数回退或可选字段缺少任一轮的值时，相应差值视为未知。必填字段未知时不把该轮计入 token 统计。
   - `usage` 事件照常写进 `events.jsonl`，`baton tail` 显示为一行 `usage in=… cached=… out=…`。
 - **D4 turn 汇总。** 新模块 `src/metrics.ts` 导出纯函数 `summarizeEvents(events)`，返回：
 
