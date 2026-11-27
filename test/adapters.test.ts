@@ -32,6 +32,11 @@ test("codex 0.167.0 real output: keeps errors and messages and reports terminal 
   assert.deepEqual(events.map((e) => e.type), ["error", "error", "message", "usage"]);
 });
 
+test("Codex parses a top-level error event", () => {
+  const event = codex.parseLine('{"type":"error","message":"Usage limit reached."}')?.[0];
+  assert.equal(event?.type === "error" && event.text, "Usage limit reached.");
+});
+
 function fixture(name: string): string[] {
   return fs.readFileSync(new URL(`fixtures/${name}`, import.meta.url), "utf8").trim().split("\n");
 }
@@ -133,6 +138,12 @@ test("agy real stream-json: tool steps are paired; the full reply comes from res
   assert.deepEqual(agy.build({ bin: "a", cwd: "/w", prompt: "p", sessionId: "c1", reasoningEffort: "ultra" }).args,
     ["--print=", "--mode", "accept-edits", "--input-format", "stream-json", "--output-format", "stream-json", "--effort", "max", "--conversation", "c1"]);
   assert.deepEqual(JSON.parse(agy.build({ bin: "a", cwd: "/w", prompt: "a\nb", sessionId: null, reasoningEffort: null }).stdin!), { event: "user", message: { content: "a\nb" } });
+});
+
+test("Agy uses result.error when a failed result has no response", () => {
+  const agy = getAdapter("agy")!;
+  const event = agy.parseLine('{"event":"result","result":{"status":"ERROR","error":{"message":"Please log in."}}}')?.[0];
+  assert.equal(event?.type === "error" && event.text, "Please log in.");
 });
 
 test("claude real stream-json: hook/init/thinking/rate-limit emit no events; tools are paired; no raw kept", () => {
@@ -272,13 +283,42 @@ test("codex build: --model becomes -m on fresh and resume; absent model adds not
   assert.equal(none.modelArg, undefined);
 });
 
-test("readonly mode: argv mapping for all four; codex resume still has no sandbox/approve", () => {
+test("codex build uses exact sandbox and approval arguments for fresh turns", () => {
+  const input = { bin: "/b", cwd: "/w", prompt: "p", sessionId: null, reasoningEffort: null };
+  const write = codex.build({ ...input, mode: "write" });
+  assert.deepEqual(write.args, [
+    "exec", "--json", "--color", "never", "--approve-for-me", "--skip-git-repo-check",
+    "--cd", "/w", "--output-last-message", write.lastMessagePath, "-",
+  ]);
+  const readonly = codex.build({ ...input, mode: "readonly" });
+  assert.deepEqual(readonly.args, [
+    "exec", "--json", "--color", "never", "--sandbox", "read-only", "--skip-git-repo-check",
+    "--cd", "/w", "--output-last-message", readonly.lastMessagePath, "-",
+  ]);
+});
+
+test("codex build preserves workspace-write sandbox on resume", () => {
+  const spec = codex.build({
+    bin: "/b", cwd: "/w", prompt: "p", sessionId: "thread-9", reasoningEffort: null, mode: "write",
+  });
+  assert.deepEqual(spec.args, [
+    "exec", "resume", "--json", "--skip-git-repo-check", "--output-last-message", spec.lastMessagePath,
+    "-c", 'sandbox_mode="workspace-write"', "-c", 'approval_policy="never"', "thread-9", "-",
+  ]);
+});
+
+test("codex build preserves read-only sandbox on resume", () => {
+  const spec = codex.build({
+    bin: "/b", cwd: "/w", prompt: "p", sessionId: "thread-9", reasoningEffort: null, mode: "readonly",
+  });
+  assert.deepEqual(spec.args, [
+    "exec", "resume", "--json", "--skip-git-repo-check", "--output-last-message", spec.lastMessagePath,
+    "-c", 'sandbox_mode="read-only"', "thread-9", "-",
+  ]);
+});
+
+test("readonly mode: argv mapping for Claude, Cursor and AGY", () => {
   const input = { bin: "/b", cwd: "/w", prompt: "p", sessionId: null as string | null, reasoningEffort: null as null, mode: "readonly" as const };
-  assert.deepEqual(codex.build(input).args.slice(0, 8), ["exec", "--json", "--color", "never", "--sandbox", "read-only", "--skip-git-repo-check", "--cd"]);
-  assert.ok(!codex.build(input).args.includes("--approve-for-me"));
-  const resume = codex.build({ ...input, sessionId: "thread-9" });
-  assert.ok(!resume.args.includes("--sandbox"));
-  assert.ok(!resume.args.includes("--approve-for-me"));
   assert.deepEqual(getAdapter("claude")!.build(input).args.slice(0, 8),
     ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "plan", "--permission-prompts", "none"]);
   assert.deepEqual(getAdapter("cursor")!.build(input).args.slice(0, 7),

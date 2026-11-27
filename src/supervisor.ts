@@ -47,19 +47,8 @@ function isQuotaFailure(text: string) {
   return QUOTA_PHRASES.some((phrase) => hay.includes(phrase));
 }
 
-function quotaSentence(text: string) {
-  const lines = String(text || "").split(/\r?\n/);
-  for (let i = lines.length - 1; i >= 0; i -= 1) {
-    if (isQuotaFailure(lines[i])) return lines[i].trim();
-  }
-  return "";
-}
-
-function failureSummary(stdout: string, stderr: string) {
-  const combined = `${stdout || ""}\n${stderr || ""}`;
-  const reason = terminalReason(combined);
-  if (reason) return reason.slice(-8192);
-  return (withoutHtml(stderr) || withoutHtml(stdout)).slice(-8192);
+function lastMatchingLine(text: string, matches: (line: string) => boolean) {
+  return text.split(/\r?\n/).reverse().find(matches)?.trim() || "";
 }
 
 // Only POSIX needs a process group (killGroup). On Windows a detached child under a .cmd shim never produces output, and taskkill /T finds the tree through parent pids anyway.
@@ -174,7 +163,9 @@ export async function supervise(id: string): Promise<void> {
   const before = gitSnapshot(meta.cwd);
   const metricEvents: EventData[] = [];
   let stdout = "";
+  let rawStdout = "";
   let stderr = "";
+  let terminalError = "";
   let message = "";
   let code: number | null = null;
   let spec;
@@ -213,6 +204,7 @@ export async function supervise(id: string): Promise<void> {
     meta.child_pid = childPid;
     if (stopped) killGroup(childPid);
     save();
+    const readerClosed: Promise<void>[] = [];
     for (const stream of ["stdout", "stderr"] as const) {
       const file = path.join(taskDir(id), "raw", `${meta.turn}.${stream}.log`);
       fs.writeFileSync(file, "", { mode: 0o600 });
@@ -225,13 +217,17 @@ export async function supervise(id: string): Promise<void> {
         else stderr = (stderr + chunk.toString()).slice(-2_000_000);
       });
       const reader = createInterface({ input: output, crlfDelay: Infinity });
+      readerClosed.push(new Promise<void>((resolve) => reader.once("close", resolve)));
       reader.on("line", (line) => {
         const session = stream === "stdout" ? adapter.sessionIdFrom(line) : null;
         if (session) meta.session_id = session;
         const events = stream === "stdout" ? adapter.parseLine(line) : null;
-        if (events === null) emit({ type: "raw", stream, line });
-        else for (const event of events) {
+        if (events === null) {
+          if (stream === "stdout") rawStdout = `${rawStdout}${line}\n`.slice(-2_000_000);
+          emit({ type: "raw", stream, line });
+        } else for (const event of events) {
           if (event.type === "message") message = event.text;
+          if (event.type === "error" && event.text.trim()) terminalError = event.text.trim();
           if (event.type === "tool_call" || event.type === "usage") metricEvents.push(event);
           emit(event);
         }
@@ -243,7 +239,7 @@ export async function supervise(id: string): Promise<void> {
     });
     child.stdin?.on("error", () => {}); // the child CLI may exit before reading stdin; close will deliver the final result.
     child.stdin?.end(spec.stdin ?? undefined);
-    code = await exited;
+    [code] = await Promise.all([exited, ...readerClosed]);
     if (spec.lastMessagePath) {
       try {
         const last = fs.readFileSync(spec.lastMessagePath, "utf8").trim();
@@ -260,13 +256,22 @@ export async function supervise(id: string): Promise<void> {
     clearInterval(timeout);
     if (lastMessageCreated && spec?.lastMessagePath) fs.rmSync(spec.lastMessagePath, { force: true });
   }
-  const raw = `${stderr}\n${stdout}`;
+  const raw = `${rawStdout}\n${stderr}`;
   const marker = interpret(message || stdout);
   let final: TaskStatus = "failed";
-  let summary = failureSummary(stdout, stderr);
+  let summary = terminalError || terminalReason(raw) || withoutHtml(stderr) || withoutHtml(stdout);
   if (stopped) { final = stopped === "cancelled" ? "cancelled" : "timed_out"; summary = stopped === "cancelled" ? "Cancelled." : `Timed out: ${stopped}.`; }
-  else if (code !== 0 && adapter.isAuthFailure(raw)) { final = "not_authenticated"; summary = stderr || message || stdout; }
-  else if (code !== 0 && isQuotaFailure(raw)) { final = "quota_exceeded"; summary = terminalReason(raw) || quotaSentence(raw); }
+  else if (code !== 0 && isQuotaFailure(terminalError)) { final = "quota_exceeded"; summary = terminalError; }
+  else if (code !== 0 && adapter.isAuthFailure(terminalError)) { final = "not_authenticated"; summary = terminalError; }
+  else if (code !== 0 && isQuotaFailure(raw)) {
+    final = "quota_exceeded";
+    const quotaLine = lastMatchingLine(raw, isQuotaFailure);
+    summary = terminalReason(quotaLine) || quotaLine;
+  }
+  else if (code !== 0 && adapter.isAuthFailure(raw)) {
+    final = "not_authenticated";
+    summary = lastMatchingLine(raw, (line) => adapter.isAuthFailure(line)) || withoutHtml(stderr) || withoutHtml(rawStdout);
+  }
   else if (marker?.kind === "decision") { final = "needs_input"; meta.decision = { question: marker.question, options: marker.options }; summary = marker.question; }
   else if (code === 0) { final = "success"; summary = marker?.kind === "result" ? marker.summary : message || stdout; }
   meta.summary = redact(summary).slice(-8192);
@@ -291,12 +296,14 @@ export async function supervise(id: string): Promise<void> {
     } else if (!after) {
       final = "readonly_violation";
       meta.status = final;
+      meta.readonly_violations = ["<snapshot-unavailable>"];
       meta.summary = `readonly_violation: git snapshot failed\n${meta.summary ?? ""}`;
     } else {
       const dirty = pathsSinceBaseline(meta.cwd, baselineToSnapshot(meta.readonly_baseline), after);
       if (dirty.length) {
         final = "readonly_violation";
         meta.status = final;
+        meta.readonly_violations = dirty;
         meta.summary = `readonly_violation: ${dirty.length} file(s)\n${meta.summary ?? ""}`;
       }
     }

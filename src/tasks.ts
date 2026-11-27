@@ -467,7 +467,13 @@ export async function reply(id: string, prompt: string, author: Author = "host",
     delete next.summary;
     delete next.warning;
     delete next.scope_violations;
+    delete next.readonly_violations;
     delete next.check;
+    if (meta.mode === "readonly") {
+      const snap = gitSnapshot(meta.cwd);
+      if (snap?.head) next.readonly_baseline = snapshotToBaseline(snap);
+      else delete next.readonly_baseline;
+    }
     writeTurn(id, {
       turn: next.turn, author, prompt: prepared.prompt, status: "running",
       files: prepared.files?.length ? prepared.files : undefined,

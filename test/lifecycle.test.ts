@@ -5,7 +5,7 @@ import path from "node:path";
 import { execFileSync, spawn } from "node:child_process";
 import { once } from "node:events";
 import { pathToFileURL } from "node:url";
-import { sandbox, exec, cli, sleep } from "./helpers.ts";
+import { sandbox, exec, cli, sleep, fakeBin } from "./helpers.ts";
 import type { TaskMeta } from "../src/types.ts";
 
 test("start returns before the worker finishes; supervisor still writes success after the parent process is SIGKILLed", async (t) => {
@@ -64,6 +64,73 @@ test("auth, quota, terminal error and normal exit keep the legacy classification
     s.env.FAKE_EXIT = exit;
     const started = await s.run("start", "--target", "codex", "--prompt", "hi");
     assert.equal((await s.until(started.task_id)).status, status);
+  }
+});
+
+test("CLI failures use terminal errors or stderr instead of parsed tool output", async (t) => {
+  const s = sandbox(t);
+  const bin = path.join(s.home, "bin");
+  fakeBin(bin, "codex", `
+    import fs from "node:fs";
+    process.stdout.write(fs.readFileSync(process.env.FAKE_FIXTURE));
+    process.stderr.write(process.env.FAKE_STDERR);
+    process.exitCode = 1;
+  `);
+  s.env.PATH = [bin, s.env.PATH].join(path.delimiter);
+  const toolResult = { type: "item.completed", item: {
+    type: "command_execution", command: "gh auth status", aggregated_output: "not logged in", exit_code: 1,
+  } };
+  const usageLimit = "You've hit your usage limit. Try again later.";
+  const authError = "Please log in to Codex.";
+  const quotaAndAuth = `${usageLimit} ${authError}`;
+  const nonFatalError = { type: "item.completed", item: { type: "error", message: "Reconnecting..." } };
+  const noise = "codex_models_manager: request timed out";
+  for (const { name, summary, status, events, stderr } of [
+    {
+      summary: usageLimit, status: "quota_exceeded", stderr: noise,
+      events: [{ type: "error", message: usageLimit }, { type: "turn.failed", error: { message: usageLimit } }],
+    },
+    {
+      name: "stderr quota after a non-fatal error",
+      summary: usageLimit, status: "quota_exceeded", stderr: `${noise}\n${usageLimit}\n`,
+      events: [nonFatalError],
+    },
+    {
+      name: "quota takes precedence over auth in a terminal error",
+      summary: quotaAndAuth, status: "quota_exceeded", stderr: noise,
+      events: [{ type: "turn.failed", error: { message: quotaAndAuth } }],
+    },
+    {
+      name: "quota takes precedence over auth in stderr",
+      summary: quotaAndAuth, status: "quota_exceeded", stderr: `${noise}\n${quotaAndAuth}\n`,
+      events: [nonFatalError],
+    },
+    {
+      summary: "disk full", status: "failed", stderr: noise,
+      events: [{ type: "turn.failed", error: { message: "disk full" } }],
+    },
+    {
+      summary: "Please log in to Codex.", status: "not_authenticated", stderr: noise,
+      events: [{ type: "turn.failed", error: { message: "Please log in to Codex." } }],
+    },
+    {
+      summary: "Please log in to Codex.", status: "not_authenticated", stderr: `${noise}\nPlease log in to Codex.\n`,
+      events: [],
+    },
+    {
+      name: "stderr auth after a non-fatal error",
+      summary: authError, status: "not_authenticated", stderr: `${noise}\n${authError}\n`,
+      events: [nonFatalError],
+    },
+  ]) {
+    await t.test(name ?? `${status} from ${events.length ? summary : "stderr"}`, async () => {
+      fs.writeFileSync(s.fixture, [toolResult, ...events].map((event) => JSON.stringify(event)).join("\n"));
+      s.env.FAKE_STDERR = stderr;
+      const started = await s.run("start", "--target", "codex", "--prompt", "hi");
+      const done = await s.until(started.task_id);
+      assert.equal(done.status, status);
+      assert.equal(done.summary, summary);
+    });
   }
 });
 

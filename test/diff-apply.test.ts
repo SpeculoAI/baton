@@ -132,13 +132,38 @@ function sourceState(cwd: string) {
 
 const branchExists = (cwd: string, branch: string) => git(cwd, "branch", "--list", branch).trim() !== "";
 
-test("apply: one local commit with trailers, same change as diff; Baton files stay out; worktree kept", async (t) => {
+test("diff and apply exclude ignored copy and symlink entries and preserve tracked exemptions (#95)", async (t) => {
   const s = sandbox(t);
   repo(s);
+  fs.appendFileSync(path.join(s.cwd, ".gitignore"), "node_modules\n.env.local\n.env.tracked\n");
+  fs.writeFileSync(path.join(s.cwd, ".baton.json"), JSON.stringify({
+    worktree: { copy: ["local.cfg", ".env.local", ".env*"], symlink: ["shared", "node_modules"] },
+  }));
+  fs.writeFileSync(path.join(s.cwd, ".env.tracked"), "tracked\n");
+  git(s.cwd, "add", "-f", ".env.tracked");
+  git(s.cwd, "add", ".gitignore", ".baton.json");
+  git(s.cwd, "commit", "-qm", "configure worktree exemptions");
+  fs.mkdirSync(path.join(s.cwd, "node_modules"));
+  fs.writeFileSync(path.join(s.cwd, ".env.local"), "ignored\n");
+  fs.writeFileSync(path.join(s.cwd, ".env.example"), "untracked\n");
+
   const done = await isolatedTask(s);
   const wt = done.worktree!.path;
+  assert.ok(fs.lstatSync(path.join(wt, "node_modules")).isSymbolicLink());
+  assert.equal(fs.readFileSync(path.join(wt, ".env.local"), "utf8"), "ignored\n");
+  assert.equal(fs.readFileSync(path.join(wt, ".env.example"), "utf8"), "untracked\n");
+  assert.equal(git(wt, "check-ignore", ".env.local", "node_modules"), ".env.local\nnode_modules\n");
+  fs.writeFileSync(path.join(wt, ".env.tracked"), "worker edit\n");
   workerChanges(wt);
   const patch = await text(s, "diff", done.task_id);
+  assert.deepEqual(patch.match(/^diff --git .*$/gm), [
+    "diff --git a/committed.txt b/committed.txt",
+    "diff --git a/keep.txt b/keep.txt",
+    "diff --git a/new.txt b/new.txt",
+  ]);
+  const stat = await text(s, "diff", done.task_id, "--stat");
+  assert.match(stat, /3 files changed/);
+  assert.doesNotMatch(stat, /node_modules|\.env|local\.cfg|shared|build|\.baton/);
   const before = worktreeState(wt);
   const head = git(s.cwd, "rev-parse", "HEAD").trim();
 
@@ -156,6 +181,7 @@ test("apply: one local commit with trailers, same change as diff; Baton files st
   assert.match(message, /Baton-Target: codex/);
   assert.equal(git(s.cwd, "show", "--format=", "--name-only", "HEAD").trim().split("\n").join(","), "committed.txt,keep.txt,new.txt");
   assert.equal(git(s.cwd, "diff", "--binary", head, "HEAD"), patch);
+  assert.equal(git(s.cwd, "show", "HEAD:.env.tracked"), "tracked\n");
   assert.equal(fs.readFileSync(path.join(s.cwd, "keep.txt"), "utf8"), "keep\nedited\n");
   assert.deepEqual(worktreeState(wt), before);
   assert.ok(fs.existsSync(wt));
