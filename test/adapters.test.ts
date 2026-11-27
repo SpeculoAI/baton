@@ -208,3 +208,32 @@ test("assertArgvSafe: argv prompts pass on POSIX and to a Windows .exe; a .cmd s
   assert.doesNotThrow(() => assertArgvSafe("/usr/bin/kimi", long, "darwin"));
   assert.throws(() => assertArgvSafe("C:\\bin\\kimi.exe", long, "win32"), /32767/);
 });
+
+test("kimi 2.8.0 real stream-json: tool calls and results pair up, failed Bash is ok:false, the session id comes from the trailing resume hint", () => {
+  const kimi = getAdapter("kimi")!;
+  const lines = fixture("kimi-2.8.0.stream.jsonl");
+  for (const line of lines) assert.notEqual(kimi.parseLine(line), null, line);
+  assert.deepEqual(lines.map((line) => kimi.sessionIdFrom(line)).filter(Boolean), ["session_00000000-0000-4000-8000-000000000001"]);
+  const events = lines.flatMap((line) => kimi.parseLine(line) ?? []);
+  assert.deepEqual(events.map((e) => e.type), ["tool_call", "tool_result", "tool_call", "message", "tool_result", "message"]);
+  assert.deepEqual(events.filter((e) => e.type === "tool_call").map((e) => e.type === "tool_call" && [e.name, e.detail]), [["Bash", "echo hi"], ["Bash", "ls /nonexistent_dir_xyz"]]);
+  assert.deepEqual(events.filter((e) => e.type === "tool_result").map((e) => e.type === "tool_result" && e.ok), [true, false]);
+  const last = events.at(-1);
+  assert.equal(last?.type === "message" && last.text, "DONE");
+  const long = kimi.parseLine(JSON.stringify({ role: "assistant", tool_calls: [{ function: { name: "Write", arguments: JSON.stringify({ content: "x".repeat(300) }) } }] }));
+  assert.equal(long?.[0].type === "tool_call" && long[0].detail.length, 200);
+  for (const line of ["bad json", "null", "{}", '{"role":"user","content":"x"}']) assert.equal(kimi.parseLine(line), null, line);
+
+  assert.deepEqual(kimi.build({ bin: "k", cwd: "/w", prompt: "a\nb", sessionId: null, reasoningEffort: null }),
+    { command: "k", args: ["-p", "a\nb", "--output-format", "stream-json"], stdin: null });
+  const resume = kimi.build({ bin: "k", cwd: "/w", prompt: "p", sessionId: "session_1", reasoningEffort: null, model: " kimi-code/k3 " });
+  assert.deepEqual(resume.args, ["-p", "p", "--output-format", "stream-json", "-m", "kimi-code/k3", "-S", "session_1"]);
+  assert.equal(resume.modelArg, "kimi-code/k3");
+  const effort = kimi.build({ bin: "k", cwd: "/w", prompt: "p", sessionId: null, reasoningEffort: "high" });
+  assert.ok(!effort.args.some((arg) => /effort/.test(arg)));
+  assert.match(effort.warning ?? "", /effort/);
+
+  assert.equal(kimi.readonlyEnforcement, undefined);
+  assert.ok(kimi.isAuthFailure("error: failed to run prompt: No model configured. Run `kimi` and use /login to sign in, then retry; or set default_model in config.toml."));
+  assert.ok(!kimi.isAuthFailure("error: failed to run prompt: Prompt turn ended with reason: failed"));
+});

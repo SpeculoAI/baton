@@ -1,4 +1,4 @@
-export type Target = "codex" | "claude" | "agy" | "cursor";
+export type Target = "codex" | "claude" | "agy" | "cursor" | "kimi";
 export type Effort = "low" | "medium" | "high" | "ultra";
 export type TaskStatus = "running" | "needs_input" | "success" | "failed" | "timed_out" | "cancelled" | "not_installed" | "not_authenticated" | "quota_exceeded" | "scope_violation" | "readonly_violation" | "check_failed";
 /** Result of the `--check` command Baton ran after a successful turn. `status` is absent when the check was cancelled. */
