@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { exec, exe, fakeBin } from "./helpers.ts";
+import { isAlive } from "../src/process.ts";
 import { commandsFor, planInstall, readInstalled, REPO, runInstall, writeInstalled } from "../src/install.ts";
 
 const cli = path.resolve(import.meta.dirname, "../src/cli.ts");
@@ -312,4 +313,30 @@ test("selectHosts picks a subset; onProgress reports global and host phases", as
   assert.equal(ran.exitCode, 0);
   assert.deepEqual(ran.result.hosts.map((host) => host.id), ["gemini"]);
   assert.deepEqual(events, ["host:start:gemini", "host:done:gemini:true"]);
+});
+
+test("a hung host step times out and its process tree is killed", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "baton-install-home-"));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "baton-bins-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const pidFile = path.join(dir, "grandchild.pid");
+  // Like Gemini: a re-exec'd child waits on a prompt forever.
+  fakeBin(dir, "gemini", `import { spawn } from "node:child_process";
+import fs from "node:fs";
+const kid = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "inherit" });
+fs.writeFileSync(${JSON.stringify(pidFile)}, String(kid.pid));
+setInterval(() => {}, 1000);
+`);
+  const started = Date.now();
+  const ran = await runInstall({ action: "install", only: ["gemini"], skipGlobal: true, env: { PATH: dir }, home, quiet: true, stepTimeoutMs: 4000 });
+  assert.ok(Date.now() - started < 15_000);
+  assert.equal(ran.exitCode, 1);
+  assert.equal(ran.result.hosts[0].ok, false);
+  assert.match(ran.result.hosts[0].error ?? "", /timed out after 4s: .*extensions install/);
+  assert.ok(fs.existsSync(pidFile), JSON.stringify(ran.result.hosts));
+  const grandchild = Number(fs.readFileSync(pidFile, "utf8"));
+  const deadline = Date.now() + 3000;
+  while (isAlive(grandchild) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(isAlive(grandchild), false);
 });

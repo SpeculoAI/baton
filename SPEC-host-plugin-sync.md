@@ -26,7 +26,7 @@ Plan: `tasks/plan-host-sync.md` · Tasks: `tasks/todo-host-sync.md`
 | Antigravity 1.5.18 | 0 | 否 | `Installed to …/plugins/baton (replaced existing installation)`，`plugin list` 确认从 0.6.0 升至 0.8.0。 |
 | Gemini CLI 0.67.0 | 1 | 是 | 隔离 `HOME` + `~/.gitconfig` `insteadOf` 指向本地 clone：装 0.6.0 后重跑 `extensions install <REPO> --consent` → `Extension "baton" is already installed. Please uninstall it first.`，仍为 0.6.0。随后 `extensions update baton` **卡在交互提示**：Gemini 先下载 GitHub release，失败后问 `Would you like to attempt to install via "git clone" instead? [Y/n]`；`update` 没有 `--consent`，stdin 为 `/dev/null` 也不退出。本机失败原因：mihomo fake-ip 把 `api.github.com` 解析为 `198.18.0.51`，Gemini 的私有地址拦截报 `Access to blocked or private host`。正常 DNS 下 release 下载应成功，未验证。 |
 
-结论：Claude 需要识别退出码为 0 的 `already installed`。Codex 命中计划中的例外，成功安装后固定补跑现有 update 步骤。Antigravity 的 install 已能刷新版本，且两组命令相同，只运行一次。Cursor 重跑 install 本身即刷新，无需例外。Gemini 沿用条件补跑；但 fake-ip 等环境下 `extensions update` 会卡在交互提示（`baton update` 原本就有此问题），见 Out of Scope。
+结论：Claude 需要识别退出码为 0 的 `already installed`。Codex 命中计划中的例外，成功安装后固定补跑现有 update 步骤。Antigravity 的 install 已能刷新版本，且两组命令相同，只运行一次。Cursor 重跑 install 本身即刷新，无需例外。Gemini 沿用条件补跑；但 fake-ip 等环境下 `extensions update` 会卡在交互提示（`baton update` 原本就有此问题），已用第 8 条的超时兜住（用户 2026-11-27 选定）。
 
 ## New Behavior
 
@@ -37,6 +37,7 @@ Plan: `tasks/plan-host-sync.md` · Tasks: `tasks/todo-host-sync.md`
 5. **update 无记录时不再静默**：`baton update` 读到的已记录宿主为空时，结果带警告"no recorded hosts; run `baton install`"。不做宿主检测，npm 全局升级照常执行。
 6. **dry-run**：`--dry-run` 的命令列表包含补跑的 update 步骤。
 7. **`--force` 不变**：仍是 uninstall（soft）+ install；是否也补跑 update 随第 1 条一起定。
+8. **宿主命令超时**：每个宿主插件命令最多跑 120 秒（`HOST_STEP_TIMEOUT_MS`），超时算该宿主失败，错误为 `timed out after 120s: <命令>`，附带命令已输出的内容。POSIX 上宿主命令在独立进程组里运行，超时用 `killGroup` 杀整棵树；Windows 走 `taskkill /T`。宿主命令 stdin 关闭。npm 全局安装不设超时。已知取舍：install 中途 Ctrl+C 不会传到正在跑的宿主命令，它最多再跑 120 秒。实测：隔离环境真实 Gemini 卡在提示时，`baton install --only gemini` 123 秒后 exit 1，三层进程（volta shim → node → relaunch node）同属一个进程组，超时后即刻全部结束。
 
 ## Commands
 
@@ -91,7 +92,6 @@ Build:     npm run build
 - 把插件版本钉到与 CLI 相同：宿主 update 拉的是市场最新（main），可能高于 CLI；属既有行为。
 - install 后回查宿主实际安装版本：各宿主 list 命令不统一（`codex plugin list` 实测会卡住）。
 - skill 内写版本并自检：用户判定不是 skill 的问题。
-- Gemini `extensions update` 在 release 下载失败时卡在交互提示（fake-ip 代理环境可复现）：可改为宿主命令加超时，或 Gemini 改用 uninstall + `install --consent`，待定。
 
 ## Decisions（原 Open Questions，2026-11-26 用户确认）
 

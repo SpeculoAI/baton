@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { which } from "./adapters/common.ts";
+import { killGroup } from "./process.ts";
 import { batonHome } from "./store.ts";
 
 export const REPO = "https://github.com/SpeculoAI/baton";
@@ -187,13 +188,26 @@ type InstallResult = {
   warnings?: string[];
 };
 
-function defaultSpawn(command: string, args: string[], env: NodeJS.ProcessEnv, quiet = false): Promise<SpawnResult> {
+// A host command stuck on a prompt nobody can see (Gemini's "install via git clone instead? [Y/n]") must not hang install.
+export const HOST_STEP_TIMEOUT_MS = 120_000;
+
+function defaultSpawn(command: string, args: string[], env: NodeJS.ProcessEnv, quiet = false, timeoutMs?: number): Promise<SpawnResult> {
   return new Promise((resolve) => {
-    const child = spawn(command, args, { env, stdio: ["inherit", "pipe", "pipe"] });
+    // Host steps run in their own process group (POSIX) so a timeout kills the whole tree; stdin is closed because
+    // their output is hidden behind the spinner. shortcut: Ctrl+C on baton does not reach a detached host step.
+    const child = timeoutMs
+      ? spawn(command, args, { env, detached: process.platform !== "win32", windowsHide: true, stdio: ["ignore", "pipe", "pipe"] })
+      : spawn(command, args, { env, stdio: ["inherit", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     let settled = false;
-    const finish = (result: SpawnResult) => { if (!settled) { settled = true; resolve(result); } };
+    const timer = timeoutMs
+      ? setTimeout(() => {
+        try { killGroup(child.pid ?? null); } catch { /* already gone */ }
+        finish({ status: 1, stdout, stderr: `${stderr}\ntimed out after ${timeoutMs / 1000}s: ${command} ${args.join(" ")}` });
+      }, timeoutMs)
+      : undefined;
+    const finish = (result: SpawnResult) => { if (!settled) { settled = true; clearTimeout(timer); resolve(result); } };
     // Soft migrate steps and TTY spinners must not live-tee: expected "Failed to uninstall old id"
     // noise looks like a real install failure, and it desyncs clack cursor redraws.
     child.stdout?.on("data", (chunk: Buffer) => { stdout += chunk; if (!quiet) process.stderr.write(chunk); });
@@ -221,6 +235,8 @@ export async function runInstall(input: {
   spawn?: SpawnFn;
   /** Suppress live child logs (TTY spinner). Soft migrate steps are always quiet. */
   quiet?: boolean;
+  /** Per host step; tests shorten it. */
+  stepTimeoutMs?: number;
 }): Promise<{ exitCode: number; result: InstallResult }> {
   const env = input.env ?? process.env;
   const home = input.home ?? batonHome();
@@ -247,8 +263,8 @@ export async function runInstall(input: {
       result: { ...resultBase, dry_run: true, ...(planned.global ? { global: planned.global } : {}), hosts: planned.hosts },
     };
   }
-  const run = (command: string, args: string[], quiet: boolean) =>
-    input.spawn ? input.spawn(command, args) : defaultSpawn(command, args, env, quiet);
+  const run = (command: string, args: string[], quiet: boolean, timeoutMs?: number) =>
+    input.spawn ? input.spawn(command, args) : defaultSpawn(command, args, env, quiet, timeoutMs);
   const report = input.onProgress;
   let global: { ok: boolean; error?: string } | undefined;
   if (planned.global) {
@@ -263,7 +279,7 @@ export async function runInstall(input: {
     report?.({ type: "host", phase: "start", id: host.id });
     let error: string | undefined;
     let alreadyInstalled = false;
-    const runStep = (step: Step) => run(host.bin, step.args, Boolean(input.quiet || step.soft));
+    const runStep = (step: Step) => run(host.bin, step.args, Boolean(input.quiet || step.soft), input.stepTimeoutMs ?? HOST_STEP_TIMEOUT_MS);
     for (const step of commandsFor(host.id, input.action, { force: input.force })) {
       // Soft steps (old-id migrate) often print "Failed to uninstall…" — hide that when overall install is fine.
       const ran = await runStep(step);
