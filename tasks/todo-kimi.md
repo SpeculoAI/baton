@@ -148,7 +148,7 @@ Spec: `SPEC-kimi-adapter.md` · Plan: `tasks/plan-kimi.md`
 
 ## Checkpoint B
 - [x] `npm test` 本机全绿
-- [ ] 征得你同意后 push 分支、开 draft PR；macOS、Linux、Windows 三平台 CI 全绿
+- [x] 征得你同意后 push 分支、开 draft PR；macOS、Linux、Windows 三平台 CI 全绿
 
 ---
 
@@ -200,5 +200,5 @@ Spec: `SPEC-kimi-adapter.md` · Plan: `tasks/plan-kimi.md`
 ---
 
 ## Checkpoint C
-- [ ] spec Success Criteria 1–10 全部满足
-- [ ] 三平台 CI 全绿，交给你评审
+- [x] spec Success Criteria 1–10 全部满足
+- [x] 三平台 CI 全绿（PR #92，`1f6e537`），交给你评审

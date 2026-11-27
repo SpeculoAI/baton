@@ -44,15 +44,15 @@ T1 风险最高（Windows 行为只能在 CI 上看到），放在最前面。T3
 
 ### Checkpoint B
 - [x] `npm test` 本机全绿（237 个测试：235 通过、2 跳过）
-- [ ] 征得你同意后 push 分支并开 draft PR，看三平台 CI（Windows 上 T1 / T4 的行为只能在这里验证）
+- [x] 征得你同意后 push 分支并开 draft PR，看三平台 CI（Windows 上 T1 / T4 的行为只能在这里验证）
 
 ### Phase 3: Docs & verification
 - [x] T6：README、docs、skills 全部补上 kimi
 - [x] T7：macOS 真机冒烟，结果写回 spec，Status 改为 implemented
 
 ### Checkpoint C
-- [ ] spec 的 Success Criteria 1–10 全部满足
-- [ ] 三平台 CI 全绿，交给你评审
+- [x] spec 的 Success Criteria 1–10 全部满足
+- [x] 三平台 CI 全绿（PR #92，`1f6e537`），交给你评审
 
 ## Risks and Mitigations
 

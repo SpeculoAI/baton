@@ -1,6 +1,6 @@
 # Spec: Kimi Code CLI adapter — V1
 
-Status: approved（2026-11-26）
+Status: implemented（2026-11-26；三平台 CI 通过，PR #92；Windows 真机冒烟随 #79）
 Plan: `tasks/plan-kimi.md` · Tasks: `tasks/todo-kimi.md`
 
 ## Objective
