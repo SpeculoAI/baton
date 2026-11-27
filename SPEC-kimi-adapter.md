@@ -97,6 +97,7 @@ Plan: `tasks/plan-kimi.md` · Tasks: `tasks/todo-kimi.md`
 - **K1 提示词走 argv。** 这是 `SPEC-native-windows.md` 中 D2 回退的第一个实际用户。
   - POSIX，以及 Windows 上解析到 `.exe`/`.com`（官方安装就是这种）：提示词放进 argv。Windows 上命令行超过 32767 字符时，启动前直接报错。
   - Windows 上解析到 `.cmd`/`.bat`（npm 安装），且提示词含换行或 `cmd.exe` 元字符（`& | < > ^ % ! " ( )`）：启动前直接报错，提示改用官方安装（`install.ps1`）。不静默截断。
+  - 代价（代码审查补记）：POSIX 上提示词会出现在进程列表里；Linux 单个参数上限 128 KiB（`MAX_ARG_STRLEN`），超过会 `E2BIG`，由 supervisor 记为失败。两点都写进了 docs。
   - `buildPrompt` 每轮都会追加多行的 `OUTPUT_CONTRACT`，所以 npm 装的 `kimi.cmd` 在 Windows 上每次启动都会报错，等于不支持；docs 要写明 Windows 只支持官方安装。
   - 这条检查与具体 CLI 无关，放在 `src/adapters/common.ts`，由 kimi 的 `build()` 调用。`build()` 抛出的错误已由 `src/supervisor.ts` 的 try 捕获，任务记为失败，不用新增错误通道。
 - **K2 只读：`readonlyEnforcement` 不设（等同 `none`）。** `--mode readonly` 必须加 `--allow-weak`；跑完后由现有的 git 快照检查判定 `readonly_violation`。`--agent explore` 要等 kimi 修好续接 bug 再启用（见 Deferred）。

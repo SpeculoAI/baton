@@ -429,7 +429,7 @@ MCP 是同一套逻辑的薄壳，进程里不存任何任务状态，重启 MCP
 | **Claude Code** | `claude -p --output-format stream-json --verbose --permission-mode acceptEdits --permission-prompts none` | 追加 `--resume <session_id>` | readonly → `--permission-mode plan`；`stream-json` 在 `-p` 下必须配 `--verbose`；hook 事件不进事件流 |
 | **Cursor** | `cursor-agent --print --force --trust --output-format stream-json --workspace <cwd>` | 追加 `--resume <session_id>` | readonly → `--mode ask`（去掉 `--force`，保留 `--trust`）；优先找 `cursor-agent`，再找 `agent`，不调用 IDE 的 `cursor` |
 | **Antigravity (agy)** | `agy --print= --mode accept-edits --input-format stream-json --output-format stream-json`（提示词走 stdin） | 追加 `--conversation <id>` | readonly → `--mode plan`；回复是逐字增量，完整文本取自最终 `result` |
-| **Kimi Code (kimi)** | `kimi -p <prompt> --output-format stream-json [-m <model>]`（提示词走 argv：`kimi -p` 不能从 stdin 读） | 追加 `-S <session_id>`（每轮都会再传 `-m`） | 没有只读映射：`-p` 固定按 auto 权限运行且不接受 `--plan`，所以 `--mode readonly` 必须加 `--allow-weak`，只靠事后的 `readonly_violation` 检查；`--effort` 会被忽略并留下 warning；会话 id 只在最后一行给出，turn 中途被取消或超时就拿不到，之后的 `reply` 会开一个新的 kimi 会话；服务端出错时只有 `Prompt turn ended with reason: failed` 和 kimi 打印的 `See log:` 路径 |
+| **Kimi Code (kimi)** | `kimi -p <prompt> --output-format stream-json [-m <model>]`（提示词走 argv：`kimi -p` 不能从 stdin 读） | 追加 `-S <session_id>`（每轮都会再传 `-m`） | 没有只读映射：`-p` 固定按 auto 权限运行且不接受 `--plan`，所以 `--mode readonly` 必须加 `--allow-weak`，只靠事后的 `readonly_violation` 检查；`--effort` 会被忽略并留下 warning；会话 id 只在最后一行给出，turn 中途被取消或超时就拿不到，之后的 `reply` 会开一个新的 kimi 会话；服务端出错时只有 `Prompt turn ended with reason: failed` 和 kimi 打印的 `See log:` 路径；提示词作为参数传入，本机其他用户能在进程列表（`ps`）里看到；Linux 上超过 128 KiB（`MAX_ARG_STRLEN`）的提示词会以 `E2BIG` 启动失败 |
 
 解析器认不出的输出行一律记为 `raw` 事件，不会丢。各家的真实输出样本在 `test/fixtures/`。
 
