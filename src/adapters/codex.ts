@@ -38,7 +38,7 @@ export const codex: Adapter = {
       ...(reasoningEffort ? ["-c", `model_reasoning_effort="${reasoningEffort}"`] : []),
     ];
     const readonly = mode === "readonly";
-    // `exec resume` does not accept --cd/--color/--sandbox. The first write turn uses --approve-for-me (workspace-write; do not add --sandbox).
+    // `exec resume` 不接受 --sandbox 或 --approve-for-me，需用 -c 传递对应的配置。
     if (sessionId) {
       return {
         command: bin,
@@ -49,6 +49,9 @@ export const codex: Adapter = {
           "--skip-git-repo-check",
           "--output-last-message",
           lastMessagePath,
+          ...(readonly
+            ? ["-c", 'sandbox_mode="read-only"']
+            : ["-c", 'sandbox_mode="workspace-write"', "-c", 'approval_policy="never"']),
           ...optionArgs,
           sessionId,
           "-",

@@ -283,13 +283,42 @@ test("codex build: --model becomes -m on fresh and resume; absent model adds not
   assert.equal(none.modelArg, undefined);
 });
 
-test("readonly mode: argv mapping for all four; codex resume still has no sandbox/approve", () => {
+test("codex build uses exact sandbox and approval arguments for fresh turns", () => {
+  const input = { bin: "/b", cwd: "/w", prompt: "p", sessionId: null, reasoningEffort: null };
+  const write = codex.build({ ...input, mode: "write" });
+  assert.deepEqual(write.args, [
+    "exec", "--json", "--color", "never", "--approve-for-me", "--skip-git-repo-check",
+    "--cd", "/w", "--output-last-message", write.lastMessagePath, "-",
+  ]);
+  const readonly = codex.build({ ...input, mode: "readonly" });
+  assert.deepEqual(readonly.args, [
+    "exec", "--json", "--color", "never", "--sandbox", "read-only", "--skip-git-repo-check",
+    "--cd", "/w", "--output-last-message", readonly.lastMessagePath, "-",
+  ]);
+});
+
+test("codex build preserves workspace-write sandbox on resume", () => {
+  const spec = codex.build({
+    bin: "/b", cwd: "/w", prompt: "p", sessionId: "thread-9", reasoningEffort: null, mode: "write",
+  });
+  assert.deepEqual(spec.args, [
+    "exec", "resume", "--json", "--skip-git-repo-check", "--output-last-message", spec.lastMessagePath,
+    "-c", 'sandbox_mode="workspace-write"', "-c", 'approval_policy="never"', "thread-9", "-",
+  ]);
+});
+
+test("codex build preserves read-only sandbox on resume", () => {
+  const spec = codex.build({
+    bin: "/b", cwd: "/w", prompt: "p", sessionId: "thread-9", reasoningEffort: null, mode: "readonly",
+  });
+  assert.deepEqual(spec.args, [
+    "exec", "resume", "--json", "--skip-git-repo-check", "--output-last-message", spec.lastMessagePath,
+    "-c", 'sandbox_mode="read-only"', "thread-9", "-",
+  ]);
+});
+
+test("readonly mode: argv mapping for Claude, Cursor and AGY", () => {
   const input = { bin: "/b", cwd: "/w", prompt: "p", sessionId: null as string | null, reasoningEffort: null as null, mode: "readonly" as const };
-  assert.deepEqual(codex.build(input).args.slice(0, 8), ["exec", "--json", "--color", "never", "--sandbox", "read-only", "--skip-git-repo-check", "--cd"]);
-  assert.ok(!codex.build(input).args.includes("--approve-for-me"));
-  const resume = codex.build({ ...input, sessionId: "thread-9" });
-  assert.ok(!resume.args.includes("--sandbox"));
-  assert.ok(!resume.args.includes("--approve-for-me"));
   assert.deepEqual(getAdapter("claude")!.build(input).args.slice(0, 8),
     ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "plan", "--permission-prompts", "none"]);
   assert.deepEqual(getAdapter("cursor")!.build(input).args.slice(0, 7),
