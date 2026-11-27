@@ -52,6 +52,14 @@ const AGY: RuleSupport = {
   rulesyncTarget: "antigravity-cli",
 };
 
+test("unseenRules: a nested entry such as .agents/AGENTS.md is not mistaken for AGENTS.md", () => {
+  for (const s of [CLAUDE, CODEX, CURSOR]) {
+    assert.deepEqual(unseenRules([".agents/AGENTS.md", "../.agents/AGENTS.md"], s), ["../.agents/AGENTS.md", ".agents/AGENTS.md"]);
+  }
+  assert.deepEqual(unseenRules([".agents/AGENTS.md", "../.agents/AGENTS.md", "../../AGENTS.md"], AGY), []);
+  assert.deepEqual(unseenRules(["../../AGENTS.md"], CODEX), []);
+});
+
 test("discoverRules: walks cwd up to git root; skips empty rule dirs; ignores below cwd", () => {
   const root = tmp();
   gitInit(root);
