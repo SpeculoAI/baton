@@ -18,12 +18,12 @@ Spec: `SPEC-kimi-adapter.md` · Plan: `tasks/plan-kimi.md`
 - win32 的其他情况：整个命令行超过 32767 字符就抛错。
 
 **Acceptance criteria:**
-- [ ] 三条分支都有单测，平台作为参数传入，所以 macOS 上也能跑完全部分支。
-- [ ] 错误信息里有原因和改法。
+- [x] 三条分支都有单测，平台作为参数传入，所以 macOS 上也能跑完全部分支。
+- [x] 错误信息里有原因和改法。
 
 **Verification:**
-- [ ] `node --test test/adapters.test.ts`
-- [ ] `npm run typecheck`
+- [x] `node --test test/adapters.test.ts`
+- [x] `npm run typecheck`
 
 **Dependencies:** None
 
@@ -47,13 +47,13 @@ Spec: `SPEC-kimi-adapter.md` · Plan: `tasks/plan-kimi.md`
 注册进 `src/adapters/index.ts`，`src/types.ts` 的 `Target` 加 `"kimi"`。从 T0 的真实输出整理 `test/fixtures/kimi-2.8.0.stream.jsonl`，覆盖成功和失败的 tool 行、带 `tool_calls` 的 assistant 行、meta 行；会话 id 换成假值，去掉本机路径。
 
 **Acceptance criteria:**
-- [ ] fixture 每一行 `parseLine` 都不返回 `null`；事件序列符合 K6，`Command failed with exit code: 1.` 结尾的那行 `ok: false`。
-- [ ] `build` 的 args 覆盖这些组合：首轮、续接、带 model、带 effort（有 warning、无 effort 参数）。
-- [ ] `isAuthFailure` 能识别 T0 里未登录的原文。
+- [x] fixture 每一行 `parseLine` 都不返回 `null`；事件序列符合 K6，`Command failed with exit code: 1.` 结尾的那行 `ok: false`。
+- [x] `build` 的 args 覆盖这些组合：首轮、续接、带 model、带 effort（有 warning、无 effort 参数）。
+- [x] `isAuthFailure` 能识别 T0 里未登录的原文。
 
 **Verification:**
-- [ ] `node --test test/adapters.test.ts`
-- [ ] `npm test`
+- [x] `node --test test/adapters.test.ts`
+- [x] `npm test`
 
 **Dependencies:** T1
 
@@ -64,8 +64,8 @@ Spec: `SPEC-kimi-adapter.md` · Plan: `tasks/plan-kimi.md`
 ---
 
 ## Checkpoint A
-- [ ] `npm test` 本机全绿
-- [ ] `node src/cli.ts agents` 的输出里有 kimi，显示 `bin` 和版本 `2.8.0`
+- [x] `npm test` 本机全绿
+- [x] `node src/cli.ts agents` 的输出里有 kimi，显示 `bin` 和版本 `2.8.0`
 
 ---
 
@@ -78,13 +78,13 @@ Spec: `SPEC-kimi-adapter.md` · Plan: `tasks/plan-kimi.md`
 - `src/tasks.ts:126`：白名单加 kimi，报错文字同步更新。其他逻辑不动（用户已同意）。
 
 **Acceptance criteria:**
-- [ ] `baton start --target kimi --model kimi-code/kimi-for-coding` 不再被拒，meta 里记下 model。
-- [ ] `baton start --target kimi -h` 的说明里有 kimi。
-- [ ] MCP `delegate_task` 接受 `target_agent: "kimi"`。
+- [x] `baton start --target kimi --model kimi-code/kimi-for-coding` 不再被拒，meta 里记下 model。
+- [x] `baton start --target kimi -h` 的说明里有 kimi。
+- [x] MCP `delegate_task` 接受 `target_agent: "kimi"`。
 
 **Verification:**
-- [ ] `node --test test/model-start.test.ts test/mcp.test.ts test/help.test.ts`
-- [ ] `npm test`
+- [x] `node --test test/model-start.test.ts test/mcp.test.ts test/help.test.ts`
+- [x] `npm test`
 
 **Dependencies:** T2
 
@@ -107,16 +107,16 @@ Spec: `SPEC-kimi-adapter.md` · Plan: `tasks/plan-kimi.md`
 开始前先 grep 有没有测试依赖 fake-cli 的数量或 agents 的顺序。
 
 **Acceptance criteria:**
-- [ ] 以上各项都有测试，在 macOS 上通过。
-- [ ] win32 分支由平台条件区分，不是跳过不测。
+- [x] 以上各项都有测试，在 macOS 上通过。
+- [x] win32 分支由平台条件区分，不是跳过不测。
 
 **Verification:**
-- [ ] `node --test test/prompt-stdin.test.ts test/readonly.test.ts test/lifecycle.test.ts`
-- [ ] `npm test`
+- [x] `node --test test/prompt-stdin.test.ts test/readonly.test.ts test/lifecycle.test.ts`
+- [x] `npm test`
 
 **Dependencies:** T2、T3
 
-**Files likely touched:** `test/fake-cli/kimi`、`test/fake-cli/kimi.cmd`、`test/prompt-stdin.test.ts`、`test/readonly.test.ts`、`test/lifecycle.test.ts`（如果 kimi 的场景太散，单独建一个 `test/kimi.test.ts`）
+**Files touched:** fake-cli 入口脚本已在 T3 提前建好（model-start 测试要用）；场景集中在新文件 `test/kimi.test.ts`。原计划：`test/fake-cli/kimi`、`test/fake-cli/kimi.cmd`、`test/prompt-stdin.test.ts`、`test/readonly.test.ts`、`test/lifecycle.test.ts`（如果 kimi 的场景太散，单独建一个 `test/kimi.test.ts`）
 
 **Estimated scope:** M
 
@@ -131,22 +131,22 @@ Spec: `SPEC-kimi-adapter.md` · Plan: `tasks/plan-kimi.md`
 - `rulesyncTargets([... "kimi"])` 里有 `kimi-code`。
 
 **Acceptance criteria:**
-- [ ] spec Success Criteria 7 的每一项都有断言。
+- [x] spec Success Criteria 7 的每一项都有断言。
 
 **Verification:**
-- [ ] `node --test test/rules.test.ts test/rulesync-setup.test.ts test/rules-start.test.ts`
-- [ ] `npm test`
+- [x] `node --test test/rules.test.ts test/rulesync-setup.test.ts test/rules-start.test.ts`
+- [x] `npm test`
 
 **Dependencies:** T2
 
-**Files likely touched:** `test/rules.test.ts`、`test/rulesync-setup.test.ts`、`test/rules-start.test.ts`
+**Files touched:** `src/rules.ts`（RULE_ENTRIES 加 `.kimi-code/AGENTS.md`；另有 basenameMatch 修复，单独 commit `616a294`）、`test/rules.test.ts`、`test/rulesync-setup.test.ts`、`test/rules-start.test.ts`
 
 **Estimated scope:** S
 
 ---
 
 ## Checkpoint B
-- [ ] `npm test` 本机全绿
+- [x] `npm test` 本机全绿
 - [ ] 征得你同意后 push 分支、开 draft PR；macOS、Linux、Windows 三平台 CI 全绿
 
 ---

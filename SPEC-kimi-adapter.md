@@ -131,6 +131,7 @@ src/adapters/common.ts     argv 提示词的 Windows 安全检查（K1）
 src/adapters/index.ts      注册 kimi
 src/types.ts               Target 加 "kimi"
 src/mcp.ts                 target_agent 枚举加 "kimi"；model 参数说明加 kimi
+src/rules.ts               RULE_ENTRIES 加 .kimi-code/AGENTS.md；顺带修 basenameMatch（见下）
 src/tasks.ts               只改 :126 支持 --model 的 target 白名单，加 kimi（K3 需要；2026-11-26 经用户同意）
 src/usage.ts               --target 说明加 kimi
 test/adapters.test.ts      build / parseLine / sessionIdFrom / isAuthFailure 单测
@@ -189,6 +190,10 @@ const args = ["-p", prompt, "--output-format", "stream-json"];
 - 服务端错误的具体原因：要读 `~/.kimi-code/sessions/…/wire.jsonl`，这依赖 kimi 的内部格式。
 - `baton install` 给 kimi 装插件：kimi 没有非交互的插件安装命令；rulesync 的 `kimi-code-plugin` target 也留到那时再看。
 - Windows 真机冒烟：和 #79 一起做。
+
+## 实现中发现的问题（2026-11-26）
+
+- `src/rules.ts` 的 `basenameMatch` 原先只比路径结尾，于是 `.agents/AGENTS.md`（main 上已有）会被 codex、cursor、claude 判成「会读」；加上 kimi 后 `.kimi-code/AGENTS.md` 也一样。经用户同意在本分支修复：去掉开头的 `../` 后必须与条目完全相等（commit `616a294`，附回归测试）。
 
 ## Resolved Questions（2026-11-26，用户确认）
 

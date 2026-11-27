@@ -31,19 +31,19 @@ T1 风险最高（Windows 行为只能在 CI 上看到），放在最前面。T3
 ## Task List
 
 ### Phase 1: Foundation
-- [ ] T1：`common.ts` 新增 Windows argv 提示词安全检查，附单测
-- [ ] T2：`kimi.ts` adapter，注册进 `index.ts` / `types.ts`，附 fixture 和单测
+- [x] T1：`common.ts` 新增 Windows argv 提示词安全检查，附单测
+- [x] T2：`kimi.ts` adapter，注册进 `index.ts` / `types.ts`，附 fixture 和单测
 
 ### Checkpoint A
-- [ ] `npm test` 本机全绿；`getAdapter("kimi")` 能用
+- [x] `npm test` 本机全绿；`getAdapter("kimi")` 能用
 
 ### Phase 2: Wiring
-- [ ] T3：CLI / MCP 入口：`mcp.ts`、`usage.ts`、`tasks.ts:126`，附 model-start 测试
-- [ ] T4：fake CLI 集成测试：start/wait/reply、argv 逐字节、win32 `.cmd` 报错、readonly
-- [ ] T5：规则、gate、rulesync 映射测试
+- [x] T3：CLI / MCP 入口：`mcp.ts`、`usage.ts`、`tasks.ts:126`，附 model-start 测试
+- [x] T4：fake CLI 集成测试：start/wait/reply、argv 逐字节、win32 `.cmd` 报错、readonly
+- [x] T5：规则、gate、rulesync 映射测试
 
 ### Checkpoint B
-- [ ] `npm test` 本机全绿
+- [x] `npm test` 本机全绿（237 个测试：235 通过、2 跳过）
 - [ ] 征得你同意后 push 分支并开 draft PR，看三平台 CI（Windows 上 T1 / T4 的行为只能在这里验证）
 
 ### Phase 3: Docs & verification
