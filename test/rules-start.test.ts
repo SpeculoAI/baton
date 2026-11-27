@@ -105,6 +105,23 @@ test("start with .rulesync: target_configured / gates; supervisor check → in_s
   assert.equal(s.meta(forCursor.task_id).rules?.rulesync?.status, "in_sync");
 });
 
+test("start --target kimi with rulesync kimi-code: MCP and hooks gates are reported", async (t) => {
+  const s = sandbox(t);
+  gitInit(s.cwd);
+  fs.mkdirSync(path.join(s.cwd, ".rulesync"));
+  fs.writeFileSync(path.join(s.cwd, "rulesync.jsonc"), `{ "targets": ["kimi-code"], "features": ["rules", "mcp", "hooks"] }`);
+  fs.writeFileSync(path.join(s.cwd, "AGENTS.md"), "rules\n");
+  fs.writeFileSync(s.fixture, `${JSON.stringify({ role: "assistant", content: "BATON_RESULT\nsummary: ok\nBATON_END" })}\n`);
+  const started = await s.run<TaskMeta>("start", "--target", "kimi", "--prompt", "hi", "--allow-dirty");
+  assert.deepEqual(started.rules?.found, ["AGENTS.md"]);
+  assert.deepEqual(started.rules?.unseen, []);
+  assert.equal(started.rules?.rulesync?.target_configured, true);
+  const gates = started.rules?.rulesync?.gates ?? [];
+  assert.ok(gates.some((g) => /KIMI_CODE_TRUST_WORKSPACE/.test(g)), JSON.stringify(gates));
+  assert.ok(gates.some((g) => /--global/.test(g)), JSON.stringify(gates));
+  await s.until(started.task_id);
+});
+
 test("rulesync check: exit 1 → stale; exit 2 → error; hang → error; task still succeeds", async (t) => {
   const s = sandbox(t);
   gitInit(s.cwd);

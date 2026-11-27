@@ -21,6 +21,7 @@ export const RULE_ENTRIES = [
   ".agents/GEMINI.md",
   ".agents/rules",
   ".agent/rules",
+  ".kimi-code/AGENTS.md",
   ".cursor/rules",
   ".cursorrules",
 ] as const;
