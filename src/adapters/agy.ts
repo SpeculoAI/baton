@@ -67,8 +67,9 @@ export const agy: Adapter = {
     }
     if (obj.event === "result") {
       const result = obj.result ?? {};
+      const error = typeof result.error === "string" ? result.error : result.error?.message;
       const events = result.status !== "SUCCESS"
-        ? event({ type: "error", text: redact(String(result.response || result.status || "agy returned an error")) })
+        ? event({ type: "error", text: redact(String(result.response || error || result.status || "agy returned an error")) })
         : typeof result.response === "string" && result.response ? event({ type: "message", text: result.response }) : [];
       const usage = usageEvent(result.usage, normalizeUsage);
       return usage ? [...events, ...event(usage)] : events;

@@ -32,6 +32,11 @@ test("codex 0.167.0 real output: keeps errors and messages and reports terminal 
   assert.deepEqual(events.map((e) => e.type), ["error", "error", "message", "usage"]);
 });
 
+test("Codex parses a top-level error event", () => {
+  const event = codex.parseLine('{"type":"error","message":"Usage limit reached."}')?.[0];
+  assert.equal(event?.type === "error" && event.text, "Usage limit reached.");
+});
+
 function fixture(name: string): string[] {
   return fs.readFileSync(new URL(`fixtures/${name}`, import.meta.url), "utf8").trim().split("\n");
 }
@@ -133,6 +138,12 @@ test("agy real stream-json: tool steps are paired; the full reply comes from res
   assert.deepEqual(agy.build({ bin: "a", cwd: "/w", prompt: "p", sessionId: "c1", reasoningEffort: "ultra" }).args,
     ["--print=", "--mode", "accept-edits", "--input-format", "stream-json", "--output-format", "stream-json", "--effort", "max", "--conversation", "c1"]);
   assert.deepEqual(JSON.parse(agy.build({ bin: "a", cwd: "/w", prompt: "a\nb", sessionId: null, reasoningEffort: null }).stdin!), { event: "user", message: { content: "a\nb" } });
+});
+
+test("Agy uses result.error when a failed result has no response", () => {
+  const agy = getAdapter("agy")!;
+  const event = agy.parseLine('{"event":"result","result":{"status":"ERROR","error":{"message":"Please log in."}}}')?.[0];
+  assert.equal(event?.type === "error" && event.text, "Please log in.");
 });
 
 test("claude real stream-json: hook/init/thinking/rate-limit emit no events; tools are paired; no raw kept", () => {

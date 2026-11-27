@@ -90,6 +90,7 @@ export const codex: Adapter = {
     try { obj = JSON.parse(line); } catch { return null; }
     if (!obj || typeof obj !== "object") return null;
     const event = (data: EventData): BatonEvent[] => [{ ts: new Date().toISOString(), turn: 0, ...data }];
+    if (obj.type === "error" && typeof obj.message === "string") return event({ type: "error", text: redact(obj.message) });
     if (obj.type === "turn.failed" && typeof obj.error?.message === "string") return event({ type: "error", text: obj.error.message });
     if (obj.type === "turn.completed") {
       const usage = usageEvent(obj.usage, normalizeUsage);
