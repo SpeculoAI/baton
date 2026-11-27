@@ -76,12 +76,15 @@ export const COMMANDS = {
     },
   },
   reply: {
-    usage: "baton reply <task_id> [--prompt <text> | stdin] [--as host|human] [--file <path>[:N[-M]]]...",
+    usage: "baton reply <task_id> [--prompt <text> | stdin] [--as host|human] [--file <path>[:N[-M]]]... [--scope <glob>]... [--scope-on-violation warn|fail] [--check <cmd>]",
     summary: "Start the next turn of a stopped job in the same session.",
     options: {
       prompt: { type: "string", arg: "text", desc: "Reply text; read from stdin when omitted" },
       as: { type: "string", arg: "host|human", desc: "Who is speaking (default host)" },
       file: FILE_OPTION,
+      scope: { type: "string", multiple: true, arg: "glob", desc: "Replace allowed paths (repeatable) and take a new scope baseline" },
+      "scope-on-violation": { type: "string", arg: "warn|fail", desc: "Change the policy for a new or existing scope" },
+      check: { type: "string", arg: "cmd", desc: "Replace the check command for future turns; pass an empty string to clear it" },
     },
   },
   ls: {

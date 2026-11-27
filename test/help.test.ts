@@ -54,10 +54,13 @@ test("-h works after other flags and on nested actions; start does not read stdi
   assert.match((await run("worktree", "ls", "-h")).stdout, /^Usage: baton worktree/);
 });
 
-test("reply -h documents repeatable file arguments and excerpts", async () => {
+test("reply -h documents file arguments and settings updates", async () => {
   const { stdout } = await run("reply", "-h");
   assert.match(stdout.split("\n")[0], /\[--file <path>\[:N\[-M\]\]\]\.\.\./);
   assert.match(stdout, /--file <path>.*repeatable.*path:N.*path:N-M.*Sensitive files/);
+  assert.match(stdout.split("\n")[0], /\[--scope <glob>\]\.\.\. \[--scope-on-violation warn\|fail\] \[--check <cmd>\]/);
+  assert.match(stdout, /--scope <glob>.*baseline/);
+  assert.match(stdout, /--check <cmd>.*clear/i);
 });
 
 test("global help: no command, --help, -h and help <command>", async () => {

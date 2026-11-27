@@ -140,6 +140,34 @@ test("MCP delegate_task check: failing command ends as check_failed with the che
   assert.equal(done.check?.exit_code, 4);
 });
 
+test("MCP task_reply updates scope, policy, and check", async (t) => {
+  const s = sandbox(t);
+  gitInit(s.cwd);
+  const client = await connect(s.env);
+  t.after(() => client.close());
+  const { tools } = await client.listTools();
+  const schema = tools.find(({ name }) => name === "task_reply")?.inputSchema;
+  for (const [key, type] of [["scope", "array"], ["scope_on_violation", "string"], ["check", "string"]]) {
+    assert.equal((schema?.properties?.[key] as { type?: string } | undefined)?.type, type);
+    assert.ok(!schema?.required?.includes(key));
+  }
+
+  const { task_id } = await call(client, "delegate_task", {
+    target_agent: "codex", cwd: s.cwd, prompt: "hi", scope: ["keep.txt"], check: "exit 0",
+  });
+  assert.equal((await s.until(task_id)).status, "success");
+  const again = await call(client, "task_reply", {
+    task_id, prompt: "next", scope: ["next.txt"], scope_on_violation: "fail", check: "exit 4",
+  });
+  assert.deepEqual(again.scope, ["next.txt"]);
+  assert.equal(again.scope_on_violation, "fail");
+  assert.equal(again.check_command, "exit 4");
+  assert.match(s.turn(task_id, 2).prompt, /^\[Baton scope\][^\n]*: next\.txt\n\nnext$/);
+  const done = await s.until(task_id);
+  assert.equal(done.status, "check_failed");
+  assert.equal(done.check?.exit_code, 4);
+});
+
 test("MCP task_diff / task_apply match the CLI for an --isolate task", async (t) => {
   const s = sandbox(t);
   gitInit(s.cwd);

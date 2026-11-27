@@ -444,7 +444,13 @@ export async function wait(ids: string[], seconds = 50): Promise<TaskView | { st
   }
 }
 
-export async function reply(id: string, prompt: string, author: Author = "host", files?: string[]): Promise<TaskMeta | { task_id: string; status: "busy"; summary: string }> {
+export async function reply(
+  id: string,
+  prompt: string,
+  author: Author = "host",
+  files?: string[],
+  options?: { scope?: string[]; scopeOnViolation?: ScopeOnViolation; check?: string },
+): Promise<TaskMeta | { task_id: string; status: "busy"; summary: string }> {
   taskDir(id);
   if (process.env.BATON_DELEGATION === "1") throw new Error("BATON_DELEGATION=1; refusing to delegate again.");
   if (!prompt.trim()) throw new Error("prompt is missing.");
@@ -469,8 +475,30 @@ export async function reply(id: string, prompt: string, author: Author = "host",
     delete next.scope_violations;
     delete next.readonly_violations;
     delete next.check;
+
+    const requestedScope = options?.scope;
+    if (requestedScope && (!requestedScope.length || requestedScope.some((glob) => !glob.trim()))) {
+      throw new Error("scope must not be empty.");
+    }
+    const scope = requestedScope && normalizeScopeInput(requestedScope, options?.scopeOnViolation).scope;
+    const snap = scope || meta.mode === "readonly" ? gitSnapshot(meta.cwd) : undefined;
+    if (scope) {
+      if (!snap?.head) throw new Error("With --scope, cwd must be a git repository (HEAD baseline required).");
+      next.scope = scope;
+      next.scope_on_violation = options?.scopeOnViolation ?? meta.scope_on_violation ?? "warn";
+      next.scope_baseline = snapshotToBaseline(snap);
+      prepared.prompt = `${scopePromptPrefix(scope)}${prepared.prompt}`;
+    } else if (options?.scopeOnViolation !== undefined) {
+      if (options.scopeOnViolation !== "warn" && options.scopeOnViolation !== "fail") throw new Error("scope-on-violation must be warn or fail.");
+      if (!meta.scope?.length) throw new Error("--scope-on-violation cannot be used without --scope.");
+      next.scope_on_violation = options.scopeOnViolation;
+    }
+    if (options?.check !== undefined) {
+      const check = options.check.trim();
+      if (check) next.check_command = check;
+      else delete next.check_command;
+    }
     if (meta.mode === "readonly") {
-      const snap = gitSnapshot(meta.cwd);
       if (snap?.head) next.readonly_baseline = snapshotToBaseline(snap);
       else delete next.readonly_baseline;
     }

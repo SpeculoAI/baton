@@ -79,7 +79,11 @@ async function main(): Promise<void> {
   } else if (command === "reply") {
     const { values, positionals } = parseArgs({ args, allowPositionals: true, options: COMMANDS.reply.options });
     if (positionals.length !== 1) throw new Error("reply requires one task_id.");
-    result = await reply(positionals[0], values.prompt ?? fs.readFileSync(0, "utf8"), (values.as ?? "host") as Author, values.file);
+    result = await reply(positionals[0], values.prompt ?? fs.readFileSync(0, "utf8"), (values.as ?? "host") as Author, values.file, {
+      scope: values.scope,
+      scopeOnViolation: values["scope-on-violation"] as ScopeOnViolation | undefined,
+      check: values.check,
+    });
     if ((result as { status: string }).status !== "running") process.exitCode = 1;
   } else if (command === "wait") {
     const { values, positionals } = parseArgs({

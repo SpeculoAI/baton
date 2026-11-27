@@ -84,8 +84,20 @@ export function createServer(): McpServer {
   }, (args) => respond(() => apply(args.task_id, { remove: args.remove })));
   server.registerTool("task_reply", {
     description: "Start the next turn when the task has a session and its status is needs_input, success, scope_violation, readonly_violation, check_failed, quota_exceeded, or not_authenticated. Use as=human for the user's words. The default is host. Returns busy while running.",
-    inputSchema: { task_id: z.string(), prompt: z.string(), as: z.enum(["host", "human"]).optional(), files: FILES_SCHEMA },
-  }, (args) => respond(() => reply(args.task_id, args.prompt, (args.as ?? "host") as Author, args.files)));
+    inputSchema: {
+      task_id: z.string(),
+      prompt: z.string(),
+      as: z.enum(["host", "human"]).optional(),
+      files: FILES_SCHEMA,
+      scope: z.array(z.string()).optional().describe("Replace the allowed path globs and take a new scope baseline."),
+      scope_on_violation: z.enum(["warn", "fail"]).optional().describe("Change the out-of-scope policy for a new or existing scope."),
+      check: z.string().optional().describe("Replace the check command for future turns. Pass an empty string to clear it."),
+    },
+  }, (args) => respond(() => reply(args.task_id, args.prompt, (args.as ?? "host") as Author, args.files, {
+    scope: args.scope,
+    scopeOnViolation: args.scope_on_violation,
+    check: args.check,
+  })));
   server.registerTool("task_cancel", {
     description: "Stop a running task (kills the whole process group).",
     inputSchema: { task_id: z.string() },

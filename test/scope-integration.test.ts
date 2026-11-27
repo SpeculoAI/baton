@@ -104,6 +104,63 @@ test("scope: rework restore clears violations", async (t) => {
   assert.deepEqual(second.scope_violations ?? [], []);
 });
 
+test("reply replaces scope and baseline, then keeps them across turns", async (t) => {
+  const s = sandbox(t);
+  gitInit(s.cwd);
+  s.env.FAKE_WRITE = "keep.txt";
+  const { task_id } = await s.run("start", "--target", "codex", "--prompt", "hi", "--scope", "keep.txt");
+  const first = await s.until(task_id);
+  assert.equal(first.status, "success");
+
+  s.env.FAKE_WRITE = "next.txt";
+  s.env.FAKE_INPUT_FILE = path.join(s.home, "prompt.txt");
+  await s.run("reply", task_id, "--prompt", "next", "--scope", " next.txt ", "--scope", "extra/**", "--scope-on-violation", "fail");
+  const second = await s.until(task_id);
+  assert.equal(second.status, "success");
+  assert.deepEqual(second.scope_violations ?? [], []);
+  assert.deepEqual(second.scope, ["next.txt", "extra/**"]);
+  assert.equal(second.scope_on_violation, "fail");
+  assert.notDeepEqual(second.scope_baseline, first.scope_baseline);
+  assert.match(fs.readFileSync(s.env.FAKE_INPUT_FILE, "utf8"), /^\[Baton scope\] Only modify these paths \(post-check enforced\): next\.txt, extra\/\*\*\n\nnext/);
+
+  s.env.FAKE_WRITE = "keep.txt";
+  s.env.FAKE_WRITE_CONTENT = "changed again";
+  await s.run("reply", task_id, "--prompt", "continue");
+  const third = await s.until(task_id);
+  assert.equal(third.status, "scope_violation");
+  assert.deepEqual(third.scope_violations, ["keep.txt"]);
+  assert.deepEqual(third.scope, second.scope);
+  assert.equal(third.scope_on_violation, "fail");
+  assert.deepEqual(third.scope_baseline, second.scope_baseline);
+
+  await s.run("reply", task_id, "--prompt", "continue", "--scope-on-violation", "warn");
+  const fourth = await s.until(task_id);
+  assert.equal(fourth.status, "success");
+  assert.deepEqual(fourth.scope_violations, ["keep.txt"]);
+  assert.equal(fourth.scope_on_violation, "warn");
+  assert.deepEqual(fourth.scope_baseline, second.scope_baseline);
+});
+
+test("reply rejects invalid scope updates without starting a turn", async (t) => {
+  const s = sandbox(t);
+  const { task_id } = await s.run("start", "--target", "codex", "--prompt", "hi");
+  await s.until(task_id);
+  for (const [flags, message] of [
+    [["--scope", "keep.txt"], "With --scope, cwd must be a git repository (HEAD baseline required)."],
+    [["--scope-on-violation", "fail"], "--scope-on-violation cannot be used without --scope."],
+    [["--scope-on-violation", ""], "scope-on-violation must be warn or fail."],
+    [["--scope", ""], "scope must not be empty."],
+    [["--scope", "keep.txt", "--scope", " "], "scope must not be empty."],
+    [["--scope", "!foo"], "scope does not support ! negation patterns."],
+  ] as const) {
+    await assert.rejects(s.run("reply", task_id, "--prompt", "next", ...flags), (err: { stdout: string }) => {
+      assert.equal(JSON.parse(err.stdout).summary, message);
+      return true;
+    });
+  }
+  assert.equal(s.meta(task_id).turn, 1);
+});
+
 test("scope: cwd subdirectory maps paths; outside is violation", async (t) => {
   const s = sandbox(t);
   gitInit(s.cwd);

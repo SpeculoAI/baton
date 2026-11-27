@@ -124,6 +124,29 @@ test("reply after check_failed reruns the check; each turn keeps its own result"
   assert.equal(s.turn(started.task_id, 2).check?.status, "passed");
 });
 
+test("reply replaces, keeps, and clears the check command", async (t) => {
+  const s = sandbox(t);
+  const { task_id } = await s.run("start", "--target", "codex", "--prompt", "hi", "--check", "exit 0");
+  assert.equal((await s.until(task_id)).status, "success");
+
+  await s.run("reply", task_id, "--prompt", "next", "--check", "  exit 7  ");
+  const second = await s.until(task_id);
+  assert.equal(second.check_command, "exit 7");
+  assert.equal(second.status, "check_failed");
+  assert.equal(second.check?.exit_code, 7);
+
+  await s.run("reply", task_id, "--prompt", "continue");
+  const third = await s.until(task_id);
+  assert.equal(third.check_command, "exit 7");
+  assert.equal(third.check?.exit_code, 7);
+
+  await s.run("reply", task_id, "--prompt", "continue", "--check", "");
+  const fourth = await s.until(task_id);
+  assert.equal(fourth.status, "success");
+  assert.equal("check_command" in fourth, false);
+  assert.equal("check" in fourth, false);
+});
+
 test("while the check runs, the task is still running", async (t) => {
   const s = sandbox(t);
   const started = await s.run("start", "--target", "codex", "--prompt", "hi", "--check", js("setTimeout(()=>{},1500)"));
