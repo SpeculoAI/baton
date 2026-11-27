@@ -50,6 +50,7 @@ test("readonly dirty → readonly_violation; clean still succeeds; reply allowed
   const violated = await s.until(dirty.task_id);
   assert.equal(violated.status, "readonly_violation");
   assert.match(violated.summary || "", /readonly_violation/);
+  assert.deepEqual(violated.readonly_violations, ["leak.txt"]);
 
   fs.rmSync(path.join(s.cwd, "leak.txt"), { force: true });
   delete s.env.FAKE_WRITE;
@@ -58,6 +59,7 @@ test("readonly dirty → readonly_violation; clean still succeeds; reply allowed
   assert.equal(s.meta(dirty.task_id).mode, "readonly");
   const restored = await s.until(dirty.task_id);
   assert.equal(restored.status, "success");
+  assert.equal(Object.hasOwn(restored, "readonly_violations"), false);
 
   const clean = await s.run("start", "--target", "codex", "--prompt", "clean", "--mode", "readonly");
   const ok = await s.until(clean.task_id);
@@ -76,7 +78,7 @@ test("readonly + scope: readonly violation takes precedence", async (t) => {
   assert.equal(done.status, "readonly_violation");
 });
 
-test("readonly: after reply, uncleaned changes are still compared against the task-start baseline", async (t) => {
+test("readonly: reply uses a fresh baseline that includes changes made between turns", async (t) => {
   const s = sandbox(t);
   gitInit(s.cwd);
   s.env.FAKE_WRITE = "leak.txt";
@@ -84,9 +86,10 @@ test("readonly: after reply, uncleaned changes are still compared against the ta
   assert.ok(started.readonly_baseline?.head);
   const first = await s.until(started.task_id);
   assert.equal(first.status, "readonly_violation");
-  // Leave leak.txt in place; same content rewrite must still violate vs task-start baseline.
+  delete s.env.FAKE_WRITE;
+  fs.writeFileSync(path.join(s.cwd, "host.txt"), "host edit between turns\n");
   const again = await s.run("reply", started.task_id, "--prompt", "again");
   assert.equal(again.status, "running");
   const second = await s.until(started.task_id);
-  assert.equal(second.status, "readonly_violation");
+  assert.equal(second.status, "success");
 });

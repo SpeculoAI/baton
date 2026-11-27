@@ -296,12 +296,14 @@ export async function supervise(id: string): Promise<void> {
     } else if (!after) {
       final = "readonly_violation";
       meta.status = final;
+      meta.readonly_violations = ["<snapshot-unavailable>"];
       meta.summary = `readonly_violation: git snapshot failed\n${meta.summary ?? ""}`;
     } else {
       const dirty = pathsSinceBaseline(meta.cwd, baselineToSnapshot(meta.readonly_baseline), after);
       if (dirty.length) {
         final = "readonly_violation";
         meta.status = final;
+        meta.readonly_violations = dirty;
         meta.summary = `readonly_violation: ${dirty.length} file(s)\n${meta.summary ?? ""}`;
       }
     }

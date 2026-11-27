@@ -62,8 +62,9 @@ export type TaskMeta = {
   mode?: TaskMode;
   /** How strongly readonly is enforced for this target. */
   enforcement?: Enforcement;
-  /** Task-start git snapshot for readonly post-check (like scope_baseline). */
+  /** Turn-start git snapshot for readonly post-check. */
   readonly_baseline?: ScopeBaseline;
+  readonly_violations?: string[];
   idle_timeout_s: number;
   max_duration_s: number | null;
   supervisor_pid: number | null;
