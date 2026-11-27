@@ -109,6 +109,7 @@ Spec: `SPEC-kimi-adapter.md` · Plan: `tasks/plan-kimi.md`
 **Acceptance criteria:**
 - [x] 以上各项都有测试，在 macOS 上通过。
 - [x] win32 分支由平台条件区分，不是跳过不测。
+- 注（首轮 Windows CI 后）：Windows 上的 fake 只能是 `kimi.cmd`，而每轮提示词都带多行的 output contract，按 K1 必被拒绝。所以需要 fake 真正跑起来的 kimi 用例（success、readonly、auth/effort、model-start 里的 kimi 用例）在 win32 上跳过；`.cmd` 拒绝用例只在 win32 上跑，首轮 CI 已通过。
 
 **Verification:**
 - [x] `node --test test/prompt-stdin.test.ts test/readonly.test.ts test/lifecycle.test.ts`

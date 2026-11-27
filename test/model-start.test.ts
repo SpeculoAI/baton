@@ -136,7 +136,8 @@ test("cursor: --effort fails fast at start, with or without --model", async (t) 
   );
 });
 
-test("kimi --model is written to meta; reply resumes the session with -S and passes -m again", async (t) => {
+// On Windows the only fake is kimi.cmd, which kimi refuses by design (see test/kimi.test.ts).
+test("kimi --model is written to meta; reply resumes the session with -S and passes -m again", { skip: process.platform === "win32" }, async (t) => {
   const s = sandbox(t);
   fs.writeFileSync(s.fixture,
     `${JSON.stringify({ role: "meta", type: "system.version", version: "2.8.0" })}\n` +

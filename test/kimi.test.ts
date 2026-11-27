@@ -8,6 +8,9 @@ import { sandbox } from "./helpers.ts";
 // Same prompt as prompt-stdin.test.ts: newlines plus everything cmd.exe or a shell treats specially.
 const PROMPT = "first line\nsecond & | > < ^ \" % ! ( ) line\n  indented 'single' `tick` $HOME\nlast line";
 const REPLY = "BATON_RESULT\nsummary: kimi ok\nBATON_END";
+// The Windows fake is kimi.cmd, which assertArgvSafe refuses for every prompt (the output contract is multi-line).
+// The refusal has its own win32 test below; the rest runs where the fake can actually start.
+const RUNS_FAKE = { skip: process.platform === "win32" ? "kimi.cmd is refused on Windows by design" : false };
 
 function kimiOutput(file: string, reply = REPLY) {
   fs.writeFileSync(file,
@@ -26,7 +29,7 @@ function gitInit(cwd: string) {
   git(["-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-m", "init"]);
 }
 
-test("kimi: start → wait → success; the last reply, tool events and session id are recorded", async (t) => {
+test("kimi: start → wait → success; the last reply, tool events and session id are recorded", RUNS_FAKE, async (t) => {
   const s = sandbox(t);
   kimiOutput(s.fixture);
   const started = await s.run("start", "--target", "kimi", "--prompt", "hi");
@@ -62,7 +65,7 @@ if (process.platform !== "win32") {
   });
 }
 
-test("kimi readonly: needs --allow-weak; a write is then caught as readonly_violation", async (t) => {
+test("kimi readonly: needs --allow-weak; a write is then caught as readonly_violation", RUNS_FAKE, async (t) => {
   const s = sandbox(t);
   gitInit(s.cwd);
   kimiOutput(s.fixture);
@@ -79,7 +82,7 @@ test("kimi readonly: needs --allow-weak; a write is then caught as readonly_viol
   assert.equal((await s.until(started.task_id)).status, "readonly_violation");
 });
 
-test("kimi: the no-model / not-logged-in error is not_authenticated; --effort leaves a warning", async (t) => {
+test("kimi: the no-model / not-logged-in error is not_authenticated; --effort leaves a warning", RUNS_FAKE, async (t) => {
   const s = sandbox(t);
   fs.writeFileSync(s.fixture, "error: failed to run prompt: No model configured. Run `kimi` and use /login to sign in, then retry; or set default_model in config.toml.\n");
   s.env.FAKE_EXIT = "1";
