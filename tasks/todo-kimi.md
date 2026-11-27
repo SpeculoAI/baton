@@ -164,16 +164,16 @@ Spec: `SPEC-kimi-adapter.md` · Plan: `tasks/plan-kimi.md`
 - `skills/baton-rescue/SKILL.md`、`skills/baton-orchestrate/SKILL.md` 里的 target 列表。
 
 **Acceptance criteria:**
-- [ ] `grep -rn "agy" README* docs skills` 命中的 target 列表处都有 kimi。
-- [ ] 中英文 docs 内容对应。
+- [x] `grep -rn "agy" README* docs skills` 命中的 target 列表处都有 kimi。
+- [x] 中英文 docs 内容对应。
 
 **Verification:**
-- [ ] `npm test`（`test/skills.test.ts`、`test/manifests.test.ts` 会检查 skill 和 manifest）
-- [ ] 人工通读一遍改动
+- [x] `npm test`（`test/skills.test.ts`、`test/manifests.test.ts` 会检查 skill 和 manifest）
+- [x] 人工通读一遍改动
 
 **Dependencies:** T2–T5
 
-**Files likely touched:** `README.md`、`README.zh-CN.md`、`docs/reference.md`、`docs/reference.zh-CN.md`、`skills/baton-rescue/SKILL.md`、`skills/baton-orchestrate/SKILL.md`
+**Files likely touched:** `README.md`、`README.zh-CN.md`、`docs/reference.md`、`docs/reference.zh-CN.md`、`skills/baton-rescue/SKILL.md`、`skills/baton-orchestrate/SKILL.md`（实际没改：它只有一条路由建议，没有 target 列表）
 
 **Estimated scope:** M（只有文档，6 个文件）
 

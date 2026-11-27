@@ -27,7 +27,7 @@ You're working in Claude Code. Codex is installed on the same laptop, logged in,
 
 **Any agent as host, any agent as worker.** No API keys, no server, no cloud. Every agent uses its own login and subscription.
 
-Workers: `codex` (Codex CLI) · `claude` (Claude Code) · `cursor` (Cursor Agent CLI) · `agy` (Antigravity).
+Workers: `codex` (Codex CLI) · `claude` (Claude Code) · `cursor` (Cursor Agent CLI) · `agy` (Antigravity) · `kimi` (Kimi Code CLI).
 
 ## Before / After
 

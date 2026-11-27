@@ -47,7 +47,7 @@ T1 风险最高（Windows 行为只能在 CI 上看到），放在最前面。T3
 - [ ] 征得你同意后 push 分支并开 draft PR，看三平台 CI（Windows 上 T1 / T4 的行为只能在这里验证）
 
 ### Phase 3: Docs & verification
-- [ ] T6：README、docs、skills 全部补上 kimi
+- [x] T6：README、docs、skills 全部补上 kimi
 - [ ] T7：macOS 真机冒烟，结果写回 spec，Status 改为 implemented
 
 ### Checkpoint C

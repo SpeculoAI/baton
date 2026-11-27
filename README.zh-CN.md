@@ -27,7 +27,7 @@
 
 **任何 Agent 都能当主控，任何 Agent 都能当执行者。** 不需要 API Key，不需要服务器，不上云。每个 Agent 都用它自己的登录和订阅额度。
 
-可派工的执行者：`codex`（Codex CLI）· `claude`（Claude Code）· `cursor`（Cursor Agent CLI）· `agy`（Antigravity）。
+可派工的执行者：`codex`（Codex CLI）· `claude`（Claude Code）· `cursor`（Cursor Agent CLI）· `agy`（Antigravity）· `kimi`（Kimi Code CLI）。
 
 ## 前后对比
 

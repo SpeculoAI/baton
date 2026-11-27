@@ -55,7 +55,7 @@ baton rules init [--install project|global|skip] [--source claudecode|codexcli|c
 1. 找不到 rulesync 时（先查项目 `node_modules/.bin`，再查 PATH）让你选择：装到项目（`npm i -D rulesync`，仅当 git 根目录有 `package.json`）、全局（`npm i -g rulesync`）或跳过。npm 执行完会再检测一次，仍找不到就说明原因并结束。
 2. 不在 git 仓库时只安装不初始化；已有 `.rulesync/` 时提示已初始化并结束。
 3. 已有规则文件（`CLAUDE.md`、`AGENTS.md`、`.cursor/rules`）时，选择从其中一个导入，或从空模板开始。Baton 会清掉 rulesync 模板自带的示例（Codex `:danger-full-access` 配置、示例 MCP 服务器、示例 hook），并删掉内容为空的 MCP/hooks 源文件，避免把你已有的文件清空。`CLAUDE.local.md` 不会被导入。
-4. 没有 `rulesync.jsonc` 时由 Baton 写入：`targets` 取自你的 agent（`claude`→`claudecode`、`codex`→`codexcli`、`cursor`→`cursor`、`agy`→`antigravity-cli`），`features` 为 `rules, mcp, subagents, skills, hooks`（不含 `permissions`，它会改写 Codex 的审批设置），`delete: false`。
+4. 没有 `rulesync.jsonc` 时由 Baton 写入：`targets` 取自你的 agent（`claude`→`claudecode`、`codex`→`codexcli`、`cursor`→`cursor`、`agy`→`antigravity-cli`、`kimi`→`kimi-code`），`features` 为 `rules, mcp, subagents, skills, hooks`（不含 `permissions`，它会改写 Codex 的审批设置），`delete: false`。
 5. 生成前先预览 `rulesync generate`，按覆盖 / 删除 / 修改设置项 / 新建分组，并标出未纳入 git 或有未提交改动的文件；确认后（或 `--yes`）才执行。取消时保留 `.rulesync/` 和 `rulesync.jsonc`，你可以修改后自己运行 `npx rulesync generate`。
 
 非 TTY 下从不提问：缺 rulesync 时需传 `--install`，已有规则文件时需传 `--source` 或 `--template`（否则返回 `status: "needs_input"`，退出码 1）；不带 `--yes` 时结果为 `status: "previewed"`。`install --rulesync project|global|skip` 预先回答安装问题，并让非 TTY 的 install 也执行这一步；结果放在 `rulesync` 字段里，不影响 install 的退出码。
@@ -66,7 +66,7 @@ baton rules init [--install project|global|skip] [--source claudecode|codexcli|c
 
 1. **支持平台**：macOS、Linux 与原生 Windows 10/11（PowerShell 或 cmd；WSL 按 Linux 处理）。
 2. **Node.js** >= 20.17。
-3. 本地已安装并登录至少一个受支持的 Agent CLI（`codex`、`claude`、`agy`、`cursor`）。
+3. 本地已安装并登录至少一个受支持的 Agent CLI（`codex`、`claude`、`agy`、`cursor`、`kimi`）。
 4. 通过插件市场安装不会把 `baton` 放进 PATH。运行 `/baton:setup`，或执行 `npm install -g @speculoai/baton`。
 5. （可选）本地开发：
    ```bash
@@ -298,7 +298,7 @@ baton agents
 
 ```bash
 baton agents
-baton start --target <codex|claude|cursor|agy> [--prompt <text> | stdin] [--file <p>...] [--effort low|medium|high|ultra]
+baton start --target <codex|claude|cursor|agy|kimi> [--prompt <text> | stdin] [--file <p>...] [--effort low|medium|high|ultra]
             [--model <id>] [--idle-timeout <秒>] [--max-duration <秒>] [--cwd <dir>]
             [--scope <glob> ...] [--scope-on-violation warn|fail]
             [--mode readonly|write] [--allow-weak] [--isolate] [--allow-dirty]
@@ -343,6 +343,7 @@ baton mcp                             # 启动 MCP 服务（stdio）
 | `codex` | `AGENTS.md`、`AGENTS.override.md` | `codexcli` | 项目 `.codex/config.toml`（MCP）需要项目被信任；hooks 需要事先信任。baton worktree 是独立路径，不继承主仓库的 `trust_level` |
 | `cursor` | `AGENTS.md`、`CLAUDE.md`、`.cursor/rules`、`.cursorrules` | `cursor` | 项目 MCP 需要 `--approve-mcps`（Baton 只传了 `--trust`） |
 | `agy` | `AGENTS.md`、`GEMINI.md`、`.agents/*`、`.agent/rules` | `antigravity-cli` | 未调研 |
+| `kimi` | `AGENTS.md`、`.kimi-code/AGENTS.md`（从 git 根到 cwd 的每一级；2026-11-26 用 kimi 2.8.0 实测） | `kimi-code` | 项目 `.kimi-code/mcp.json` 只在工作区已被信任（或设置了 `KIMI_CODE_TRUST_WORKSPACE=1`）时才在 `kimi -p` 下加载，Baton 两者都不替你设；rulesync 只生成全局的 kimi hooks（`--global`） |
 
 **已知限制：** Baton 不读 `~/.codex/config.toml`，因此检测不到 Codex 的 `project_doc_fallback_filenames` 与显式 `trust_level`（即便你配置了回退读 `CLAUDE.md`，仍可能报告为 `unseen`）。可用 `codex debug prompt-input` 自查实际加载的指令。用户级全局规则（如 `~/.claude/CLAUDE.md`）不在本版范围。
 
@@ -428,6 +429,7 @@ MCP 是同一套逻辑的薄壳，进程里不存任何任务状态，重启 MCP
 | **Claude Code** | `claude -p --output-format stream-json --verbose --permission-mode acceptEdits --permission-prompts none` | 追加 `--resume <session_id>` | readonly → `--permission-mode plan`；`stream-json` 在 `-p` 下必须配 `--verbose`；hook 事件不进事件流 |
 | **Cursor** | `cursor-agent --print --force --trust --output-format stream-json --workspace <cwd>` | 追加 `--resume <session_id>` | readonly → `--mode ask`（去掉 `--force`，保留 `--trust`）；优先找 `cursor-agent`，再找 `agent`，不调用 IDE 的 `cursor` |
 | **Antigravity (agy)** | `agy --print= --mode accept-edits --input-format stream-json --output-format stream-json`（提示词走 stdin） | 追加 `--conversation <id>` | readonly → `--mode plan`；回复是逐字增量，完整文本取自最终 `result` |
+| **Kimi Code (kimi)** | `kimi -p <prompt> --output-format stream-json [-m <model>]`（提示词走 argv：`kimi -p` 不能从 stdin 读） | 追加 `-S <session_id>`（每轮都会再传 `-m`） | 没有只读映射：`-p` 固定按 auto 权限运行且不接受 `--plan`，所以 `--mode readonly` 必须加 `--allow-weak`，只靠事后的 `readonly_violation` 检查；`--effort` 会被忽略并留下 warning；会话 id 只在最后一行给出，turn 中途被取消或超时就拿不到，之后的 `reply` 会开一个新的 kimi 会话；服务端出错时只有 `Prompt turn ended with reason: failed` 和 kimi 打印的 `See log:` 路径 |
 
 解析器认不出的输出行一律记为 `raw` 事件，不会丢。各家的真实输出样本在 `test/fixtures/`。
 
@@ -449,6 +451,7 @@ MCP 是同一套逻辑的薄壳，进程里不存任何任务状态，重启 MCP
 | Claude Code | `--permission-mode acceptEdits --permission-prompts none` | 文件编辑自动接受 |
 | Cursor | `--force --trust` | 命令与编辑无需确认 |
 | Antigravity | `--mode accept-edits` | 编辑自动接受 |
+| Kimi Code | `-p`（自带 auto 权限） | 文件编辑和 shell 命令都不询问直接执行；kimi 配置里的 deny 规则仍然生效 |
 
 ### Windows 平台说明
 
@@ -457,6 +460,7 @@ Baton 支持原生 Windows 10/11（PowerShell 与 cmd；WSL 按 Linux 处理）�
 - **文件权限**：`~/.baton` 上的 POSIX 权限位（`0700`/`0600`）在 Windows 上不生效，任务文件与原始日志依赖用户目录的 ACL 保护。
 - **进程树清理**：`cancel` 与超时通过 `taskkill /T /F`（以及 `.cmd` 垫片的 `cmd.exe` 先行退出时按父 PID 补扫）终止进程树。由于未引入原生 Job Object，若中间父进程已退出，更深层的孙进程仍可能漏杀。
 - **Shell 命令（`--check` 与 `.baton.json` `post_create`）**：在 Windows 上通过 `cmd.exe`（`shell: true`）执行，而非 `/bin/sh`。跨平台命令请避免依赖 POSIX 专属语法。
+- **提示词走 argv（`kimi`）**：`kimi -p` 只接受参数形式的提示词。kimi 若是 `.cmd`/`.bat`（npm 包装出来的 shim），Baton 会拒绝启动，因为 `cmd.exe` 会在第一个换行处截断多行提示词；请改用官方 `install.ps1` 安装原生 `kimi.exe`。命令行超过 32767 字符同样会被拒绝。
 - **worktree 符号链接（`.baton.json` `symlink`）**：目录条目使用 NTFS junction（无需提权）；文件符号链接需要开发者模式或管理员权限，遇 `EPERM` 时请将对应文件条目改到 `copy`。
 
 ---
