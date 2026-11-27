@@ -6,7 +6,7 @@
   "plugins": [
     {
       "name": "baton",
-      "version": "0.8.0",
+      "version": "0.8.1",
       "description": "Hand a bounded coding task to another local agent CLI, then continue the same session when it needs a decision.",
       "source": {
         "source": "local",
