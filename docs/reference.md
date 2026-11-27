@@ -55,7 +55,7 @@ baton rules init [--install project|global|skip] [--source claudecode|codexcli|c
 1. If rulesync is not found (project `node_modules/.bin`, then PATH), choose: install into the project (`npm i -D rulesync`, only when the git root has a `package.json`), globally (`npm i -g rulesync`), or skip. Baton checks again after npm and stops with the reason if rulesync is still missing.
 2. Outside a git repo it only installs. If `.rulesync/` already exists it reports that and stops.
 3. With existing rule files (`CLAUDE.md`, `AGENTS.md`, `.cursor/rules`) you pick one to import, or start from an empty template. Baton strips rulesync's template samples (a Codex `:danger-full-access` profile, demo MCP servers, a sample hook) and drops empty MCP/hooks sources so they do not blank your existing files. `CLAUDE.local.md` is never imported.
-4. When `rulesync.jsonc` is absent Baton writes one: `targets` from your agents (`claude`→`claudecode`, `codex`→`codexcli`, `cursor`→`cursor`, `agy`→`antigravity-cli`), `features` `rules, mcp, subagents, skills, hooks` (not `permissions`, which rewrites Codex approval settings), and `delete: false`.
+4. When `rulesync.jsonc` is absent Baton writes one: `targets` from your agents (`claude`→`claudecode`, `codex`→`codexcli`, `cursor`→`cursor`, `agy`→`antigravity-cli`, `kimi`→`kimi-code`), `features` `rules, mcp, subagents, skills, hooks` (not `permissions`, which rewrites Codex approval settings), and `delete: false`.
 5. Baton previews `rulesync generate` grouped as overwrite / delete / changed settings / create, marking files that are not in git or have uncommitted changes, and applies it only after you confirm (or `--yes`). Declining keeps `.rulesync/` and `rulesync.jsonc` so you can edit them and run `npx rulesync generate` yourself.
 
 Non-TTY runs never prompt: pass `--install` when rulesync is missing and `--source`/`--template` when rule files exist (otherwise `status: "needs_input"`, exit 1); without `--yes` the result is `status: "previewed"`. `install --rulesync project|global|skip` answers the install question up front and also enables the step in non-TTY runs; its result appears under `rulesync` and never changes the install exit code.
@@ -66,7 +66,7 @@ The per-host commands below are the same steps, run by hand.
 
 1. **Supported platforms**: macOS, Linux, and native Windows 10/11 (PowerShell or cmd; WSL is treated as Linux).
 2. **Node.js** >= 20.17.
-3. At least one supported Agent CLI installed and logged in locally (`codex`, `claude`, `agy`, or `cursor`).
+3. At least one supported Agent CLI installed and logged in locally (`codex`, `claude`, `agy`, `cursor`, or `kimi`).
 4. A marketplace install does not put `baton` on PATH. Run `/baton:setup`, or `npm install -g @speculoai/baton`.
 5. (Optional) Local checkout:
    ```bash
@@ -298,7 +298,7 @@ Every command prints exactly one JSON object (except `tail`, `result`, `diff` an
 
 ```bash
 baton agents
-baton start --target <codex|claude|cursor|agy> [--prompt <text> | stdin] [--file <p>...] [--effort low|medium|high|ultra]
+baton start --target <codex|claude|cursor|agy|kimi> [--prompt <text> | stdin] [--file <p>...] [--effort low|medium|high|ultra]
             [--model <id>] [--idle-timeout <s>] [--max-duration <s>] [--cwd <dir>]
             [--scope <glob> ...] [--scope-on-violation warn|fail]
             [--mode readonly|write] [--allow-weak] [--isolate] [--allow-dirty]
@@ -343,6 +343,7 @@ baton mcp                            # start the MCP server (stdio)
 | `codex` | `AGENTS.md`, `AGENTS.override.md` | `codexcli` | project `.codex/config.toml` MCP needs a trusted project path; hooks need persisted hook trust. A baton worktree is a separate path and does not inherit the main repo’s `trust_level`. |
 | `cursor` | `AGENTS.md`, `CLAUDE.md`, `.cursor/rules`, `.cursorrules` | `cursor` | project MCP needs `--approve-mcps` (Baton only passes `--trust`) |
 | `agy` | `AGENTS.md`, `GEMINI.md`, `.agents/*`, `.agent/rules` | `antigravity-cli` | none surveyed |
+| `kimi` | `AGENTS.md`, `.kimi-code/AGENTS.md` (every level from the git root to cwd; verified 2026-11-26, kimi 2.8.0) | `kimi-code` | project `.kimi-code/mcp.json` loads under `kimi -p` only in a trusted workspace (or with `KIMI_CODE_TRUST_WORKSPACE=1`; Baton sets neither); rulesync writes kimi hooks only with `--global` |
 
 **Known limits:** Baton does not read `~/.codex/config.toml`, so Codex `project_doc_fallback_filenames` and explicit `trust_level` are not detected (`CLAUDE.md` may be reported as `unseen` even if you configured a fallback). Self-check loaded Codex instructions with `codex debug prompt-input`. User-global rules (`~/.claude/CLAUDE.md`, etc.) are out of scope.
 
@@ -428,6 +429,7 @@ Task directories are never deleted automatically; use `baton prune --older <days
 | **Claude Code** | `claude -p --output-format stream-json --verbose --permission-mode acceptEdits --permission-prompts none` | add `--resume <session_id>` | readonly → `--permission-mode plan`; `stream-json` with `-p` requires `--verbose`; hook events stay out of the event stream |
 | **Cursor** | `cursor-agent --print --force --trust --output-format stream-json --workspace <cwd>` | add `--resume <session_id>` | readonly → `--mode ask` (drops `--force`, keeps `--trust`); prefers `cursor-agent`, then `agent`; never the IDE's `cursor` |
 | **Antigravity (agy)** | `agy --print= --mode accept-edits --input-format stream-json --output-format stream-json` (prompt via stdin) | add `--conversation <id>` | readonly → `--mode plan`; replies stream as deltas; the full text comes from the final `result` |
+| **Kimi Code (kimi)** | `kimi -p <prompt> --output-format stream-json [-m <model>]` (prompt in argv: `kimi -p` has no stdin form) | add `-S <session_id>` (`-m` is passed again every turn) | no readonly mapping: `-p` always runs with auto permission and rejects `--plan`, so `--mode readonly` needs `--allow-weak` and relies on the post-run `readonly_violation` check; `--effort` is ignored with a warning; the session id arrives only on the last line, so a turn cancelled or timed out before it ends leaves none and the next `reply` starts a new kimi session; server-side errors show only `Prompt turn ended with reason: failed` plus kimi's `See log:` path; because the prompt is an argument, other local users can see it in the process list (`ps`), and on Linux a prompt over 128 KiB (`MAX_ARG_STRLEN`) fails to start with `E2BIG` |
 
 Any output line a parser does not recognize is kept as a `raw` event, never dropped. Real output samples for each CLI live in `test/fixtures/`.
 
@@ -449,6 +451,7 @@ Any output line a parser does not recognize is kept as a `raw` event, never drop
 | Claude Code | `--permission-mode acceptEdits --permission-prompts none` | File edits are accepted automatically |
 | Cursor | `--force --trust` | Commands and edits run without confirmation |
 | Antigravity | `--mode accept-edits` | Edits are accepted automatically |
+| Kimi Code | `-p` (built-in auto permission) | File edits and shell commands run without asking; deny rules in kimi's config still apply |
 
 ### Windows notes
 
@@ -457,6 +460,7 @@ Baton supports native Windows 10/11 (PowerShell and cmd; WSL is treated as Linux
 - **File permissions**: POSIX mode bits (`0700`/`0600` on `~/.baton`) do not take effect on Windows; task files and raw logs rely on the user profile directory's ACL.
 - **Process-tree cleanup**: `cancel` and timeouts use `taskkill /T /F` (with a parent-PID fallback when a `.cmd` shim's `cmd.exe` has already exited). Because Windows process trees are walked by parent PID without a Job Object, grandchildren whose intermediate parent already exited may escape termination.
 - **Shell commands (`--check` and `.baton.json` `post_create`)**: executed through `cmd.exe` (`shell: true`), not `/bin/sh`. Avoid POSIX-only shell syntax in cross-platform commands.
+- **Prompts in argv (`kimi`)**: `kimi -p` takes the prompt only as an argument. Baton refuses to start a `.cmd`/`.bat` kimi (the npm package's shim), because `cmd.exe` would cut the multi-line prompt at the first newline; install the native `kimi.exe` with the official `install.ps1` instead. Command lines over 32767 characters are refused too.
 - **Worktree symlinks (`.baton.json` `symlink`)**: directory entries use NTFS junctions (no elevation required); file symlinks require Developer Mode or administrator rights — move file entries to `copy` if symlink creation fails with `EPERM`.
 
 ---

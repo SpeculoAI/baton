@@ -52,6 +52,32 @@ const AGY: RuleSupport = {
   rulesyncTarget: "antigravity-cli",
 };
 
+const KIMI: RuleSupport = {
+  files: ["AGENTS.md", ".kimi-code/AGENTS.md"],
+  rulesyncTarget: "kimi-code",
+};
+
+test("kimi: .kimi-code/AGENTS.md is discovered at every level; kimi sees it and AGENTS.md but not CLAUDE.md", () => {
+  const root = tmp();
+  gitInit(root);
+  touch(path.join(root, ".kimi-code", "AGENTS.md"));
+  touch(path.join(root, "AGENTS.md"));
+  touch(path.join(root, "CLAUDE.md"));
+  touch(path.join(root, "sub", ".kimi-code", "AGENTS.md"));
+  const found = discoverRules(path.join(root, "sub"));
+  assert.deepEqual(found, ["../.kimi-code/AGENTS.md", "../AGENTS.md", "../CLAUDE.md", ".kimi-code/AGENTS.md"]);
+  assert.deepEqual(unseenRules(found, KIMI), ["../CLAUDE.md"]);
+  assert.deepEqual(unseenRules(found, CLAUDE), ["../.kimi-code/AGENTS.md", "../AGENTS.md", ".kimi-code/AGENTS.md"]);
+});
+
+test("unseenRules: a nested entry such as .agents/AGENTS.md is not mistaken for AGENTS.md", () => {
+  for (const s of [CLAUDE, CODEX, CURSOR]) {
+    assert.deepEqual(unseenRules([".agents/AGENTS.md", "../.agents/AGENTS.md"], s), ["../.agents/AGENTS.md", ".agents/AGENTS.md"]);
+  }
+  assert.deepEqual(unseenRules([".agents/AGENTS.md", "../.agents/AGENTS.md", "../../AGENTS.md"], AGY), []);
+  assert.deepEqual(unseenRules(["../../AGENTS.md"], CODEX), []);
+});
+
 test("discoverRules: walks cwd up to git root; skips empty rule dirs; ignores below cwd", () => {
   const root = tmp();
   gitInit(root);

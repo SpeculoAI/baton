@@ -93,6 +93,7 @@ function prompter(answers: Partial<{ install: "project" | "global" | "skip" | nu
 
 test("agent ids map to rulesync targets; agents without one are dropped", () => {
   assert.deepEqual(rulesyncTargets(["claude", "codex", "cursor", "agy", "gemini"]), ["claudecode", "codexcli", "cursor", "antigravity-cli"]);
+  assert.deepEqual(rulesyncTargets(["kimi"]), ["kimi-code"]);
 });
 
 test("detectSources lists importable rule files at the repo root", (t) => {

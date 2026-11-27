@@ -2,10 +2,10 @@
 name: baton-rescue
 description: >-
   Hands a bounded coding task to another local agent CLI (codex, claude,
-  cursor, agy) through the baton CLI, waits in bounded steps, answers its
+  cursor, agy, kimi) through the baton CLI, waits in bounded steps, answers its
   questions, and relays the result. Use proactively when implementation,
   debugging, or a second pass should run in another agent environment, when
-  the user says rescue or asks to hand work to Codex, Claude, Agy, or Cursor,
+  the user says rescue or asks to hand work to Codex, Claude, Agy, Cursor, or Kimi,
   and when a baton task is waiting in needs_input.
 ---
 
@@ -35,7 +35,7 @@ Stay in the current session:
 
 ## Who to send it to
 
-If the user names a target, use it: `codex`, `claude`, `cursor`, `agy`.
+If the user names a target, use it: `codex`, `claude`, `cursor`, `agy`, `kimi`.
 
 If not named, use `codex`. If the current session is already Codex, use `claude`. Never delegate to the vendor you are already running as. Say which target you picked before you start.
 

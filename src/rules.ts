@@ -21,6 +21,7 @@ export const RULE_ENTRIES = [
   ".agents/GEMINI.md",
   ".agents/rules",
   ".agent/rules",
+  ".kimi-code/AGENTS.md",
   ".cursor/rules",
   ".cursorrules",
 ] as const;
@@ -77,9 +78,10 @@ export function discoverRules(cwd: string): string[] {
   return [...found].sort();
 }
 
+// discoverRules only walks upward, so a found path is some "../" segments plus the entry itself.
+// Comparing the tail alone would let ".agents/AGENTS.md" pass for a CLI that only reads "AGENTS.md".
 function basenameMatch(foundRel: string, entry: string): boolean {
-  const n = toPosix(foundRel);
-  return n === entry || n.endsWith(`/${entry}`);
+  return toPosix(foundRel).replace(/^(\.\.\/)+/, "") === entry;
 }
 
 function levelHasAny(found: string[], foundRel: string, names: string[]): boolean {
