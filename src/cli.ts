@@ -262,6 +262,8 @@ async function main(): Promise<void> {
       } else if (ran.result.missing?.length) {
         ui.logInfo(`missing: ${ran.result.missing.join(", ")}`);
       }
+      for (const warning of ran.result.warnings ?? []) ui.logWarning(warning);
+      if (ran.result.note) ui.logInfo(ran.result.note);
       ui.endAction(ui.summarizeResult(ran.result));
     }
     result = rulesync ? { ...ran.result, rulesync } : ran.result;
