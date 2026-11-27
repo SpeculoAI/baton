@@ -85,7 +85,17 @@ export function netTree(worktreePath: string, indexFile: string): string {
   try {
     mustGit(worktreePath, ["read-tree", "HEAD"], { env });
     const exclude = [...batonWorktreeExemptPaths(worktreePath)].map((entry) => `:(exclude,glob)${entry}`);
-    mustGit(worktreePath, ["add", "-A", "--", ".", ...exclude], { env });
+    // 分开暂存已跟踪文件和非忽略的新文件，避免 git add 将排除项视为显式指定的忽略路径。
+    mustGit(worktreePath, ["add", "-u", "--", ".", ...exclude], { env });
+    // Git 的路径引用格式可无损传递包含换行或非 UTF-8 字节的文件名。
+    const untracked = mustGit(worktreePath, [
+      "-c", "core.quotePath=true", "ls-files", "--others", "--exclude-standard", "--", ".", ...exclude,
+    ], { env });
+    if (untracked) {
+      mustGit(worktreePath, ["add", "--pathspec-from-file=-"], {
+        env: { ...env, GIT_LITERAL_PATHSPECS: "1" }, input: untracked,
+      });
+    }
     return mustGit(worktreePath, ["write-tree"], { env }).trim();
   } finally {
     fs.rmSync(indexFile, { force: true });
