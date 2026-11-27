@@ -15,6 +15,7 @@ The full manual: every install path, flag, status, and calling convention. For t
 - [Usage](#usage)
   - [Skills in the host](#skills-in-the-host)
   - [Command line](#command-line)
+    - [File excerpts](#file-excerpts)
     - [`baton stats`](#baton-stats)
   - [Statuses and liveness](#statuses-and-liveness)
   - [Questions and follow-up turns (needs_input / reply)](#questions-and-follow-up-turns-needs_input--reply)
@@ -304,7 +305,7 @@ Every command prints exactly one JSON object (except `tail`, `result`, `diff` an
 
 ```bash
 baton agents
-baton start --target <codex|claude|cursor|agy|kimi> [--prompt <text> | stdin] [--file <p>...] [--effort low|medium|high|ultra]
+baton start --target <codex|claude|cursor|agy|kimi> [--prompt <text> | stdin] [--file <path>[:N[-M]]]... [--effort low|medium|high|ultra]
             [--model <id>] [--idle-timeout <s>] [--max-duration <s>] [--cwd <dir>]
             [--scope <glob> ...] [--scope-on-violation warn|fail]
             [--mode readonly|write] [--allow-weak] [--isolate] [--allow-dirty]
@@ -316,7 +317,7 @@ baton diff <id> [--stat]             # plain text: net change of an --isolate ta
 baton apply <id> [--remove]          # --isolate task -> one local commit on the source repo's current branch; never pushes
 baton tail <id> [-f] [--raw]         # readable events; -f follows until the job stops; --raw prints events.jsonl lines
 baton stats [--target <agent>] [--since <date|Nd>] [--all]  # aggregate first-turn metrics and task outcomes by target
-baton reply <id> [--prompt <text> | stdin] [--as host|human]   # also after scope_violation / readonly_violation
+baton reply <id> [--prompt <text> | stdin] [--as host|human] [--file <path>[:N[-M]]]...   # also after scope_violation / readonly_violation
 baton cancel <id>
 baton ls [--all]                     # jobs for the current directory by default, newest first
 baton prune --older <days>           # delete non-running task dirs older than N days (does not remove worktrees)
@@ -341,6 +342,33 @@ baton mcp                            # start the MCP server (stdio)
 - **`--scope` (optional):** repeatable globs relative to the task `cwd`, matched with [picomatch](https://github.com/micromatch/picomatch) and `dot: true`, so `dir/**` also covers dotfiles such as `dir/.env.example`; a bare directory path matches everything under it. After each turn, Baton checks **task-baseline net changes** (commits since start HEAD ∪ working-tree digest diff) against those globs. `--scope-on-violation warn` (default) keeps the transport status and sets `scope_violations` + `warning`; `fail` upgrades a clean `success` to `scope_violation`. This is a **mistake fence**, not a sandbox: ignored paths, non-git writes, and concurrent edits on a shared cwd are blind spots — prefer combining with `--isolate`. Requires a git repo when `--scope` is set. **Breaking note for clients:** new terminal status `scope_violation` (and optional `scope_*` meta fields).
 - **`--rules check|pointer|off` (default `check`):** discovers project rule files from the task `cwd` up to the git root and records them on `meta.rules` (`found`, `unseen`, `pointer_injected`). `check` does not change the worker prompt. `pointer` prepends an English “read these files” block for entries the target does not load natively (first turn only; `reply` does not reinject). `off` skips discovery entirely. When the repo has `.rulesync/`, Baton also reports a `rules.rulesync` object: it reads `rulesync.jsonc` (+ `rulesync.local.jsonc`), notes whether the target’s rulesync id is configured and any load-gate notes for `mcp`/`hooks`, then the supervisor runs `rulesync generate --check` (whole project, no `--targets`/`--features`) and sets `status` to `in_sync` / `stale` / `error` / `skipped`. Failures never block the task. Baton never installs rulesync via `npx` and never writes rulesync outputs into the user’s main working tree.
 - **`--check "<cmd>"` (optional):** an acceptance command Baton runs itself after every turn that ends in `success` (after the readonly / scope checks), so the host does not have to re-run it. It runs through the platform shell (`/bin/sh` on POSIX, `cmd.exe` on Windows) in the task `cwd` (the worktree under `--isolate`), with the worker's environment; chain several commands with `&&`. Kept across `reply`. The result is `check` on the turn and on meta (latest turn): `command`, `status` (`passed` / `failed` / `timed_out`), `exit_code`, `duration_ms`, `output_tail` (last 4000 chars, redacted); full output in `raw/<n>.check.log`. `passed` keeps `success`. `failed` or `timed_out` ends the turn as `check_failed` with summary `check_failed: exit <code>` (or `check_failed: timed out`) followed by the output tail; `reply` is allowed and the next turn runs the check again. The check stops after `--idle-timeout` seconds with no output; `--max-duration` applies only to the worker. `cancel` during the check gives `cancelled`. Not run when the turn did not end in `success`. The task stays `running` until the check ends. Under `--isolate` the worktree has no dependencies unless `.baton.json` `post_create` installs them. **Breaking note for clients:** new terminal status `check_failed` and optional `check` meta field.
+
+#### File excerpts
+
+Repeat `--file <path>[:N[-M]]` on `start` or `reply` to attach files to that turn. If the entire argument names an existing file, Baton treats it as a plain path. Otherwise, Baton parses a trailing `:N` or `:N-M` as an inclusive line range. `:N` is shorthand for `:N-N`. This preserves Windows drive letters (`C:\repo\src\a.ts:10-20`) and supports filenames containing colons on filesystems that allow them.
+
+- **Plain path** goes only into the turn's `Focus on these files` list, as before.
+- **Path with line numbers** adds the excerpt after the host prompt. The original argument is recorded in `turn.excerpts`.
+
+The worker prompt orders the blocks as Focus → scope prefix → rules pointer → host prompt → Code excerpts → output contract. Optional blocks appear when present.
+
+Baton reads excerpts synchronously during `start` or `reply` and stores the rendered text in `prompt` in `turns/<n>.json`. Relative paths resolve from the task's `cwd`. With `--isolate`, `start` reads from the new worktree created from `HEAD`. By default, this excludes uncommitted edits in the source checkout. `reply` reads the current contents of that same worktree.
+
+- The resolved path must stay inside the task's `cwd`. `..` and symlinks cannot escape it.
+- The path must resolve to a regular file. A NUL byte in the first 8 KB marks it as binary.
+- Line numbers must satisfy `1 ≤ start ≤ end ≤ line count`. An excerpt may contain up to 400 lines. All excerpts in a turn may total up to 64 KB (65,536 UTF-8 bytes).
+
+Baton reports validation failures synchronously, before launching the worker. `start` creates no task record and removes any worktree and branch it just created with `--isolate`. `reply` leaves the task state unchanged and creates no new turn.
+
+Baton checks the supplied path and its resolved path (`realpath`) for sensitive names before reading any excerpt. Matching is case-insensitive, and directory segments are checked relative to the task's `cwd`. Baton does not scan file content for secrets.
+
+- `.env` and `.env.*`, except `.env.example`, `.env.sample`, `.env.template`, and `.env.dist`.
+- `*.pem`, `*.key`, `*.p12`, `*.pfx`, `*.jks`, and `*.keystore`.
+- `id_rsa*`, `id_dsa*`, `id_ecdsa*`, and `id_ed25519*`.
+- `.npmrc`, `.netrc`, `.pypirc`, `.pgpass`, `.git-credentials`, `credentials`, and `credentials*.json`.
+- Files in a `.ssh/`, `.aws/`, or `.gnupg/` directory segment.
+
+For a file on this list, name its location in the prompt and let the worker read it. In MCP, `delegate_task.files` and `task_reply.files` accept the same syntax.
 
 #### `baton stats`
 
@@ -429,9 +457,11 @@ MCP is a thin shell over the same logic. It keeps no task state, so restarting M
 | `task_result` | `result` (`task_id`, `turn`; returns JSON with `final_message`) |
 | `task_diff` | `diff` (`task_id`, `stat`; returns `{ task_id, diff }`) |
 | `task_apply` | `apply` (`task_id`, `remove`) |
-| `task_reply` | `reply` (`task_id`, `prompt`, `as`) |
+| `task_reply` | `reply` (`task_id`, `prompt`, `as`, `files`) |
 | `task_cancel` | `cancel` |
 | `task_list` | `ls` (`all`, `cwd`) |
+
+See [File excerpts](#file-excerpts) for the `files` argument.
 
 ---
 
@@ -443,7 +473,7 @@ The root is `~/.baton` by default; set `BATON_HOME` to move it. On POSIX, direct
 ~/.baton/tasks/<task_id>/
   meta.json          current state (atomic writes)
   events.jsonl       uniform event stream
-  turns/<n>.json     turn n: author, input, final status, summary, git_changes, activity, usage
+  turns/<n>.json     turn n: author, input, excerpts, final status, summary, git_changes, activity, usage
   raw/<n>.stdout.log raw worker output for turn n, not truncated
   raw/<n>.stderr.log
   raw/<n>.check.log  output of the --check command for turn n

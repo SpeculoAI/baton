@@ -57,10 +57,10 @@ Task list: `tasks/todo.md`
 - codex 的 `explore_share` 偏低：它的探索主要通过 shell 完成，而 `rg`/`sed -n` 之外的组合（如含 `awk`）判为无 intent。这符合 D2，属于有意保守。
 
 ### Phase 2: file-snippets（PR 2）
-- [ ] Task 7: `src/snippets.ts` 解析、校验、敏感名单、渲染
-- [ ] Task 8: 接入 `start` 和 MCP `delegate_task`
-- [ ] Task 9: `reply --file` 和 MCP `task_reply.files`
-- [ ] Task 10: snippets 文档和冒烟
+- [x] Task 7: `src/snippets.ts` 解析、校验、敏感名单、渲染
+- [x] Task 8: 接入 `start` 和 MCP `delegate_task`
+- [x] Task 9: `reply --file` 和 MCP `task_reply.files`
+- [x] Task 10: snippets 文档和冒烟
 
 ### Checkpoint: PR 2
 - [ ] `npm test` 三平台全绿

@@ -152,6 +152,7 @@ export type Adapter = {
 export type GitChanges = { files_changed: number; insertions: number; deletions: number; diff_stat: string };
 export type Turn = {
   turn: number; author: Author; prompt: string; files?: string[]; status: TaskStatus; summary?: string; git_changes?: GitChanges;
+  excerpts?: string[];
   /** The agent's full last message of this turn (redacted); `baton result` prints it. */
   final_message?: string;
   check?: CheckResult;

@@ -12,6 +12,7 @@ import { redact } from "./redact.ts";
 import { isAlive, killGroup } from "./process.ts";
 import { dirtyPaths, gitRepoRoot, gitSnapshot, snapshotToBaseline } from "./git.ts";
 import { normalizeScopeInput, scopePromptPrefix } from "./scope.ts";
+import { loadExcerpts, renderExcerpts } from "./snippets.ts";
 import {
   buildRulesyncReport,
   discoverRules,
@@ -114,6 +115,19 @@ async function launch(id: string): Promise<void> {
   throw new Error(exited ? "supervisor exited before it was ready." : "supervisor not ready.");
 }
 
+function prepareTurnPrompt(cwd: string, prompt: string, files?: string[]): Pick<Turn, "prompt" | "files" | "excerpts"> {
+  const excerpts = loadExcerpts(cwd, files ?? []);
+  if (!excerpts.length) return { prompt, files };
+  const args = excerpts.map(({ arg }) => arg);
+  const excluded = new Set(args);
+  const plain = files?.filter((arg) => !excluded.has(arg));
+  return {
+    prompt: `${prompt}\n\n${renderExcerpts(excerpts)}`,
+    files: plain?.length ? plain : undefined,
+    excerpts: args,
+  };
+}
+
 export async function start(input: StartInput): Promise<StartResult> {
   if (process.env.BATON_DELEGATION === "1") return { status: "failed", summary: "BATON_DELEGATION=1; refusing to delegate again." };
   if (!input.prompt?.trim()) throw new Error("prompt is missing.");
@@ -192,9 +206,20 @@ export async function start(input: StartInput): Promise<StartResult> {
     };
   }
 
+  let prepared: ReturnType<typeof prepareTurnPrompt>;
+  try {
+    prepared = prepareTurnPrompt(taskCwd, input.prompt, input.files);
+  } catch (error) {
+    if (worktree) {
+      const problem = removeTaskWorktree(source_cwd, worktree.path, worktree.branch);
+      if (problem) throw new Error(`${(error as Error).message} Worktree cleanup failed: ${problem}`, { cause: error });
+    }
+    throw error;
+  }
+
   let scope_baseline: TaskMeta["scope_baseline"];
   let readonly_baseline: TaskMeta["readonly_baseline"];
-  let prompt = input.prompt;
+  let prompt = prepared.prompt;
   const needSnap = Boolean(scopeFields.scope?.length) || modeFields.mode === "readonly";
   const snap = needSnap ? gitSnapshot(taskCwd) : null;
   let rules: RulesReport | undefined;
@@ -241,7 +266,9 @@ export async function start(input: StartInput): Promise<StartResult> {
     ...(worktree ? { worktree } : {}),
   };
   writeMeta(meta);
-  writeTurn(meta.task_id, { turn: 1, author: "host", prompt, files: input.files, status: "running" });
+  writeTurn(meta.task_id, {
+    turn: 1, author: "host", prompt, files: prepared.files, status: "running", excerpts: prepared.excerpts,
+  });
   return launchTurn(meta);
 }
 
@@ -417,7 +444,7 @@ export async function wait(ids: string[], seconds = 50): Promise<TaskView | { st
   }
 }
 
-export async function reply(id: string, prompt: string, author: Author = "host"): Promise<TaskMeta | { task_id: string; status: "busy"; summary: string }> {
+export async function reply(id: string, prompt: string, author: Author = "host", files?: string[]): Promise<TaskMeta | { task_id: string; status: "busy"; summary: string }> {
   taskDir(id);
   if (process.env.BATON_DELEGATION === "1") throw new Error("BATON_DELEGATION=1; refusing to delegate again.");
   if (!prompt.trim()) throw new Error("prompt is missing.");
@@ -434,13 +461,18 @@ export async function reply(id: string, prompt: string, author: Author = "host")
     if (!["success", "needs_input", "scope_violation", "readonly_violation", "check_failed"].includes(meta.status)) throw new Error(`Cannot continue a task in status ${meta.status}.`);
     if (!meta.session_id) throw new Error("No session_id; cannot resume the session.");
     if (!getAdapter(meta.target)?.resolve(process.env)) throw new Error(`${meta.target} is not on PATH.`);
+    const prepared = prepareTurnPrompt(meta.cwd, prompt, files);
     next = { ...meta, status: "running", turn: meta.turn + 1, updated_at: new Date().toISOString(), supervisor_pid: null, child_pid: null, heartbeat_at: null, last_event_at: null };
     delete next.decision;
     delete next.summary;
     delete next.warning;
     delete next.scope_violations;
     delete next.check;
-    writeTurn(id, { turn: next.turn, author, prompt, status: "running" });
+    writeTurn(id, {
+      turn: next.turn, author, prompt: prepared.prompt, status: "running",
+      files: prepared.files?.length ? prepared.files : undefined,
+      excerpts: prepared.excerpts,
+    });
     writeMeta(next);
   } finally { release(); }
   return launchTurn(next);

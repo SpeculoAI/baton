@@ -198,12 +198,12 @@ Source spec: `SPEC-handoff-context.md` · Plan: `tasks/plan.md`
 - `renderExcerpts`：渲染标题和围栏，计算围栏长度
 
 **Acceptance criteria:**
-- [ ] 解析：普通路径、`:N`、`:N-M`、Windows 盘符、文件名带冒号
-- [ ] 校验失败直接抛错，错误信息具体：越界时带出实际行数，敏感文件提示"在 prompt 里写明位置"。覆盖 `start > end`、401 行、超过 64 KB、NUL 字节、`..` 逃逸、符号链接逃逸（仅 POSIX）
-- [ ] 敏感名单：每个命中项和每个放行项（`.env.example`、`.env.sample`、`.env.template`、`.env.dist`）都有用例；内容里含反引号时围栏会加长
+- [x] 解析：普通路径、`:N`、`:N-M`、Windows 盘符、文件名带冒号
+- [x] 校验失败直接抛错，错误信息具体：越界时带出实际行数，敏感文件提示"在 prompt 里写明位置"。覆盖 `start > end`、401 行、超过 64 KB、NUL 字节、`..` 逃逸、符号链接逃逸（仅 POSIX）
+- [x] 敏感名单：每个命中项和每个放行项（`.env.example`、`.env.sample`、`.env.template`、`.env.dist`）都有用例；内容里含反引号时围栏会加长
 
 **Verification:**
-- [ ] `node --test test/snippets.test.ts`
+- [x] `node --test test/snippets.test.ts`
 
 **Dependencies:** Checkpoint PR 1
 
@@ -218,12 +218,12 @@ Source spec: `SPEC-handoff-context.md` · Plan: `tasks/plan.md`
 **Description:** `start()` 对带行号的 `--file` 调用 `loadExcerpts`，用 task cwd 解析路径（`--isolate` 时是 worktree），把渲染结果接在宿主 prompt 之后，写进 `turn.prompt`。`turn.files` 保留原始参数，不带行号的路径照旧进 Focus 列表。同时更新 CLI 和 MCP 里 `--file`/`files` 的描述。
 
 **Acceptance criteria:**
-- [ ] 用 `FAKE_INPUT_FILE` 断言子进程收到的 prompt 布局和 spec D9 一致，片段原文完整出现
-- [ ] `--isolate` 时片段从 worktree 读取（构造源目录有未提交改动的场景，片段里不应出现这些改动）
-- [ ] `.env:1-3` 让 `start` 同步失败，任务目录里不存在这个文件的内容；不带行号的 `--file` 行为逐字节不变
+- [x] 用 `FAKE_INPUT_FILE` 断言子进程收到的 prompt 布局和 spec D9 一致，片段原文完整出现
+- [x] `--isolate` 时片段从 worktree 读取（构造源目录有未提交改动的场景，片段里不应出现这些改动）
+- [x] `.env:1-3` 让 `start` 同步失败，任务目录里不存在这个文件的内容；不带行号的 `--file` 行为逐字节不变
 
 **Verification:**
-- [ ] `node --test test/snippets-start.test.ts test/prompt-stdin.test.ts test/mcp.test.ts`
+- [x] `node --test test/snippets-start.test.ts test/prompt-stdin.test.ts test/mcp.test.ts`
 
 **Dependencies:** Task 7
 
@@ -240,12 +240,12 @@ Source spec: `SPEC-handoff-context.md` · Plan: `tasks/plan.md`
 **Description:** `reply()` 增加 `files` 参数：带行号的渲染进该轮 prompt，不带行号的写进该轮 `turn.files`。CLI 的 `reply` 增加 `--file`（可重复），MCP 的 `task_reply` 增加 `files`。
 
 **Acceptance criteria:**
-- [ ] reply 轮带片段时，子进程收到的 prompt 里有片段；不带 `--file` 的 reply 行为不变
-- [ ] 校验失败时 reply 同步失败，任务状态不变（不进入 running）
-- [ ] `baton reply -h` 和 MCP schema 更新
+- [x] reply 轮带片段时，子进程收到的 prompt 里有片段；不带 `--file` 的 reply 行为不变
+- [x] 校验失败时 reply 同步失败，任务状态不变（不进入 running）
+- [x] `baton reply -h` 和 MCP schema 更新
 
 **Verification:**
-- [ ] `node --test test/snippets-start.test.ts test/help.test.ts test/mcp.test.ts`
+- [x] `node --test test/snippets-start.test.ts test/help.test.ts test/mcp.test.ts`
 
 **Dependencies:** Task 8
 
@@ -269,11 +269,11 @@ Source spec: `SPEC-handoff-context.md` · Plan: `tasks/plan.md`
 然后用真实 CLI 冒烟一次。
 
 **Acceptance criteria:**
-- [ ] `docs/reference.md`、`docs/reference.zh-CN.md` 更新
-- [ ] 真实 CLI（任选两家）收到片段，并在回复里引用了片段内容；`turns/1.json` 记录的 prompt 和发出的一致
+- [x] `docs/reference.md`、`docs/reference.zh-CN.md` 更新
+- [x] 真实 CLI（任选两家）收到片段，并在回复里引用了片段内容；`turns/1.json` 记录的 prompt 和发出的一致
 
 **Verification:**
-- [ ] `npm test`
+- [x] `npm test`
 
 **Dependencies:** Task 9
 
