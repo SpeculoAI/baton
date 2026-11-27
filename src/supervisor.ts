@@ -10,7 +10,8 @@ import { resolveRulesync, rulesGitRoot, rulesyncCheck } from "./rules.ts";
 import { appendEvent, hasTurnEnded, readMeta, writeMeta, readTurn, writeTurn, taskDir, cancelRequestPath, lockTask } from "./store.ts";
 import { redact } from "./redact.ts";
 import { killGroup } from "./process.ts";
-import type { CheckResult, EventData, TaskStatus } from "./types.ts";
+import { summarizeEvents, turnUsage } from "./metrics.ts";
+import type { CheckResult, EventData, TaskStatus, TurnUsage } from "./types.ts";
 const CHECK_TAIL = 4000;
 const QUOTA_PHRASES = ["usage limit", "quota exceeded", "rate limit"];
 
@@ -171,6 +172,7 @@ export async function supervise(id: string): Promise<void> {
     }
   }
   const before = gitSnapshot(meta.cwd);
+  const metricEvents: EventData[] = [];
   let stdout = "";
   let stderr = "";
   let message = "";
@@ -230,6 +232,7 @@ export async function supervise(id: string): Promise<void> {
         if (events === null) emit({ type: "raw", stream, line });
         else for (const event of events) {
           if (event.type === "message") message = event.text;
+          if (event.type === "tool_call" || event.type === "usage") metricEvents.push(event);
           emit(event);
         }
       });
@@ -270,6 +273,17 @@ export async function supervise(id: string): Promise<void> {
   meta.status = final;
   const after = gitSnapshot(meta.cwd);
   turn.git_changes = gitChanges(meta.cwd, before, after);
+  const { activity, usage } = summarizeEvents(metricEvents);
+  let previousRaw: TurnUsage["raw"] | null | undefined = meta.turn === 1 ? null : undefined;
+  if (meta.turn > 1 && adapter.usageCumulative && usage) {
+    try {
+      previousRaw = readTurn(id, meta.turn - 1).usage?.raw;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+  turn.activity = activity;
+  turn.usage = turnUsage(adapter, usage, previousRaw);
   if (meta.mode === "readonly" && final === "success") {
     if (!meta.readonly_baseline) {
       const note = "readonly: not a git directory; skipping post-run check";

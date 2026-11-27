@@ -13,6 +13,7 @@ export function formatEvent(event: BatonEvent): string {
     case "message": return `${prefix} ${event.text}`;
     case "tool_call": return `${prefix} call ${event.name}: ${event.detail}`;
     case "tool_result": return `${prefix} ${event.name} ${event.ok ? "ok" : "failed"}: ${event.detail}`;
+    case "usage": return `${prefix} usage in=${event.input} cached=${event.cached_input} out=${event.output}${event.reasoning === undefined ? "" : ` reasoning=${event.reasoning}`}`;
     case "error": return `${prefix} error: ${event.text}`;
     case "raw": return `${prefix} ${event.stream}: ${event.line}`;
     case "check_started": return `${prefix} check: ${event.command}`;

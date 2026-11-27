@@ -25,16 +25,84 @@ test("codex fixture parses messages, commands, file changes and failures; unknow
   assert.equal(codex.isAuthFailure("Please log in"), true);
 });
 
-test("codex 0.167.0 real output: lifecycle events are silent, error items become error, no raw kept", () => {
+test("codex 0.167.0 real output: keeps errors and messages and reports terminal usage", () => {
   const lines = fs.readFileSync(new URL("fixtures/codex-0.167.0.stream.jsonl", import.meta.url), "utf8").trim().split("\n");
   for (const line of lines) assert.notEqual(codex.parseLine(line), null, line);
   const events = lines.flatMap((line) => codex.parseLine(line) ?? []);
-  assert.deepEqual(events.map((e) => e.type), ["error", "error", "message"]);
+  assert.deepEqual(events.map((e) => e.type), ["error", "error", "message", "usage"]);
 });
 
 function fixture(name: string): string[] {
   return fs.readFileSync(new URL(`fixtures/${name}`, import.meta.url), "utf8").trim().split("\n");
 }
+
+test("Codex usage fixture reports classified calls and cumulative terminal usage", () => {
+  const events = fixture("usage/codex.jsonl").flatMap((line) => codex.parseLine(line) ?? []);
+  assert.deepEqual(events.map(({ ts, turn, ...data }) => data), [
+    { type: "tool_call", name: "command_execution", kind: "shell", intent: "explore",
+      detail: "/bin/zsh -lc 'git status --short && ls src; git diff -- docs/reference.md'" },
+    { type: "message", text: "[模型回复]" },
+    { type: "usage", input: 5506514, cached_input: 5339520, output: 35027, reasoning: 8812,
+      raw: { input_tokens: 5506514, cached_input_tokens: 5339520, cache_write_input_tokens: 0,
+        output_tokens: 35027, reasoning_output_tokens: 8812 } },
+  ]);
+  assert.equal(codex.usageCumulative, true);
+  const edit = codex.parseLine('{"type":"item.started","item":{"type":"file_change","changes":[]}}')?.[0];
+  assert.equal(edit?.type === "tool_call" && edit.kind, "edit");
+  const other = codex.parseLine('{"type":"item.started","item":{"type":"mcp_tool_call","server":"tools","tool":"lookup"}}')?.[0];
+  assert.equal(other?.type === "tool_call" && other.kind, "other");
+});
+
+test("Cursor usage fixture reports classified calls and per-turn terminal usage", () => {
+  const cursor = getAdapter("cursor")!;
+  const events = fixture("usage/cursor.jsonl").flatMap((line) => cursor.parseLine(line) ?? []);
+  assert.deepEqual(events.map(({ ts, turn, ...data }) => data), [
+    { type: "tool_call", name: "grep", kind: "search", detail: "/Users/u/myself/baton" },
+    { type: "tool_call", name: "read", kind: "read", detail: "/Users/u/myself/baton/src/contract.ts" },
+    { type: "tool_call", name: "shell", kind: "shell", intent: "explore", detail: "rg -n buildPrompt src" },
+    { type: "usage", input: 5904382, cached_input: 5859840, output: 33635, reasoning: 16133,
+      raw: { inputTokens: 44542, outputTokens: 33635, cacheReadTokens: 5859840, cacheWriteTokens: 0, reasoningTokens: 16133 } },
+  ]);
+  assert.ok(!cursor.usageCumulative);
+  for (const [name, kind] of Object.entries({
+    glob: "search", edit: "edit", delete: "edit",
+    mcp: "other", getMcpTools: "other", webFetch: "other", await: "other", constructor: "other",
+  })) {
+    const line = JSON.stringify({ type: "tool_call", subtype: "started", tool_call: { [name + "ToolCall"]: { args: {} } } });
+    const call = cursor.parseLine(line)?.[0];
+    assert.equal(call?.type === "tool_call" && call.kind, kind, name);
+    assert.ok(call && !("intent" in call), name);
+  }
+});
+
+test("Shell intent uses the complete command before display truncation", () => {
+  const command = "rg " + "x".repeat(220) + " && npm test";
+  const cursor = getAdapter("cursor")!;
+  const calls = [
+    codex.parseLine(JSON.stringify({ type: "item.started", item: { type: "command_execution", command } }))?.[0],
+    cursor.parseLine(JSON.stringify({ type: "tool_call", subtype: "started", tool_call: { shellToolCall: { args: { command } } } }))?.[0],
+  ];
+  for (const call of calls) {
+    assert.ok(call?.type === "tool_call");
+    assert.equal(call.detail, command.slice(0, 200));
+    assert.equal(call.intent, "verify");
+  }
+});
+
+test("Terminal usage excludes nonnumeric metadata and preserves Cursor errors", () => {
+  const cursor = getAdapter("cursor")!;
+  const result = { type: "result", is_error: true, result: "failure" };
+  const usage = { inputTokens: 4, cacheReadTokens: 8, cacheWriteTokens: 2, outputTokens: 3 };
+  const failed = cursor.parseLine(JSON.stringify({ ...result, usage: { ...usage, metadata: "ignored" } }))!;
+  assert.deepEqual(failed.map(({ ts, turn, ...data }) => data), [
+    { type: "error", text: "failure" },
+    { type: "usage", input: 14, cached_input: 8, output: 3, raw: usage },
+  ]);
+  assert.deepEqual(cursor.parseLine(JSON.stringify(result))?.map((e) => e.type), ["error"]);
+  assert.deepEqual(cursor.parseLine('{"type":"result","usage":{"inputTokens":"4"}}'), []);
+  assert.deepEqual(codex.parseLine('{"type":"turn.completed","usage":{"input_tokens":4}}'), []);
+  assert.deepEqual(codex.parseLine('{"type":"turn.completed"}'), []);
+});
 
 test("cursor real stream-json: session, tools, messages; thinking deltas emit no events; no raw kept", () => {
   const cursor = getAdapter("cursor")!;
@@ -42,9 +110,9 @@ test("cursor real stream-json: session, tools, messages; thinking deltas emit no
   assert.equal(cursor.sessionIdFrom(lines[0]), "ac43faa4-c292-43be-83ce-3dca1fa125cf");
   for (const line of lines) assert.notEqual(cursor.parseLine(line), null, line);
   const events = lines.flatMap((line) => cursor.parseLine(line) ?? []);
-  assert.deepEqual(events.map((e) => e.type), ["message", "tool_call", "tool_result", "message"]);
+  assert.deepEqual(events.map((e) => e.type), ["message", "tool_call", "tool_result", "message", "usage"]);
   assert.deepEqual(events[2], { ...events[2], name: "shell", ok: true, detail: "cat a.txt" });
-  const last = events.at(-1);
+  const last = events.at(-2);
   assert.equal(last?.type === "message" && last.text, "hi");
   assert.deepEqual(cursor.build({ bin: "c", cwd: "/w", prompt: "p", sessionId: "s1", reasoningEffort: null, model: null }).args,
     ["--print", "--force", "--trust", "--output-format", "stream-json", "--workspace", "/w", "--resume", "s1"]);
@@ -58,7 +126,7 @@ test("agy real stream-json: tool steps are paired; the full reply comes from res
   assert.equal(agy.sessionIdFrom(lines[0]), "9c0bfa4e-4c5c-4b0c-bd90-ff90c173e27c");
   for (const line of lines) assert.notEqual(agy.parseLine(line), null, line);
   const events = lines.flatMap((line) => agy.parseLine(line) ?? []);
-  assert.deepEqual(events.map((e) => e.type), ["tool_call", "tool_result", "message"]);
+  assert.deepEqual(events.map((e) => e.type), ["tool_call", "tool_result", "message", "usage"]);
   assert.equal(events[2].type === "message" && events[2].text, "hi\n");
   const failed = agy.parseLine(JSON.stringify({ event: "result", result: { status: "ERROR", response: "boom" } }));
   assert.deepEqual(failed?.map((e) => e.type), ["error"]);
@@ -74,7 +142,7 @@ test("claude real stream-json: hook/init/thinking/rate-limit emit no events; too
   assert.equal(claude.sessionIdFrom(lines[1]), "46c0d693-4fe0-4bcf-be41-33ebe2cc57fc");
   for (const line of lines) assert.notEqual(claude.parseLine(line), null, line);
   const events = lines.flatMap((line) => claude.parseLine(line) ?? []);
-  assert.deepEqual(events.map((e) => e.type), ["tool_call", "tool_result", "message"]);
+  assert.deepEqual(events.map((e) => e.type), ["tool_call", "tool_result", "message", "usage"]);
   assert.deepEqual(events[0], { ...events[0], name: "Bash", detail: "cat a.txt" });
   assert.deepEqual(events[1], { ...events[1], ok: true, detail: "hi" });
   const failed = claude.parseLine(JSON.stringify({ type: "result", subtype: "error_during_execution", is_error: true, result: "boom" }));
@@ -82,6 +150,80 @@ test("claude real stream-json: hook/init/thinking/rate-limit emit no events; too
   assert.deepEqual(claude.build({ bin: "c", cwd: "/w", prompt: "p", sessionId: "s1", reasoningEffort: "ultra" }).args,
     ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits", "--permission-prompts", "none", "--effort", "max", "--resume", "s1"]);
   assert.equal(claude.build({ bin: "c", cwd: "/w", prompt: "p", sessionId: null, reasoningEffort: null }).stdin, "p");
+});
+
+test("Claude usage fixture ignores duplicate assistant usage and keeps terminal reasoning", () => {
+  const claude = getAdapter("claude")!;
+  const lines = fixture("usage/claude.jsonl");
+  assert.equal(lines.map((line) => JSON.parse(line)).filter((row) => row.message?.usage).length, 2);
+  const events = lines.flatMap((line) => claude.parseLine(line) ?? []);
+  assert.deepEqual(events.map(({ ts, turn, ...data }) => data), [
+    { type: "tool_call", name: "Bash", kind: "shell", intent: "explore",
+      detail: 'grep -rl "buildPrompt" --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist .' },
+    { type: "tool_call", name: "Read", kind: "read", detail: "/Users/u/myself/baton/src/contract.ts" },
+    { type: "usage", input: 179827, cached_input: 88436, output: 1213, reasoning: 261,
+      raw: { input_tokens: 4, cache_creation_input_tokens: 91387, cache_read_input_tokens: 88436, output_tokens: 1213 } },
+  ]);
+  assert.ok(!claude.usageCumulative);
+  const result = JSON.parse(lines.at(-1)!);
+  result.usage.output_tokens_details.thinking_tokens = 0;
+  const failed = claude.parseLine(JSON.stringify({ ...result, is_error: true, result: "boom" }))!;
+  assert.deepEqual(failed.map((event) => event.type), ["error", "usage"]);
+  assert.equal(failed[0].type === "error" && failed[0].text, "boom");
+  assert.equal(failed[1].type === "usage" && failed[1].reasoning, 0);
+});
+
+test("AGY usage fixture ignores step usage and preserves the result message", () => {
+  const agy = getAdapter("agy")!;
+  const lines = fixture("usage/agy.jsonl");
+  const events = lines.flatMap((line) => agy.parseLine(line) ?? []);
+  assert.deepEqual(events.map(({ ts, turn, ...data }) => data), [
+    { type: "tool_call", name: "run_command", kind: "shell",
+      detail: JSON.stringify({ CommandLine: 'rg -l "buildPrompt" && echo "---GLOB---" && ls -1 src/adapters/*.ts && echo "---LS---" && ls -1 src' }) },
+    { type: "tool_call", name: "read_file", kind: "read",
+      detail: JSON.stringify({ EndLine: 5, Path: "/Users/u/myself/baton/src/contract.ts", StartLine: 1 }) },
+    { type: "message", text: "[模型回复]" },
+    { type: "usage", input: 53282, cached_input: 23905, output: 2041, reasoning: 1599,
+      raw: { input_tokens: 29377, output_tokens: 2041, thinking_tokens: 1599, cache_read_tokens: 23905, total_tokens: 31418 } },
+  ]);
+  assert.equal(agy.usageCumulative, true);
+  const { result } = JSON.parse(lines.at(-1)!);
+  const failed = agy.parseLine(JSON.stringify({ event: "result", result: { ...result, status: "ERROR", response: "boom" } }))!;
+  assert.deepEqual(failed.map((event) => event.type), ["error", "usage"]);
+  assert.equal(failed[0].type === "error" && failed[0].text, "boom");
+});
+
+test("Kimi usage fixture classifies tools and preserves messages and results", () => {
+  const kimi = getAdapter("kimi")!;
+  const events = fixture("usage/kimi.jsonl").flatMap((line) => kimi.parseLine(line) ?? []);
+  assert.deepEqual(events.map(({ ts, turn, ...data }) => data), [
+    { type: "tool_call", name: "Grep", kind: "search", detail: '{"pattern":"buildPrompt","output_mode":"files_with_matches"}' },
+    { type: "tool_call", name: "Glob", kind: "search", detail: '{"pattern":"src/adapters/*.ts"}' },
+    { type: "tool_call", name: "Bash", kind: "shell", intent: "explore", detail: "ls src" },
+    { type: "tool_call", name: "Read", kind: "read", detail: "src/contract.ts" },
+    { type: "message", text: "[模型回复]" },
+    ...Array.from({ length: 4 }, () => ({ type: "tool_result", name: "tool", ok: true, detail: "[工具输出]" })),
+    { type: "message", text: "[模型回复]" },
+  ]);
+  assert.equal(kimi.usage, undefined);
+  const invalid = kimi.parseLine('{"role":"assistant","tool_calls":[{"function":{"name":"Bash","arguments":"bad JSON"}}]}')!;
+  assert.deepEqual(invalid.map(({ ts, turn, ...data }) => data), [
+    { type: "tool_call", name: "Bash", kind: "shell", detail: "bad JSON" },
+  ]);
+});
+
+test("Claude, AGY and Kimi classify the untruncated shell command", () => {
+  const command = "rg " + "x".repeat(220) + " && npm test";
+  const claude = { type: "assistant", message: { content: [{ type: "tool_use", name: "Bash", input: { command } }] } };
+  const agy = { event: "step_update", step_update: { step_type: "tool", state: "ACTIVE",
+    tool_info: { name: "run_command", parameters: { CommandLine: command } } } };
+  const kimi = { role: "assistant", tool_calls: [{ function: { name: "Bash", arguments: JSON.stringify({ command }) } }] };
+  for (const [target, line] of Object.entries({ claude, agy, kimi })) {
+    const call = getAdapter(target)!.parseLine(JSON.stringify(line))?.[0];
+    assert.ok(call?.type === "tool_call", target);
+    assert.equal(call.detail.length, 200, target);
+    assert.equal(call.intent, "verify", target);
+  }
 });
 
 test("cursor resolves cursor-agent first, then falls back to agent", () => {

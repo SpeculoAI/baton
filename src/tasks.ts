@@ -12,6 +12,7 @@ import { redact } from "./redact.ts";
 import { isAlive, killGroup } from "./process.ts";
 import { dirtyPaths, gitRepoRoot, gitSnapshot, snapshotToBaseline } from "./git.ts";
 import { normalizeScopeInput, scopePromptPrefix } from "./scope.ts";
+import { loadExcerpts, renderExcerpts } from "./snippets.ts";
 import {
   buildRulesyncReport,
   discoverRules,
@@ -23,7 +24,7 @@ import {
   unseenRules,
 } from "./rules.ts";
 import { addWorktree, applyTree, assertNotNestedWorktree, batonWorktreeExemptPaths, diffTrees, forkPoint, headSha, netTree, removeTaskWorktree, resolveRepoRoot } from "./worktree.ts";
-import type { Author, Effort, Enforcement, GitChanges, RulesMode, RulesReport, ScopeOnViolation, TaskMeta, TaskMode, TaskStatus } from "./types.ts";
+import type { Author, Effort, Enforcement, RulesMode, RulesReport, ScopeOnViolation, TaskMeta, TaskMode, TaskStatus, Turn } from "./types.ts";
 
 export type StartInput = {
   target: string;
@@ -114,6 +115,19 @@ async function launch(id: string): Promise<void> {
   throw new Error(exited ? "supervisor exited before it was ready." : "supervisor not ready.");
 }
 
+function prepareTurnPrompt(cwd: string, prompt: string, files?: string[]): Pick<Turn, "prompt" | "files" | "excerpts"> {
+  const excerpts = loadExcerpts(cwd, files ?? []);
+  if (!excerpts.length) return { prompt, files };
+  const args = excerpts.map(({ arg }) => arg);
+  const excluded = new Set(args);
+  const plain = files?.filter((arg) => !excluded.has(arg));
+  return {
+    prompt: `${prompt}\n\n${renderExcerpts(excerpts)}`,
+    files: plain?.length ? plain : undefined,
+    excerpts: args,
+  };
+}
+
 export async function start(input: StartInput): Promise<StartResult> {
   if (process.env.BATON_DELEGATION === "1") return { status: "failed", summary: "BATON_DELEGATION=1; refusing to delegate again." };
   if (!input.prompt?.trim()) throw new Error("prompt is missing.");
@@ -192,9 +206,20 @@ export async function start(input: StartInput): Promise<StartResult> {
     };
   }
 
+  let prepared: ReturnType<typeof prepareTurnPrompt>;
+  try {
+    prepared = prepareTurnPrompt(taskCwd, input.prompt, input.files);
+  } catch (error) {
+    if (worktree) {
+      const problem = removeTaskWorktree(source_cwd, worktree.path, worktree.branch);
+      if (problem) throw new Error(`${(error as Error).message} Worktree cleanup failed: ${problem}`, { cause: error });
+    }
+    throw error;
+  }
+
   let scope_baseline: TaskMeta["scope_baseline"];
   let readonly_baseline: TaskMeta["readonly_baseline"];
-  let prompt = input.prompt;
+  let prompt = prepared.prompt;
   const needSnap = Boolean(scopeFields.scope?.length) || modeFields.mode === "readonly";
   const snap = needSnap ? gitSnapshot(taskCwd) : null;
   let rules: RulesReport | undefined;
@@ -241,7 +266,9 @@ export async function start(input: StartInput): Promise<StartResult> {
     ...(worktree ? { worktree } : {}),
   };
   writeMeta(meta);
-  writeTurn(meta.task_id, { turn: 1, author: "host", prompt, files: input.files, status: "running" });
+  writeTurn(meta.task_id, {
+    turn: 1, author: "host", prompt, files: prepared.files, status: "running", excerpts: prepared.excerpts,
+  });
   return launchTurn(meta);
 }
 
@@ -256,11 +283,17 @@ async function launchTurn(meta: TaskMeta): Promise<TaskMeta> {
   return meta;
 }
 
-export type TaskView = TaskMeta & { liveness?: "active" | "quiet" | "orphaned"; quiet_for_s?: number; git_changes?: GitChanges };
+export type TaskView = TaskMeta & Pick<Turn, "git_changes" | "activity" | "usage"> & {
+  liveness?: "active" | "quiet" | "orphaned";
+  quiet_for_s?: number;
+};
 
-// Terminal view includes this turn's git_changes so the host need not read turns/<n>.json.
+// Let hosts read the terminal view without opening turns/<n>.json.
 function finished(meta: TaskMeta): TaskView {
-  try { return { ...meta, git_changes: readTurn(meta.task_id, meta.turn).git_changes }; } catch { return meta; }
+  try {
+    const { git_changes, activity, usage } = readTurn(meta.task_id, meta.turn);
+    return { ...meta, git_changes, activity, usage };
+  } catch { return meta; }
 }
 
 function orphaned(meta: TaskMeta): boolean {
@@ -411,7 +444,7 @@ export async function wait(ids: string[], seconds = 50): Promise<TaskView | { st
   }
 }
 
-export async function reply(id: string, prompt: string, author: Author = "host"): Promise<TaskMeta | { task_id: string; status: "busy"; summary: string }> {
+export async function reply(id: string, prompt: string, author: Author = "host", files?: string[]): Promise<TaskMeta | { task_id: string; status: "busy"; summary: string }> {
   taskDir(id);
   if (process.env.BATON_DELEGATION === "1") throw new Error("BATON_DELEGATION=1; refusing to delegate again.");
   if (!prompt.trim()) throw new Error("prompt is missing.");
@@ -428,31 +461,40 @@ export async function reply(id: string, prompt: string, author: Author = "host")
     if (!["success", "needs_input", "scope_violation", "readonly_violation", "check_failed"].includes(meta.status)) throw new Error(`Cannot continue a task in status ${meta.status}.`);
     if (!meta.session_id) throw new Error("No session_id; cannot resume the session.");
     if (!getAdapter(meta.target)?.resolve(process.env)) throw new Error(`${meta.target} is not on PATH.`);
+    const prepared = prepareTurnPrompt(meta.cwd, prompt, files);
     next = { ...meta, status: "running", turn: meta.turn + 1, updated_at: new Date().toISOString(), supervisor_pid: null, child_pid: null, heartbeat_at: null, last_event_at: null };
     delete next.decision;
     delete next.summary;
     delete next.warning;
     delete next.scope_violations;
     delete next.check;
-    writeTurn(id, { turn: next.turn, author, prompt, status: "running" });
+    writeTurn(id, {
+      turn: next.turn, author, prompt: prepared.prompt, status: "running",
+      files: prepared.files?.length ? prepared.files : undefined,
+      excerpts: prepared.excerpts,
+    });
     writeMeta(next);
   } finally { release(); }
   return launchTurn(next);
 }
 
-export function ls(all = false, cwd = process.cwd()): TaskView[] {
+export function taskCwdFilter(cwd = process.cwd()): (meta: TaskMeta) => boolean {
   const here = path.resolve(cwd);
   let hereReal = here;
   try { hereReal = fs.realpathSync.native(here); } catch { /* keep resolved */ }
-  return listTasks().filter((meta) => {
-    if (all) return true;
+  return (meta) => {
     if (meta.cwd === here || meta.worktree?.source_cwd === here) return true;
     try {
       if (fs.realpathSync.native(meta.cwd) === hereReal) return true;
       if (meta.worktree?.source_cwd && fs.realpathSync.native(meta.worktree.source_cwd) === hereReal) return true;
     } catch { /* missing path */ }
     return false;
-  }).map((meta) => status(meta.task_id))
+  };
+}
+
+export function ls(all = false, cwd = process.cwd()): TaskView[] {
+  const tasks = listTasks();
+  return (all ? tasks : tasks.filter(taskCwdFilter(cwd))).map((meta) => status(meta.task_id))
     .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at));
 }
 

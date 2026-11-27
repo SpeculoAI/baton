@@ -8,6 +8,7 @@ import type { Author, Effort, RulesMode, ScopeOnViolation, TaskMode } from "./ty
 
 const MAX_WAIT_SECONDS = 55;
 const PROGRESS_MS = 15_000;
+const FILES_SCHEMA = z.array(z.string()).optional().describe("Files to focus on. Use path:N or path:N-M to inline excerpts. Sensitive files are rejected for excerpts.");
 
 // Each tool only delegates to tasks.ts; the MCP process keeps no task state, so tasks remain readable after a restart.
 async function respond(run: () => unknown): Promise<{ content: { type: "text"; text: string }[] }> {
@@ -26,7 +27,7 @@ export function createServer(): McpServer {
     inputSchema: {
       target_agent: z.enum(["codex", "claude", "cursor", "agy", "kimi"]),
       prompt: z.string(),
-      files: z.array(z.string()).optional(),
+      files: FILES_SCHEMA,
       reasoning_effort: z.enum(["low", "medium", "high", "ultra"]).optional(),
       model: z.string().optional().describe("Per-task model (cursor, codex, claude and kimi; stored in meta and carried over by reply)."),
       idle_timeout_seconds: z.number().optional().describe("Stop after this long with no output at all; default 600."),
@@ -83,8 +84,8 @@ export function createServer(): McpServer {
   }, (args) => respond(() => apply(args.task_id, { remove: args.remove })));
   server.registerTool("task_reply", {
     description: "After a task stops at needs_input, success, scope_violation, readonly_violation or check_failed, start the next turn in the same session. as=human means a human said it; default host. Returns busy while running.",
-    inputSchema: { task_id: z.string(), prompt: z.string(), as: z.enum(["host", "human"]).optional() },
-  }, (args) => respond(() => reply(args.task_id, args.prompt, (args.as ?? "host") as Author)));
+    inputSchema: { task_id: z.string(), prompt: z.string(), as: z.enum(["host", "human"]).optional(), files: FILES_SCHEMA },
+  }, (args) => respond(() => reply(args.task_id, args.prompt, (args.as ?? "host") as Author, args.files)));
   server.registerTool("task_cancel", {
     description: "Stop a running task (kills the whole process group).",
     inputSchema: { task_id: z.string() },

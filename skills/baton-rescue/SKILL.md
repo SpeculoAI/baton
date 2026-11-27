@@ -39,13 +39,44 @@ If the user names a target, use it: `codex`, `claude`, `cursor`, `agy`, `kimi`.
 
 If not named, use `codex`. If the current session is already Codex, use `claude`. Never delegate to the vendor you are already running as. Say which target you picked before you start.
 
+## Handoff brief
+
+Use this template for worker prompts. Tag known facts with their source. Tools hint is optional.
+
+```text
+Goal: <one bounded outcome>
+Done when: <observable acceptance criteria>
+Known facts: <tagged facts already available>
+Already ruled out: <approaches or causes already ruled out>
+Change points: <paths and line ranges>
+Constraints: <allowed paths and limits>
+Tools hint: If you have codegraph available, prefer it over repeated grep.
+```
+
+| Source tag | Worker action |
+| --- | --- |
+| `[read <path>:<lines>]` | Use the source the host just read directly. |
+| `[ran <cmd>]` | Use the host's command result directly. |
+| `[user]` | Use the user's explicit statement directly. Stop and ask if it conflicts with what you see. |
+| `[mem <source>]` | Verify the past record before relying on it. |
+| `[codegraph]` | Verify the indexed finding before relying on it. |
+| `[guess]` | Verify the host's hypothesis before relying on it. |
+
+- Share only what you already know. For locations you have not identified, write "not located by host".
+- Pass change points and required interfaces as `--file path:start-end`. Leave out copied background code.
+- Give only locations for sensitive values, such as `NPM_TOKEN` in `.env`. Baton saves the brief verbatim in `turns/<n>.json`.
+- Keep every Tools hint conditional. The worker's environment determines which tools it has.
+- Pass executable Done when criteria as `--check` and allowed paths as `--scope`.
+- Use `reply` first for follow-ups, rework, and questions about the same work. For a resumable task, start a new one only when the work moves to a different area, the conversation context is contaminated, or you need an independent perspective.
+- For independent reviews and adversarial checks, give only the goal and scope. Omit the host's conclusions.
+
 ## Start
 
 ```
-baton start --target <t> --prompt "<self-contained task>" [--file <path>...] [--effort low|medium|high|ultra] [--model <id>] [--idle-timeout <s>] [--max-duration <s>] [--cwd <dir>] [--scope <glob>...] [--scope-on-violation warn|fail] [--mode readonly|write] [--isolate] [--allow-dirty] [--rules check|pointer|off] [--check "<cmd>"]
+baton start --target <t> --prompt "<handoff brief>" [--file <path>[:N[-M]]...] [--effort low|medium|high|ultra] [--model <id>] [--idle-timeout <s>] [--max-duration <s>] [--cwd <dir>] [--scope <glob>...] [--scope-on-violation warn|fail] [--mode readonly|write] [--isolate] [--allow-dirty] [--rules check|pointer|off] [--check "<cmd>"]
 ```
 
-- The prompt states done criteria and which files to look at. Long prompts can come on stdin instead of `--prompt`.
+- Use the [Handoff brief](#handoff-brief) template for the prompt. Long prompts can come on stdin instead of `--prompt`.
 - `--effort low` suits mechanical subtasks; it maps to each CLI's native flag.
 - `--model <id>` (Cursor, Codex and Claude): per-task model; kept across `reply`. Codex gets `-m <id>` and still takes `--effort`. Claude takes an id or alias (`sonnet`, `opus`) and still takes `--effort`. Cursor does not accept `--effort` at all (with or without `--model`): choose a tier-specific id from `cursor-agent --list-models` (e.g. `gpt-5.3-codex-high`) instead. Agy errors on `--model`.
 - `--idle-timeout` (default 600) stops the job only after that many seconds with no output at all. There is no total time cap unless you pass `--max-duration`. Raise `--idle-timeout` for models that think silently for a long time.

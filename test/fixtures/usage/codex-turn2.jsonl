@@ -1,0 +1,2 @@
+{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"[续轮回复]"}}
+{"type":"turn.completed","usage":{"input_tokens":5507514,"cached_input_tokens":5340220,"cache_write_input_tokens":0,"output_tokens":35127,"reasoning_output_tokens":8832}}

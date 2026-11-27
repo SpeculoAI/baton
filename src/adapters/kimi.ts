@@ -1,11 +1,15 @@
-import type { Adapter, BatonEvent, EventData, SpawnSpec } from "../types.ts";
+import type { Adapter, BatonEvent, EventData, SpawnSpec, ToolKind } from "../types.ts";
 import { redact } from "../redact.ts";
-import { assertArgvSafe, authHit, which } from "./common.ts";
+import { assertArgvSafe, authHit, shellIntent, which } from "./common.ts";
 
 // Verified 2026-11-26 (kimi 2.8.0): stderr when no account or model is set up.
 const AUTH = ["no model configured", "use /login"];
 // Verified 2026-11-26 (kimi 2.8.0): the Bash tool result has no status field, only this trailer on failure.
 const FAILED = /Command failed with exit code: \d+\.\s*$/;
+const KINDS = new Map<string, ToolKind>([
+  ["Read", "read"], ["Grep", "search"], ["Glob", "search"],
+  ["Edit", "edit"], ["Write", "edit"], ["Bash", "shell"],
+]);
 
 function stamp(data: EventData): BatonEvent {
   return { ts: new Date().toISOString(), turn: 0, ...data };
@@ -13,12 +17,6 @@ function stamp(data: EventData): BatonEvent {
 
 function parse(line: string): any {
   try { return JSON.parse(line); } catch { return null; }
-}
-
-function toolDetail(raw: unknown): string {
-  const text = typeof raw === "string" ? raw : JSON.stringify(raw ?? {});
-  const input = parse(text);
-  return redact(String(input?.command ?? input?.path ?? input?.file_path ?? text)).slice(0, 200);
 }
 
 export const kimi: Adapter = {
@@ -62,7 +60,17 @@ export const kimi: Adapter = {
     if (obj.role === "meta") return [];
     if (obj.role === "assistant") {
       const calls: any[] = Array.isArray(obj.tool_calls) ? obj.tool_calls : [];
-      const events = calls.map((call) => stamp({ type: "tool_call", name: String(call?.function?.name ?? "tool"), detail: toolDetail(call?.function?.arguments) }));
+      const events = calls.map((call) => {
+        const name = String(call?.function?.name ?? "tool");
+        const kind = KINDS.get(name) ?? "other";
+        const raw = call?.function?.arguments;
+        const text = typeof raw === "string" ? raw : JSON.stringify(raw ?? {});
+        const input = parse(text);
+        const command = input?.command;
+        const intent = kind === "shell" && typeof command === "string" ? shellIntent(command) : undefined;
+        const detail = redact(String(command ?? input?.path ?? input?.file_path ?? text)).slice(0, 200);
+        return stamp({ type: "tool_call", name, kind, ...(intent ? { intent } : {}), detail });
+      });
       if (typeof obj.content === "string" && obj.content) events.push(stamp({ type: "message", text: obj.content }));
       return events;
     }

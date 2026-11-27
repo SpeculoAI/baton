@@ -14,6 +14,22 @@ test("skills have correct frontmatter and English body", () => {
   assert.doesNotMatch(orchestrate, /\p{Script=Han}/u);
 });
 
+test("both skills document the handoff brief template, source tags, and exceptions", () => {
+  for (const name of ["baton-rescue", "baton-orchestrate"]) {
+    const text = read(name);
+    const brief = text.split(/^## /m).find((section) => section.startsWith("Handoff brief\n"));
+    assert.ok(brief, `${name}: missing Handoff brief`);
+    for (const section of ["Goal", "Done when", "Known facts", "Already ruled out", "Change points", "Constraints", "Tools hint"]) {
+      assert.match(brief, new RegExp(`^${section}:`, "m"), name);
+    }
+    for (const tag of ["[read <path>:<lines>]", "[ran <cmd>]", "[user]", "[mem <source>]", "[codegraph]", "[guess]"]) {
+      assert.ok(brief.includes(`\`${tag}\``), `${name}: missing ${tag}`);
+    }
+    assert.match(brief, /Use `reply` first for follow-ups, rework, and questions about the same work\./, name);
+    assert.match(brief, /For independent reviews and adversarial checks, give only the goal and scope\. Omit the host's conclusions\./, name);
+  }
+});
+
 test("skills are shell-command first and cover the 0.3.0 status and reply flow", () => {
   for (const text of [read("baton-rescue"), read("baton-orchestrate")]) {
     for (const needle of ["baton ", " start ", "wait", "--for 50", "reply", "--as human", "tail -f", "needs_input", "quota_exceeded", "orphaned", "busy"]) {

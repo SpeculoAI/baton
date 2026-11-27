@@ -65,6 +65,28 @@ test("MCP thin shell: tool list, dispatch, bounded wait, reply, list, cancel; al
   assert.equal(bad.status, "failed");
 });
 
+test("MCP task_reply advertises and accepts Focus paths and excerpts", async (t) => {
+  const s = sandbox(t);
+  fs.writeFileSync(path.join(s.cwd, "note.txt"), "first line\nsecond line\n");
+  const client = await connect(s.env);
+  t.after(() => client.close());
+  const { tools } = await client.listTools();
+  const replyFiles = tools.find(({ name }) => name === "task_reply")?.inputSchema.properties?.files;
+  const delegateFiles = tools.find(({ name }) => name === "delegate_task")?.inputSchema.properties?.files;
+  assert.ok(replyFiles);
+  assert.deepEqual(replyFiles, delegateFiles);
+
+  const { task_id } = await call(client, "delegate_task", { target_agent: "codex", cwd: s.cwd, prompt: "start" });
+  assert.equal((await s.until(task_id)).status, "success");
+  const reply = await call(client, "task_reply", { task_id, prompt: "next", files: ["focus.txt", "note.txt:2"] });
+  assert.equal(reply.status, "running");
+  assert.equal((await s.until(task_id)).status, "success");
+  const turn = s.turn(task_id, 2);
+  assert.deepEqual(turn.files, ["focus.txt"]);
+  assert.deepEqual(turn.excerpts, ["note.txt:2"]);
+  assert.match(turn.prompt, /^next\n\nCode excerpts [^\n]+\n\nnote\.txt:2-2\n```\nsecond line\n```$/);
+});
+
 test("MCP delegate_task accepts rules=check and surfaces meta.rules", async (t) => {
   const s = sandbox(t);
   const client = await connect(s.env);

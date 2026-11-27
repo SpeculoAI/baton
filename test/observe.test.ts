@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { sandbox, exec, cli, sleep } from "./helpers.ts";
+import type { TaskView } from "../src/tasks.ts";
 
 test("wait --for 1 returns running at the deadline; supports any-of-many completion and already-finished tasks", async (t) => {
   const s = sandbox(t);
@@ -114,6 +117,61 @@ test("terminal status/wait include git_changes of the current turn", async (t) =
   assert.deepEqual(done.git_changes, s.turn(started.task_id).git_changes);
   assert.equal(done.git_changes?.files_changed, 0);
   assert.deepEqual((await s.run<Record<string, any>>("status", started.task_id)).git_changes, done.git_changes);
+});
+
+test("Codex turn metrics persist, show in terminal views, and use cumulative deltas on reply", async (t) => {
+  const s = sandbox(t);
+  s.env.FAKE_FIXTURE = path.join(import.meta.dirname, "fixtures", "usage", "codex.jsonl");
+  const { task_id: id } = await s.run("start", "--target", "codex", "--prompt", "hi");
+  const done = await s.run<TaskView>("wait", id, "--for", "5");
+  assert.equal(done.status, "success");
+  const first = s.turn(id);
+  const toolCalls = s.events(id).filter((event) => event.type === "tool_call").length;
+  assert.ok(toolCalls > 0);
+  assert.equal(first.activity?.tool_calls, toolCalls);
+  assert.deepEqual(first.usage, {
+    input: 5506514, cached_input: 5339520, output: 35027, reasoning: 8812,
+    raw: {
+      input_tokens: 5506514, cached_input_tokens: 5339520, cache_write_input_tokens: 0,
+      output_tokens: 35027, reasoning_output_tokens: 8812,
+    },
+  });
+  assert.deepEqual(done.activity, first.activity);
+  assert.deepEqual(done.usage, first.usage);
+  const status = await s.run<TaskView>("status", id);
+  assert.deepEqual(status.activity, first.activity);
+  assert.deepEqual(status.usage, first.usage);
+  const { stdout } = await exec(process.execPath, [cli, "tail", id], { cwd: s.cwd, env: s.env });
+  assert.match(stdout, /^\[[^\n]+\] turn 1 usage in=5506514 cached=5339520 out=35027 reasoning=8812$/m);
+
+  s.env.FAKE_FIXTURE = path.join(import.meta.dirname, "fixtures", "usage", "codex-turn2.jsonl");
+  const resumed = await s.run("reply", id, "--prompt", "more");
+  assert.equal(resumed.turn, 2);
+  const continued = await s.run<TaskView>("wait", id, "--for", "5");
+  assert.equal(continued.status, "success");
+  const second = s.turn(id, 2);
+  assert.equal(second.activity?.tool_calls, 0);
+  assert.deepEqual(second.usage, {
+    input: 1000, cached_input: 700, output: 100, reasoning: 20,
+    raw: {
+      input_tokens: 5507514, cached_input_tokens: 5340220, cache_write_input_tokens: 0,
+      output_tokens: 35127, reasoning_output_tokens: 8832,
+    },
+  });
+  assert.deepEqual(continued.activity, second.activity);
+  assert.deepEqual(continued.usage, second.usage);
+
+  const client = new Client({ name: "test", version: "0" });
+  t.after(() => client.close());
+  await client.connect(new StdioClientTransport({
+    command: process.execPath, args: [cli, "mcp"], env: s.env as Record<string, string>,
+  }));
+  const response = await client.callTool({ name: "task_status", arguments: { task_id: id } });
+  const view = JSON.parse((response.content as { text: string }[])[0].text);
+  assert.equal(view.status, "success");
+  assert.equal(view.turn, 2);
+  assert.deepEqual(view.activity, second.activity);
+  assert.deepEqual(view.usage, second.usage);
 });
 
 test("result prints only the final message of a finished turn; summary stays one line", async (t) => {

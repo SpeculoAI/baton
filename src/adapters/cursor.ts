@@ -1,8 +1,19 @@
-import type { Adapter, BatonEvent, Effort, EventData } from "../types.ts";
+import type { Adapter, BatonEvent, Effort, EventData, ToolKind, TurnUsage } from "../types.ts";
 import { redact } from "../redact.ts";
-import { authHit, which } from "./common.ts";
+import { authHit, shellIntent, usageEvent, which } from "./common.ts";
 
 const AUTH = ["not authenticated", "please log in", "agent login"];
+const KINDS = new Map<string, ToolKind>([
+  ["read", "read"], ["grep", "search"], ["glob", "search"],
+  ["edit", "edit"], ["delete", "edit"], ["shell", "shell"],
+]);
+
+function normalizeUsage(raw: TurnUsage["raw"]): Omit<TurnUsage, "raw"> | undefined {
+  const { inputTokens, cacheReadTokens: cached_input, cacheWriteTokens, outputTokens: output, reasoningTokens: reasoning } = raw;
+  const input = inputTokens + cached_input + cacheWriteTokens;
+  if (![input, cached_input, output].every(Number.isFinite)) return undefined;
+  return { input, cached_input, output, ...(reasoning === undefined ? {} : { reasoning }) };
+}
 
 function event(data: EventData): BatonEvent[] {
   return [{ ts: new Date().toISOString(), turn: 0, ...data }];
@@ -28,6 +39,7 @@ export function resolveCursorModelArg(
 
 export const cursor: Adapter = {
   id: "cursor",
+  usage: normalizeUsage,
   readonlyEnforcement: "agent-enforced",
   // Verified 2026-11-21: AGENTS.md, CLAUDE.md, .cursor/rules/*.mdc, .cursorrules. --approve-mcps defaults false.
   rules: {
@@ -74,14 +86,19 @@ export const cursor: Adapter = {
       const call = obj.tool_call[key] ?? {};
       const name = key.replace(/ToolCall$/, "");
       const args = call.args ?? {};
+      const kind = KINDS.get(name) ?? "other";
+      const intent = obj.subtype === "started" && kind === "shell" && typeof args.command === "string"
+        ? shellIntent(args.command) : undefined;
       const detail = redact(String(args.command ?? args.path ?? JSON.stringify(args))).slice(0, 200);
-      if (obj.subtype === "started") return event({ type: "tool_call", name, detail });
+      if (obj.subtype === "started") return event({ type: "tool_call", name, kind, ...(intent ? { intent } : {}), detail });
       if (obj.subtype === "completed") return event({ type: "tool_result", name, ok: Boolean(call.result?.success), detail });
       return null;
     }
     if (obj.type === "result") {
-      // The final text was already emitted once as an assistant message; only report errors here.
-      return obj.is_error ? event({ type: "error", text: redact(String(obj.result ?? "cursor returned an error")) }) : [];
+      // The assistant event already carries the final text.
+      const errors = obj.is_error ? event({ type: "error", text: redact(String(obj.result ?? "cursor returned an error")) }) : [];
+      const usage = usageEvent(obj.usage, normalizeUsage);
+      return usage ? [...errors, ...event(usage)] : errors;
     }
     return null;
   },

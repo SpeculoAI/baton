@@ -1,8 +1,19 @@
-import type { Adapter, BatonEvent, EventData } from "../types.ts";
+import type { Adapter, BatonEvent, EventData, ToolKind, TurnUsage } from "../types.ts";
 import { redact } from "../redact.ts";
-import { authHit, which } from "./common.ts";
+import { authHit, shellIntent, usageEvent, which } from "./common.ts";
 
 const AUTH = ["not logged in", "please run /login", "invalid api key"];
+const KINDS = new Map<string, ToolKind>([
+  ["Read", "read"], ["Grep", "search"], ["Glob", "search"], ["LS", "search"],
+  ["Edit", "edit"], ["MultiEdit", "edit"], ["Write", "edit"], ["NotebookEdit", "edit"], ["Bash", "shell"],
+]);
+
+function normalizeUsage(raw: TurnUsage["raw"]): Omit<TurnUsage, "raw"> | undefined {
+  const { input_tokens, cache_read_input_tokens: cached_input, cache_creation_input_tokens, output_tokens: output } = raw;
+  const input = input_tokens + cached_input + cache_creation_input_tokens;
+  if (![input, cached_input, output].every(Number.isFinite)) return undefined;
+  return { input, cached_input, output };
+}
 
 function stamp(data: EventData): BatonEvent {
   return { ts: new Date().toISOString(), turn: 0, ...data };
@@ -20,6 +31,7 @@ function contentText(content: unknown): string {
 
 export const claude: Adapter = {
   id: "claude",
+  usage: normalizeUsage,
   readonlyEnforcement: "agent-enforced",
   // Verified 2026-11-21/22: CLAUDE.md hierarchy; AGENTS.md only when none of those three exist.
   // Baton uses -p, which loads project .mcp.json without an approval prompt (no mcp gate).
@@ -59,8 +71,11 @@ export const claude: Adapter = {
       for (const p of parts) {
         if (p?.type !== "tool_use") continue;
         const input = p.input ?? {};
+        const name = String(p.name ?? "tool");
+        const kind = KINDS.get(name) ?? "other";
+        const intent = kind === "shell" && typeof input.command === "string" ? shellIntent(input.command) : undefined;
         const detail = redact(String(input.command ?? input.file_path ?? input.path ?? JSON.stringify(input))).slice(0, 200);
-        events.push(stamp({ type: "tool_call", name: String(p.name ?? "tool"), detail }));
+        events.push(stamp({ type: "tool_call", name, kind, ...(intent ? { intent } : {}), detail }));
       }
       if (text) events.push(stamp({ type: "message", text }));
       return events;
@@ -71,8 +86,15 @@ export const claude: Adapter = {
         .map((p) => stamp({ type: "tool_result", name: "tool", ok: p.is_error !== true, detail: redact(contentText(p.content)).slice(0, 200) }));
     }
     if (obj.type === "result") {
-      // The final text was already emitted once as an assistant message; only report errors here.
-      return obj.is_error ? [stamp({ type: "error", text: redact(String(obj.result ?? obj.subtype ?? "claude returned an error")) })] : [];
+      // The final text was already emitted as an assistant message.
+      const events = obj.is_error ? [stamp({ type: "error", text: redact(String(obj.result ?? obj.subtype ?? "claude returned an error")) })] : [];
+      const usage = usageEvent(obj.usage, normalizeUsage);
+      if (usage) {
+        const reasoning = obj.usage.output_tokens_details?.thinking_tokens;
+        if (Number.isFinite(reasoning)) usage.reasoning = reasoning;
+        events.push(stamp(usage));
+      }
+      return events;
     }
     return null;
   },

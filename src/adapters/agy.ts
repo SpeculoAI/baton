@@ -1,8 +1,19 @@
-import type { Adapter, BatonEvent, EventData } from "../types.ts";
+import type { Adapter, BatonEvent, EventData, ToolKind, TurnUsage } from "../types.ts";
 import { redact } from "../redact.ts";
-import { authHit, which } from "./common.ts";
+import { authHit, shellIntent, usageEvent, which } from "./common.ts";
 
 const AUTH = ["not logged in", "please log in", "authentication required"];
+const KINDS = new Map<string, ToolKind>([
+  ["read_file", "read"], ["grep_search", "search"], ["find_by_name", "search"],
+  ["edit_file", "edit"], ["write_file", "edit"], ["run_command", "shell"],
+]);
+
+function normalizeUsage(raw: TurnUsage["raw"]): Omit<TurnUsage, "raw"> | undefined {
+  const { input_tokens, cache_read_tokens: cached_input, output_tokens: output, thinking_tokens: reasoning } = raw;
+  const input = input_tokens + cached_input;
+  if (![input, cached_input, output].every(Number.isFinite)) return undefined;
+  return { input, cached_input, output, ...(reasoning === undefined ? {} : { reasoning }) };
+}
 
 function event(data: EventData): BatonEvent[] {
   return [{ ts: new Date().toISOString(), turn: 0, ...data }];
@@ -14,6 +25,8 @@ function parse(line: string): any {
 
 export const agy: Adapter = {
   id: "agy",
+  usage: normalizeUsage,
+  usageCumulative: true,
   readonlyEnforcement: "agent-enforced",
   // Verified 2026-11-21: AGENTS.md / GEMINI.md / .agents/rules (and legacy .agent/rules). No load gates surveyed.
   rules: {
@@ -44,14 +57,21 @@ export const agy: Adapter = {
       // otherwise marker parsing would only see the last increment.
       if (step.step_type !== "tool") return [];
       const name = String(step.tool_name ?? step.tool_info?.name ?? "tool");
-      const detail = redact(JSON.stringify(step.tool_info?.parameters ?? {})).slice(0, 200);
-      if (step.state === "ACTIVE") return event({ type: "tool_call", name, detail });
+      const parameters = step.tool_info?.parameters ?? {};
+      const kind = KINDS.get(name) ?? "other";
+      const command = parameters.CommandLine;
+      const intent = step.state === "ACTIVE" && kind === "shell" && typeof command === "string" ? shellIntent(command) : undefined;
+      const detail = redact(JSON.stringify(parameters)).slice(0, 200);
+      if (step.state === "ACTIVE") return event({ type: "tool_call", name, kind, ...(intent ? { intent } : {}), detail });
       return event({ type: "tool_result", name, ok: step.state === "DONE", detail });
     }
     if (obj.event === "result") {
       const result = obj.result ?? {};
-      if (result.status !== "SUCCESS") return event({ type: "error", text: redact(String(result.response || result.status || "agy returned an error")) });
-      return typeof result.response === "string" && result.response ? event({ type: "message", text: result.response }) : [];
+      const events = result.status !== "SUCCESS"
+        ? event({ type: "error", text: redact(String(result.response || result.status || "agy returned an error")) })
+        : typeof result.response === "string" && result.response ? event({ type: "message", text: result.response }) : [];
+      const usage = usageEvent(result.usage, normalizeUsage);
+      return usage ? [...events, ...event(usage)] : events;
     }
     return null;
   },

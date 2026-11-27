@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import { parseArgs } from "node:util";
-import { agents, start, status, cancel, wait, reply, ls, prune, diff, apply, result as turnResult } from "./tasks.ts";
+import { agents, start, status, cancel, wait, reply, ls, taskCwdFilter, prune, diff, apply, result as turnResult } from "./tasks.ts";
 import { addWorktree, listWorktrees, removeWorktree } from "./worktree.ts";
 import { redact } from "./redact.ts";
 import { detectedHosts, runInstall, type Action } from "./install.ts";
@@ -79,7 +79,7 @@ async function main(): Promise<void> {
   } else if (command === "reply") {
     const { values, positionals } = parseArgs({ args, allowPositionals: true, options: COMMANDS.reply.options });
     if (positionals.length !== 1) throw new Error("reply requires one task_id.");
-    result = await reply(positionals[0], values.prompt ?? fs.readFileSync(0, "utf8"), (values.as ?? "host") as Author);
+    result = await reply(positionals[0], values.prompt ?? fs.readFileSync(0, "utf8"), (values.as ?? "host") as Author, values.file);
     if ((result as { status: string }).status !== "running") process.exitCode = 1;
   } else if (command === "wait") {
     const { values, positionals } = parseArgs({
@@ -109,6 +109,11 @@ async function main(): Promise<void> {
     const { values, positionals } = parseArgs({ args, allowPositionals: true, options: COMMANDS.ls.options });
     if (positionals.length) throw new Error("ls takes no positional arguments.");
     result = { tasks: ls(values.all) };
+  } else if (command === "stats") {
+    const { values, positionals } = parseArgs({ args, allowPositionals: true, options: COMMANDS.stats.options });
+    if (positionals.length) throw new Error("stats takes no positional arguments.");
+    const { stats } = await import("./metrics.ts");
+    result = stats(values, values.all ? undefined : taskCwdFilter());
   } else if (command === "prune") {
     const { values, positionals } = parseArgs({ args, allowPositionals: true, options: COMMANDS.prune.options });
     if (positionals.length || values.older === undefined) throw new Error("prune requires --older days.");

@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"00000000-0000-4000-8000-000000000001"}
+{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"/bin/zsh -lc 'git status --short && ls src; git diff -- docs/reference.md'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"[模型回复]"}}
+{"type":"turn.completed","usage":{"input_tokens":5506514,"cached_input_tokens":5339520,"cache_write_input_tokens":0,"output_tokens":35027,"reasoning_output_tokens":8812}}

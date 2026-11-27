@@ -15,10 +15,14 @@
 - [使用方法](#使用方法)
   - [宿主内的技能](#宿主内的技能)
   - [命令行](#命令行)
+    - [文件摘录](#文件摘录)
+    - [交接简报与来源标签](#交接简报与来源标签)
+    - [`baton stats`](#baton-stats)
   - [状态与存活判定](#状态与存活判定)
   - [停下提问与续轮 (needs_input / reply)](#停下提问与续轮-needs_input--reply)
   - [MCP 工具](#mcp-工具)
 - [任务目录 ~/.baton](#任务目录-baton)
+  - [轮次指标与事件](#轮次指标与事件)
 - [各平台底层调用规范](#各平台底层调用规范)
 - [安全机制](#安全机制)
   - [Windows 平台说明](#windows-平台说明)
@@ -302,7 +306,7 @@ baton agents
 
 ```bash
 baton agents
-baton start --target <codex|claude|cursor|agy|kimi> [--prompt <text> | stdin] [--file <p>...] [--effort low|medium|high|ultra]
+baton start --target <codex|claude|cursor|agy|kimi> [--prompt <text> | stdin] [--file <path>[:N[-M]]]... [--effort low|medium|high|ultra]
             [--model <id>] [--idle-timeout <秒>] [--max-duration <秒>] [--cwd <dir>]
             [--scope <glob> ...] [--scope-on-violation warn|fail]
             [--mode readonly|write] [--allow-weak] [--isolate] [--allow-dirty]
@@ -313,7 +317,8 @@ baton result <id> [--turn <n>]        # 纯文本：已结束轮次（默认最�
 baton diff <id> [--stat]              # 纯文本：--isolate 任务的净改动（patch 或 diffstat）
 baton apply <id> [--remove]           # 把 --isolate 任务的改动做成源仓库当前分支上的一个本地 commit；不 push
 baton tail <id> [-f] [--raw]          # 人读格式的事件；-f 跟到任务停下；--raw 输出 events.jsonl 原行
-baton reply <id> [--prompt <text> | stdin] [--as host|human]   # scope_violation / readonly_violation 后也可续轮
+baton stats [--target <agent>] [--since <date|Nd>] [--all]  # 按执行者汇总首轮指标和任务结果
+baton reply <id> [--prompt <text> | stdin] [--as host|human] [--file <path>[:N[-M]]]...   # scope_violation / readonly_violation 后也可续轮
 baton cancel <id>
 baton ls [--all]                      # 默认只列当前目录的任务，按更新时间倒序
 baton prune --older <天数>            # 删除早于 N 天的非 running 任务目录（不级联删 worktree）
@@ -338,6 +343,80 @@ baton mcp                             # 启动 MCP 服务（stdio）
 - **`--scope`（可选）：** 可重复，glob 相对任务 `cwd`，按 [picomatch](https://github.com/micromatch/picomatch) 且 `dot: true` 匹配，`dir/**` 也覆盖 `dir/.env.example` 这类点文件；不带通配符的目录路径匹配其下全部文件。每轮结束后对照**任务起点净变更**（自 baseline HEAD 起的提交 ∪ 工作区 digest 差分）。`--scope-on-violation warn`（默认）保留原终态并写 `scope_violations` + `warning`；`fail` 会把干净的 `success` 升为 `scope_violation`。这是**防失误**，不是沙箱：忽略文件、仓外写入、共享 cwd 并发改动是已知盲区——建议与 `--isolate` 叠用。带 `--scope` 时 cwd 必须是 git 仓库。**兼容性：** 新增终态 `scope_violation` 及可选 `scope_*` 字段。
 - **`--rules check|pointer|off`（默认 `check`）：** 从任务 `cwd` 向上扫到 git 根，发现项目规则文件，写入 `meta.rules`（`found`、`unseen`、`pointer_injected`）。`check` 不改执行者 prompt；`pointer` 在首轮 prompt 前插入英文“请先读这些文件”提示（仅针对目标原生不会加载的条目；`reply` 不再注入）；`off` 完全关闭。仓库有 `.rulesync/` 时还会写 `rules.rulesync`：读取 `rulesync.jsonc`（及 `rulesync.local.jsonc`），报告目标是否在配置内以及 `mcp`/`hooks` 加载关卡，再由 supervisor 运行整个项目的 `rulesync generate --check`（不传 `--targets`/`--features`），结果为 `in_sync` / `stale` / `error` / `skipped`。任何失败都不阻断任务。Baton 不会用 `npx` 安装 rulesync，也不会在用户主工作目录里写入 rulesync 生成物。
 - **`--check "<cmd>"`（可选）：** 验收命令，由 Baton 在每一轮以 `success` 结束后亲自运行（排在 readonly / scope 检查之后），host 不必再跑一遍。通过平台默认 shell（POSIX 上为 `/bin/sh`，Windows 上为 `cmd.exe`）在任务 `cwd` 运行（`--isolate` 时为 worktree），环境与执行者相同；多条命令用 `&&` 连接。`reply` 沿用。结果写在 turn 和 meta（最近一轮）的 `check`：`command`、`status`（`passed` / `failed` / `timed_out`）、`exit_code`、`duration_ms`、`output_tail`（最后 4000 字符，已脱敏）；完整输出在 `raw/<n>.check.log`。`passed` 保持 `success`；`failed` 或 `timed_out` 时本轮终态为 `check_failed`，摘要为 `check_failed: exit <code>`（超时为 `check_failed: timed out`），后接输出尾部；可以 `reply`，下一轮结束后再跑一次。连续 `--idle-timeout` 秒无输出即停止 check；`--max-duration` 只管执行者。check 期间 `cancel` 得到 `cancelled`。本轮不是 `success` 时不运行。check 结束前任务保持 `running`。`--isolate` 的 worktree 默认没有依赖，需要用 `.baton.json` 的 `post_create` 安装。**客户端注意：** 新增终态 `check_failed` 和可选 meta 字段 `check`。
+
+#### 文件摘录
+
+`start` 和 `reply` 都可重复使用 `--file <path>[:N[-M]]`，为该轮附上文件。如果整个参数指向一个已存在的文件，Baton 将其视为普通路径。否则，Baton 将行尾的 `:N` 或 `:N-M` 解析为包含首尾的行号范围。`:N` 等同于 `:N-N`。这一顺序兼容 Windows 盘符（`C:\repo\src\a.ts:10-20`），也支持文件系统允许的带冒号文件名。
+
+- **普通路径**沿用原行为，只进入本轮的 `Focus on these files` 列表。
+- **带行号的路径**将摘录接在宿主 prompt 后。原始参数记录在 `turn.excerpts`。
+
+执行者收到的 prompt 按以下顺序排列，未启用的部分省略。Focus → scope 前缀 → rules pointer → 宿主 prompt → Code excerpts → input contract（匹配来源标签时）→ output contract。
+
+Baton 在 `start` 或 `reply` 时同步读取摘录，并将渲染后的内容写入 `turns/<n>.json` 的 `prompt`。相对路径以任务的 `cwd` 为基准。使用 `--isolate` 时，`start` 从基于 `HEAD` 新建的 worktree 读取，默认不包含源工作区未提交的改动。`reply` 读取同一 worktree 当时的内容。
+
+- 解析后的路径必须位于任务 `cwd` 内。`..` 和符号链接都不能逃出该目录。
+- 路径必须指向普通文件。前 8 KB 出现 NUL 字节时视为二进制文件。
+- 行号须满足 `1 ≤ start ≤ end ≤ 文件行数`。单段最多 400 行，本轮所有摘录合计最多 64 KB（65,536 个 UTF-8 字节）。
+
+任一项校验失败都会在启动执行者前同步报错。`start` 不创建任务记录，并删除本次因 `--isolate` 新建的 worktree 和分支。`reply` 保持任务状态不变，也不创建新一轮记录。
+
+Baton 在读取摘录前检查用户给的原路径和解析后的实际路径（`realpath`）。匹配不区分大小写，目录段按相对于任务 `cwd` 的路径检查。Baton 不扫描内容中的敏感值。
+
+- `.env` 和 `.env.*`，但放行 `.env.example`、`.env.sample`、`.env.template`、`.env.dist`。
+- `*.pem`、`*.key`、`*.p12`、`*.pfx`、`*.jks`、`*.keystore`。
+- `id_rsa*`、`id_dsa*`、`id_ecdsa*`、`id_ed25519*`。
+- `.npmrc`、`.netrc`、`.pypirc`、`.pgpass`、`.git-credentials`、`credentials`、`credentials*.json`。
+- 路径中包含 `.ssh/`、`.aws/` 或 `.gnupg/` 目录段的文件。
+
+遇到名单内的文件，请在 prompt 里写明位置，由子任务自行读取。MCP 的 `delegate_task.files` 和 `task_reply.files` 使用相同语法。
+
+#### 交接简报与来源标签
+
+用下表中的固定英文标签标记交接简报里事实的来源。简报的其余部分使用宿主惯用的语言。
+
+| 标签 | 含义 | 子任务怎么处理 |
+| --- | --- | --- |
+| `[read <path>:<lines>]` | 宿主交接时刚读过的源码 | 直接使用。 |
+| `[ran <cmd>]` | 宿主运行过的命令及其结果 | 直接使用。 |
+| `[user]` | 用户在对话里明确说过的话 | 直接使用。与实际看到的情况冲突时，停下来询问。 |
+| `[mem <source>]` | 来自 Hindsight 等记忆来源的过去记录 | 核对后再依赖。 |
+| `[codegraph]` | 来自代码索引的结构性结论，例如调用路径或受影响的代码 | 核对后再依赖。 |
+| `[guess]` | 宿主的推测 | 核对后再依赖。 |
+
+本轮 prompt 出现与 `/\[(read|ran|user|mem|codegraph|guess)\b[^\]\n]*\]/` 匹配的标签时，Baton 在输出合约前插入输入合约。`reply` 轮同样适用。代码摘录接在 prompt 后，因此其中的标签也计入。单独的 Focus 列表不参与匹配。没有匹配标签的 prompt 不受影响。
+
+```text
+Facts in this prompt carry source tags.
+- [read …], [ran …], [user] and the code excerpts are current: use them directly and do not search the repository again to re-confirm them.
+- [mem …], [codegraph] and [guess] may be stale or wrong: verify them before relying on them.
+- If what you see contradicts a fact, stop and ask with BATON_DECISION.
+```
+
+模板包含 `Goal`、`Done when`、`Known facts`、`Already ruled out`、`Change points`、`Constraints` 和可选的 `Tools hint`。见 [baton-rescue skill 的 Handoff brief 章节](../skills/baton-rescue/SKILL.md#handoff-brief)。
+
+#### `baton stats`
+
+`stats` 只读任务记录，不更新记录，也不补写孤儿任务的终态。默认和 `ls` 使用相同的目录过滤规则，包括从当前目录启动的 `--isolate` 任务。`--all` 纳入所有目录，`--target <agent>` 只统计指定执行者。状态为 `running` 的任务不计入。
+
+`--since` 纳入 `created_at` 在截止时间或之后的任务。可用 ISO 日期（如 `2026-11-01`，按 UTC 零点）、带时区的 ISO 时间戳，或相对天数（如 `7d`，从命令执行时刻往前推七个 24 小时）。
+
+JSON 输出是稳定接口，后续版本只增加字段，已有字段的名称和含义保持不变。顶层字段包括 `schema_version`（目前为 `1`）、`generated_at`（ISO 格式的 UTC 时间戳）、`note`（固定英文说明，提醒各 CLI 的用量口径不同，只适合比较同一 CLI 改动前后的变化），以及 `targets`（以执行者为键，只列出过滤后有任务的执行者）。
+
+| `targets.<target>` 下的字段 | 含义 |
+|---|---|
+| `tasks` | 符合过滤条件的任务数。 |
+| `measured` | 其中可取得首轮 `activity` 的任务数。 |
+| `first_turn.before_first_edit` | 首轮非 null 值的 `{ median, p75, n }`。该轮没有编辑就不计入样本。 |
+| `first_turn.explore_share` | 在可测量的首轮中，`explore` 总和除以 `tool_calls` 总和。 |
+| `first_turn.input` / `first_turn.output` | 在有 `usage` 的首轮中，分别统计相应 token 数的 `{ median, n }`。 |
+| `first_turn.cached_share` | 在有 `usage` 的首轮中，`cached_input` 总和除以 `input` 总和。 |
+| `rework_rate` | `turn >= 2` 的任务数除以 `tasks`。 |
+| `check_failed_rate` | 带 `check_command` 的任务中，至少一轮的 `check.status` 为 `failed` 或 `timed_out` 的比例。每个任务只计一次。 |
+
+`n` 是参与统计的样本数。中位数和 p75 在排序后的样本上按位置 `q * (n - 1)` 做线性插值，`q` 分别为 `0.5` 和 `0.75`。无样本时分位数为 `null`，分母为零时比例为 `null`。
+
+首轮指标取自 `turns/1.json`。缺少 `activity` 时，Baton 用对应执行者的解析器回放 `raw/1.stdout.log`，重算[轮次指标](#轮次指标与事件)。如果原始日志已清理或缺失，但任务元数据仍在，该任务计入 `tasks`，不计入 `measured`。
 
 ### 各执行者原生规则文件与加载关卡（2026-11-21/22 核实）
 
@@ -365,6 +444,8 @@ baton mcp                             # 启动 MCP 服务（stdio）
 | `not_authenticated` / `quota_exceeded` | 对方 CLI 没登录 / 额度用尽 |
 | `not_installed` | `start` 时就返回，目标不在 `PATH` 里 |
 | `dirty_worktree` | `start` 返回；脏工作区上拒绝原地 write——见 `dirty_paths`；改用 `--isolate` 或 `--allow-dirty` |
+
+`baton status`、`baton wait` 和 MCP 的 `task_status` / `task_wait` 返回终止视图时，会附上当前轮已有的 [`activity` 和 `usage`](#轮次指标与事件)。
 
 `running` 时的 `liveness`：
 
@@ -401,9 +482,11 @@ MCP 是同一套逻辑的薄壳，进程里不存任何任务状态，重启 MCP
 | `task_result` | `result`（参数 `task_id`、`turn`；返回含 `final_message` 的 JSON） |
 | `task_diff` | `diff`（参数 `task_id`、`stat`；返回 `{ task_id, diff }`） |
 | `task_apply` | `apply`（参数 `task_id`、`remove`） |
-| `task_reply` | `reply`（参数 `task_id`、`prompt`、`as`） |
+| `task_reply` | `reply`（参数 `task_id`、`prompt`、`as`、`files`） |
 | `task_cancel` | `cancel` |
 | `task_list` | `ls`（参数 `all`、`cwd`） |
+
+`files` 参数见[文件摘录](#文件摘录)。
 
 ---
 
@@ -415,13 +498,30 @@ MCP 是同一套逻辑的薄壳，进程里不存任何任务状态，重启 MCP
 ~/.baton/tasks/<task_id>/
   meta.json          当前状态（原子写）
   events.jsonl       统一事件流
-  turns/<n>.json     第 n 轮：作者、输入、结束状态、摘要、git_changes
+  turns/<n>.json     第 n 轮：作者、输入、excerpts、结束状态、摘要、git_changes、activity、usage
   raw/<n>.stdout.log 第 n 轮子进程原始输出，不截断
   raw/<n>.stderr.log
   raw/<n>.check.log  第 n 轮 --check 命令的输出
 ```
 
 任务目录不会自动清理，用 `baton prune --older <天数>` 手动清。
+
+### 轮次指标与事件
+
+- `activity` 汇总本轮工具调用。`tool_calls` 是总次数，`by_kind` 分别统计 `read`、`search`、`edit`、`shell` 和 `other`。`explore` 统计读取、搜索和标为 `explore` 的 shell 调用。`verify` 统计标为 `verify` 的 shell 调用。`before_first_edit` 是首次 `edit` 前的调用次数，本轮没有编辑时为 `null`。
+- `usage` 记录 token 数。`input` 是含缓存的总输入，`cached_input` 是其中从缓存读取的部分，`output` 是输出。`reasoning` 为可选字段。`raw` 保留来源用量对象的顶层数值字段。
+
+| 执行者 | 来源 | `input` | `cached_input` | `output` | `reasoning` |
+|---|---|---|---|---|---|
+| `codex` | `turn.completed.usage` | `input_tokens` | `cached_input_tokens` | `output_tokens` | `reasoning_output_tokens` |
+| `cursor` | `result.usage` | `inputTokens + cacheReadTokens + cacheWriteTokens` | `cacheReadTokens` | `outputTokens` | `reasoningTokens` |
+| `agy` | `result.usage` | `input_tokens + cache_read_tokens` | `cache_read_tokens` | `output_tokens` | `thinking_tokens` |
+| `claude` | `result.usage` | `input_tokens + cache_read_input_tokens + cache_creation_input_tokens` | `cache_read_input_tokens` | `output_tokens` | `output_tokens_details.thinking_tokens` |
+| `kimi` | 不报告用量 | — | — | — | — |
+
+一轮有多个用量快照时，取最后一个。Cursor 和 Claude 报告本轮值。Codex 和 Agy 报告会话累计值，续轮减去上一轮快照按同一口径换算后的值，`raw` 仍保留本轮累计快照。缺少上一轮快照或必填字段没有有效差值时，省略 `usage`。`reasoning` 没有有效差值时省略。孤儿收尾不补写指标。
+
+`events.jsonl` 的 `tool_call` 事件带 `kind`。shell 调用还可能带根据命令推断的 `intent`（`explore` 或 `verify`）。`usage` 事件记录从 CLI 换算出的快照，续轮差分在汇总时计算。`baton tail` 的人读格式显示为 `usage in=… cached=… out=…[ reasoning=…]`，方括号中的部分仅在有 `reasoning` 时显示。
 
 ---
 

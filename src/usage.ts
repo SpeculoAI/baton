@@ -11,6 +11,7 @@ const INSTALL_OPTIONS = {
 } as const satisfies Record<string, Opt>;
 const UPDATE_OPTIONS = { only: INSTALL_OPTIONS.only, "dry-run": INSTALL_OPTIONS["dry-run"], "skip-global": INSTALL_OPTIONS["skip-global"] };
 const UNINSTALL_OPTIONS = { only: INSTALL_OPTIONS.only, "dry-run": INSTALL_OPTIONS["dry-run"] };
+const FILE_OPTION = { type: "string", multiple: true, arg: "path", desc: "File to focus on (repeatable). Use path:N or path:N-M to inline excerpts. Sensitive files are rejected for excerpts." } as const satisfies Opt;
 
 export const COMMANDS = {
   version: { usage: "baton version", summary: "Print the installed baton version." },
@@ -22,7 +23,7 @@ export const COMMANDS = {
       target: { type: "string", arg: "agent", desc: "Agent CLI to run: codex, claude, cursor, agy or kimi (required)" },
       prompt: { type: "string", arg: "text", desc: "Task prompt; read from stdin when omitted" },
       cwd: { type: "string", arg: "dir", desc: "Working directory for the job (default: current directory)" },
-      file: { type: "string", multiple: true, arg: "path", desc: "File the agent should focus on (repeatable)" },
+      file: FILE_OPTION,
       effort: { type: "string", arg: "low|medium|high|ultra", desc: "Reasoning effort, mapped to the CLI's native flag (not cursor)" },
       model: { type: "string", arg: "id", desc: "Model id for cursor, codex, claude or kimi; kept across reply" },
       "idle-timeout": { type: "string", arg: "s", desc: "Stop after this many seconds with no output (default 600)" },
@@ -75,17 +76,27 @@ export const COMMANDS = {
     },
   },
   reply: {
-    usage: "baton reply <task_id> [--prompt <text> | stdin] [--as host|human]",
+    usage: "baton reply <task_id> [--prompt <text> | stdin] [--as host|human] [--file <path>[:N[-M]]]...",
     summary: "Start the next turn of a stopped job in the same session.",
     options: {
       prompt: { type: "string", arg: "text", desc: "Reply text; read from stdin when omitted" },
       as: { type: "string", arg: "host|human", desc: "Who is speaking (default host)" },
+      file: FILE_OPTION,
     },
   },
   ls: {
     usage: "baton ls [--all]",
     summary: "List jobs for the current directory, newest first.",
     options: { all: { type: "boolean", desc: "List jobs from every directory" } },
+  },
+  stats: {
+    usage: "baton stats [--target <agent>] [--since <date|Nd>] [--all]",
+    summary: "Show first-turn activity, token usage and rework by agent for stopped jobs.",
+    options: {
+      target: { type: "string", arg: "agent", desc: "Include jobs for this agent only" },
+      since: { type: "string", arg: "date|Nd", desc: "Include jobs created on or after this ISO date or relative cutoff (for example, 7d)" },
+      all: { type: "boolean", desc: "Include jobs from every directory (default: current directory)" },
+    },
   },
   prune: {
     usage: "baton prune --older <days>",
