@@ -233,6 +233,7 @@ test("start --isolate: worktree created; status reports worktree; main untouched
   const started = await s.run("start", "--target", "codex", "--prompt", "hi", "--isolate");
   assert.equal(started.status, "running");
   assert.ok(started.worktree);
+  assert.equal("warning" in started, false);
   assert.match(started.worktree!.path, /\.worktrees[\\/]task-[0-9a-f]{8}$/);
   assert.match(started.worktree!.branch, /^baton\/task-[0-9a-f]{8}$/);
   assert.equal(fs.realpathSync(started.worktree!.source_cwd), fs.realpathSync(s.cwd));
@@ -240,6 +241,31 @@ test("start --isolate: worktree created; status reports worktree; main untouched
   assert.equal(fs.readFileSync(path.join(s.cwd, "keep.txt"), "utf8"), "dirty-main\n");
   assert.equal(fs.readFileSync(path.join(started.cwd, "keep.txt"), "utf8"), "keep\n");
   await s.until(started.task_id);
+});
+
+test("start --isolate warns when a pnpm workspace has no post_create hook", async (t) => {
+  const s = sandbox(t);
+  gitInit(s.cwd);
+  fs.writeFileSync(path.join(s.cwd, "pnpm-workspace.yaml"), "packages: []\n");
+
+  const args = ["start", "--target", "codex", "--prompt", "hi", "--isolate"];
+  const unconfigured = await s.run(...args);
+  assert.equal(unconfigured.status, "running");
+  assert.match(unconfigured.warning ?? "", /node_modules\/\.bin/);
+  assert.match(unconfigured.warning ?? "", /\.baton\.json.*post_create.*pnpm install --offline --frozen-lockfile/);
+  await s.until(unconfigured.task_id);
+
+  const config = path.join(s.cwd, ".baton.json");
+  fs.writeFileSync(config, JSON.stringify({ worktree: { post_create: [] } }));
+  const empty = await s.run(...args);
+  assert.equal(empty.warning, unconfigured.warning);
+  await s.until(empty.task_id);
+
+  fs.writeFileSync(config, JSON.stringify({ worktree: { post_create: ["echo installed"] } }));
+  const configured = await s.run(...args);
+  assert.equal(configured.status, "running");
+  assert.equal("warning" in configured, false);
+  await s.until(configured.task_id);
 });
 
 test("start --isolate from subdirectory preserves relative cwd", async (t) => {

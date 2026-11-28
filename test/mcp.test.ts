@@ -106,6 +106,7 @@ test("MCP delegate_task: dirty_worktree / allow_dirty / isolate", async (t) => {
   const s = sandbox(t);
   gitInit(s.cwd);
   fs.writeFileSync(path.join(s.cwd, "keep.txt"), "dirty\n");
+  fs.writeFileSync(path.join(s.cwd, "pnpm-workspace.yaml"), "packages: []\n");
   const client = await connect(s.env);
   t.after(() => client.close());
 
@@ -118,12 +119,14 @@ test("MCP delegate_task: dirty_worktree / allow_dirty / isolate", async (t) => {
   });
   assert.equal(allowed.status, "running");
   assert.equal(allowed.allow_dirty, true);
+  assert.equal("warning" in allowed, false);
   await call(client, "task_wait", { task_ids: [allowed.task_id], wait_seconds: 10 });
 
   const isolated = await call(client, "delegate_task", {
     target_agent: "codex", prompt: "hi", cwd: s.cwd, isolate: true,
   });
   assert.equal(isolated.status, "running");
+  assert.match(isolated.warning, /node_modules\/\.bin/);
   assert.ok(isolated.worktree?.path);
   assert.match(isolated.worktree.branch, /^baton\/task-/);
   await call(client, "task_wait", { task_ids: [isolated.task_id], wait_seconds: 10 });

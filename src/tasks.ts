@@ -176,6 +176,7 @@ export async function start(input: StartInput): Promise<StartResult> {
   const source_cwd = cwd;
   let taskCwd = cwd;
   let worktree: TaskMeta["worktree"];
+  let warning: TaskMeta["warning"];
   if (input.isolate) {
     if (!gitRepoRoot(cwd)) throw new Error("--isolate requires a git repository.");
     try {
@@ -186,7 +187,8 @@ export async function start(input: StartInput): Promise<StartResult> {
     const repo = resolveRepoRoot(cwd);
     const short = task_id.replace(/-/g, "").slice(0, 8);
     const name = `task-${short}`;
-    const added = addWorktree(cwd, { name, branch: `baton/${name}`, base: "HEAD" });
+    const added = addWorktree(cwd, { name, branch: `baton/${name}`, base: "HEAD", warnMissingPostCreate: true });
+    warning = added.warning;
     const realCwd = fs.realpathSync.native(cwd);
     const realRepo = fs.realpathSync.native(repo);
     const rel = path.relative(realRepo, realCwd);
@@ -264,6 +266,7 @@ export async function start(input: StartInput): Promise<StartResult> {
     ...(input.allowDirty ? { allow_dirty: true } : {}),
     ...(input.check?.trim() ? { check_command: input.check.trim() } : {}),
     ...(worktree ? { worktree } : {}),
+    ...(warning ? { warning } : {}),
   };
   writeMeta(meta);
   writeTurn(meta.task_id, {

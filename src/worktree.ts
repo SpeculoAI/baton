@@ -38,6 +38,7 @@ export type WorktreeAddResult = {
   name: string;
   gitignore_updated: boolean;
   rules?: WorktreeRulesResult;
+  warning?: string;
 };
 
 export type WorktreeListItem = {
@@ -291,11 +292,15 @@ function readMeta(worktreePath: string): WorktreeMeta | null {
 
 export function addWorktree(
   cwd: string,
-  options: { name?: string; branch?: string; base?: string } = {},
+  options: { name?: string; branch?: string; base?: string; warnMissingPostCreate?: boolean } = {},
 ): WorktreeAddResult {
   assertNotNestedWorktree(cwd);
   const repo = resolveRepoRoot(cwd);
   const cfg = loadWorktreeConfig(repo);
+  const warning = options.warnMissingPostCreate && !cfg.post_create.length && fs.existsSync(path.join(repo, "pnpm-workspace.yaml"))
+    ? "Running pnpm in this worktree can rewrite the main repository's node_modules/.bin shims to point into the worktree. Configure .baton.json to install dependencies separately: " +
+      '{"worktree":{"post_create":["pnpm install --offline --frozen-lockfile"]}}'
+    : undefined;
   const root = resolveWorktreeRoot(repo, cfg);
   const gitignore_updated = ensureIgnored(repo, root);
   fs.mkdirSync(root, { recursive: true });
@@ -321,7 +326,7 @@ export function addWorktree(
     throw error;
   }
   const rules = applyWorktreeRulesync(repo, worktreePath, cfg);
-  return { status: "ok", path: worktreePath, branch, base, name, gitignore_updated, rules };
+  return { status: "ok", path: worktreePath, branch, base, name, gitignore_updated, rules, ...(warning ? { warning } : {}) };
 }
 
 function rootRuleEntries(dir: string): string[] {
