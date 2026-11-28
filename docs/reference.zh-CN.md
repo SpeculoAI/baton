@@ -318,7 +318,8 @@ baton diff <id> [--stat]              # 纯文本：--isolate 任务的净改动
 baton apply <id> [--remove]           # 把 --isolate 任务的改动做成源仓库当前分支上的一个本地 commit；不 push
 baton tail <id> [-f] [--raw]          # 人读格式的事件；-f 跟到任务停下；--raw 输出 events.jsonl 原行
 baton stats [--target <agent>] [--since <date|Nd>] [--all]  # 按执行者汇总首轮指标和任务结果
-baton reply <id> [--prompt <text> | stdin] [--as host|human] [--file <path>[:N[-M]]]...   # scope_violation / readonly_violation 后也可续轮
+baton reply <id> [--prompt <text> | stdin] [--as host|human] [--file <path>[:N[-M]]]...
+            [--scope <glob>]... [--scope-on-violation warn|fail] [--check "<cmd>"]
 baton cancel <id>
 baton ls [--all]                      # 默认只列当前目录的任务，按更新时间倒序
 baton prune --older <天数>            # 删除早于 N 天的非 running 任务目录（不级联删 worktree）
@@ -340,9 +341,9 @@ baton mcp                             # 启动 MCP 服务（stdio）
   - `apply` 把净改动做成**一个 commit**（标题 `baton(<target>): <summary 第一行>`，trailer `Baton-Task: <id>` / `Baton-Target: <target>`，使用你的 git 身份），再 `git cherry-pick` 到源仓库的**当前分支**。这是三方合并：分支往前走了也能收回，只有同一处被改才冲突。只在本地 commit，不 push，不开 PR。撤回用 `git revert <commit>`（未 push 时也可 `git reset --soft HEAD~1`）。返回 `{ task_id, status: "applied", repo, commit, files, removed }`；净改动为空时返回 `status: "nothing_to_apply"`。
   - 以下情况 `apply` 拒绝且不改动任何东西：任务仍在运行；源仓库处于 merge / rebase / cherry-pick / revert 中；暂存区有内容；源仓库里有未提交或未跟踪的文件与任务改动的路径重叠（报错中列出）；cherry-pick 冲突（已 abort，列出冲突文件）。不重叠的未提交或未跟踪文件不受影响，也不会进入 commit。
   - `--remove` 只在 apply 成功或 `nothing_to_apply` 之后删除 worktree 和分支；被拒绝时不删除。删除失败不影响已完成的 apply，返回 `removed: false` 和 `warning`。
-- **`--scope`（可选）：** 可重复，glob 相对任务 `cwd`，按 [picomatch](https://github.com/micromatch/picomatch) 且 `dot: true` 匹配，`dir/**` 也覆盖 `dir/.env.example` 这类点文件；不带通配符的目录路径匹配其下全部文件。每轮结束后对照**任务起点净变更**（自 baseline HEAD 起的提交 ∪ 工作区 digest 差分）。`--scope-on-violation warn`（默认）保留原终态并写 `scope_violations` + `warning`；`fail` 会把干净的 `success` 升为 `scope_violation`。这是**防失误**，不是沙箱：忽略文件、仓外写入、共享 cwd 并发改动是已知盲区——建议与 `--isolate` 叠用。带 `--scope` 时 cwd 必须是 git 仓库。**兼容性：** 新增终态 `scope_violation` 及可选 `scope_*` 字段。
+- **`--scope`（可选）：** 可重复，glob 相对任务 `cwd`，按 [picomatch](https://github.com/micromatch/picomatch) 且 `dot: true` 匹配，`dir/**` 也覆盖 `dir/.env.example` 这类点文件；不带通配符的目录路径匹配其下全部文件。每轮结束后对照**自范围基线以来的净变更**（自 baseline HEAD 起的提交 ∪ 工作区 digest 差分）。`--scope-on-violation warn`（默认）保留原终态并写 `scope_violations` + `warning`；`fail` 会把干净的 `success` 升为 `scope_violation`。这是**防失误**，不是沙箱：忽略文件、仓外写入、共享 cwd 并发改动是已知盲区——建议与 `--isolate` 叠用。带 `--scope` 时 cwd 必须是 git 仓库。**兼容性：** 新增终态 `scope_violation` 及可选 `scope_*` 字段。
 - **`--rules check|pointer|off`（默认 `check`）：** 从任务 `cwd` 向上扫到 git 根，发现项目规则文件，写入 `meta.rules`（`found`、`unseen`、`pointer_injected`）。`check` 不改执行者 prompt；`pointer` 在首轮 prompt 前插入英文“请先读这些文件”提示（仅针对目标原生不会加载的条目；`reply` 不再注入）；`off` 完全关闭。仓库有 `.rulesync/` 时还会写 `rules.rulesync`：读取 `rulesync.jsonc`（及 `rulesync.local.jsonc`），报告目标是否在配置内以及 `mcp`/`hooks` 加载关卡，再由 supervisor 运行整个项目的 `rulesync generate --check`（不传 `--targets`/`--features`），结果为 `in_sync` / `stale` / `error` / `skipped`。任何失败都不阻断任务。Baton 不会用 `npx` 安装 rulesync，也不会在用户主工作目录里写入 rulesync 生成物。
-- **`--check "<cmd>"`（可选）：** 验收命令，由 Baton 在每一轮以 `success` 结束后亲自运行（排在 readonly / scope 检查之后），host 不必再跑一遍。通过平台默认 shell（POSIX 上为 `/bin/sh`，Windows 上为 `cmd.exe`）在任务 `cwd` 运行（`--isolate` 时为 worktree），环境与执行者相同；多条命令用 `&&` 连接。`reply` 沿用。结果写在 turn 和 meta（最近一轮）的 `check`：`command`、`status`（`passed` / `failed` / `timed_out`）、`exit_code`、`duration_ms`、`output_tail`（最后 4000 字符，已脱敏）；完整输出在 `raw/<n>.check.log`。`passed` 保持 `success`；`failed` 或 `timed_out` 时本轮终态为 `check_failed`，摘要为 `check_failed: exit <code>`（超时为 `check_failed: timed out`），后接输出尾部；可以 `reply`，下一轮结束后再跑一次。连续 `--idle-timeout` 秒无输出即停止 check；`--max-duration` 只管执行者。check 期间 `cancel` 得到 `cancelled`。本轮不是 `success` 时不运行。check 结束前任务保持 `running`。`--isolate` 的 worktree 默认没有依赖，需要用 `.baton.json` 的 `post_create` 安装。**客户端注意：** 新增终态 `check_failed` 和可选 meta 字段 `check`。
+- **`--check "<cmd>"`（可选）：** 验收命令，由 Baton 在每一轮以 `success` 结束后亲自运行（排在 readonly / scope 检查之后），host 不必再跑一遍。通过平台默认 shell（POSIX 上为 `/bin/sh`，Windows 上为 `cmd.exe`）在任务 `cwd` 运行（`--isolate` 时为 worktree），环境与执行者相同；多条命令用 `&&` 连接。`reply` 默认沿用。结果写在 turn 和 meta（最近一轮）的 `check`：`command`、`status`（`passed` / `failed` / `timed_out`）、`exit_code`、`duration_ms`、`output_tail`（最后 4000 字符，已脱敏）；完整输出在 `raw/<n>.check.log`。`passed` 保持 `success`；`failed` 或 `timed_out` 时本轮终态为 `check_failed`，摘要为 `check_failed: exit <code>`（超时为 `check_failed: timed out`），后接输出尾部；可以 `reply`，下一轮结束后再跑一次。连续 `--idle-timeout` 秒无输出即停止 check；`--max-duration` 只管执行者。check 期间 `cancel` 得到 `cancelled`。本轮不是 `success` 时不运行。check 结束前任务保持 `running`。`--isolate` 的 worktree 默认没有依赖，需要用 `.baton.json` 的 `post_create` 安装。**客户端注意：** 新增终态 `check_failed` 和可选 meta 字段 `check`。
 
 #### 文件摘录
 
@@ -441,7 +442,8 @@ JSON 输出是稳定接口，后续版本只增加字段，已有字段的名称
 | `readonly_violation` | `--mode readonly` 但工作区有净变更；可 `reply` |
 | `check_failed` | `--check` 命令失败或超时，见 `check`；可 `reply` |
 | `failed` / `timed_out` / `cancelled` | 终态，不能再 `reply` |
-| `not_authenticated` / `quota_exceeded` | 对方 CLI 没登录 / 额度用尽 |
+| `not_authenticated` | 目标 CLI 需要登录。重新登录后，有会话的任务可用 `reply` 继续。 |
+| `quota_exceeded` | 目标 CLI 的额度已用尽。额度恢复后，有会话的任务可用 `reply` 继续。 |
 | `not_installed` | `start` 时就返回，目标不在 `PATH` 里 |
 | `dirty_worktree` | `start` 返回；脏工作区上拒绝原地 write——见 `dirty_paths`；改用 `--isolate` 或 `--allow-dirty` |
 
@@ -466,7 +468,10 @@ baton reply <id> --as human --prompt "选 A"
 ```
 
 - 在原会话上开下一轮。`--as human` 表示这是人说的话；主 Agent 依据用户先前指示代答时用默认的 `--as host`。
-- `success` 之后也能 `reply` 追问。任务 `running` 时 `reply` 返回 `busy`。
+- `reply` 需要已有会话。`success`、`scope_violation`、`readonly_violation`、`check_failed`、`quota_exceeded` 或 `not_authenticated` 之后也可续轮。任务 `running` 时，`reply` 返回 `busy`。
+- 可重复传入 `--scope <glob>`，替换允许修改的路径，并将新范围加入下一轮提示词。Baton 在该轮开始前从任务的 Git 工作区重新取得范围基线。基线中已有的改动不计入新范围的越界检查。
+- 传入 `--scope-on-violation warn|fail` 可更改越界策略。只改策略时，任务必须已有范围，原基线继续使用。替换范围时若省略策略，则沿用原策略，未设置过时默认为 `warn`。
+- 传入 `--check "<cmd>"` 可替换验收命令。空字符串或纯空白会清除它。范围、策略和验收命令的更新从下一轮起持续生效。
 - 每一轮的作者、输入和结果都记在 `turns/<n>.json`，事后可回看。
 
 ### MCP 工具
@@ -482,7 +487,7 @@ MCP 是同一套逻辑的薄壳，进程里不存任何任务状态，重启 MCP
 | `task_result` | `result`（参数 `task_id`、`turn`；返回含 `final_message` 的 JSON） |
 | `task_diff` | `diff`（参数 `task_id`、`stat`；返回 `{ task_id, diff }`） |
 | `task_apply` | `apply`（参数 `task_id`、`remove`） |
-| `task_reply` | `reply`（参数 `task_id`、`prompt`、`as`、`files`） |
+| `task_reply` | `reply`（参数 `task_id`、`prompt`、`as`、`files`、`scope`、`scope_on_violation`、`check`） |
 | `task_cancel` | `cancel` |
 | `task_list` | `ls`（参数 `all`、`cwd`） |
 

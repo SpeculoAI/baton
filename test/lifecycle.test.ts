@@ -396,6 +396,48 @@ test("needs_input → reply continues the same session, records human/host autho
   assert.equal(s.turn(first.task_id, 3).author, "host");
 });
 
+for (const [status, message] of [
+  ["quota_exceeded", "You've hit your usage limit. Try again later."],
+  ["not_authenticated", "Please log in to Codex."],
+] as const) {
+  test(`reply resumes ${status} only when the task has a session`, async (t) => {
+    const threadId = "thread-fake-1";
+    for (const sessionId of [threadId, null]) {
+      await t.test(sessionId ? "resumes the same session" : "rejects a missing session", async (t) => {
+        const s = sandbox(t);
+        const events = sessionId ? [{ type: "thread.started", thread_id: sessionId }] : [];
+        const failure = { type: "turn.failed", error: { message } };
+        fs.writeFileSync(s.fixture, [...events, failure].map((event) => JSON.stringify(event)).join("\n") + "\n");
+        s.env.FAKE_EXIT = "1";
+        const { task_id: id } = await s.run("start", "--target", "codex", "--prompt", "start");
+        const stopped = await s.until(id);
+        assert.equal(stopped.status, status);
+        assert.equal(stopped.session_id, sessionId);
+
+        if (!sessionId) {
+          await assert.rejects(s.run("reply", id, "--prompt", "continue"), (error: unknown) => {
+            assert.equal(JSON.parse((error as { stdout: string }).stdout).summary, "No session_id; cannot resume the session.");
+            return true;
+          });
+          return;
+        }
+
+        fs.writeFileSync(s.fixture, `${JSON.stringify({ type: "turn.completed" })}\n`);
+        s.env.FAKE_EXIT = "0";
+        s.env.FAKE_ARGS_FILE = path.join(s.home, "argv.txt");
+        await s.run("reply", id, "--prompt", "continue");
+        const done = await s.until(id);
+        assert.equal(done.status, "success");
+        assert.equal(done.turn, 2);
+        assert.equal(done.session_id, sessionId);
+        const args = fs.readFileSync(s.env.FAKE_ARGS_FILE, "utf8").trim().split("\n");
+        assert.deepEqual(args.slice(0, 2), ["exec", "resume"]);
+        assert.equal(args.at(-2), sessionId);
+      });
+    }
+  });
+}
+
 test("reply while running returns busy; failed tasks, missing session and invalid author cannot be continued", async (t) => {
   const s = sandbox(t);
   s.env.FAKE_HANG = "1";
