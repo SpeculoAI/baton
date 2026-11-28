@@ -125,7 +125,10 @@ async function main(): Promise<void> {
   } else if (command === "apply") {
     const { values, positionals } = parseArgs({ args, allowPositionals: true, options: COMMANDS.apply.options });
     if (positionals.length !== 1) throw new Error("apply requires one task_id.");
-    result = apply(positionals[0], { remove: values.remove });
+    const messageFile = values["message-file"];
+    if (values.message !== undefined && messageFile !== undefined) throw new Error("--message and --message-file cannot be used together.");
+    const message = messageFile === undefined ? values.message : fs.readFileSync(messageFile, "utf8");
+    result = apply(positionals[0], { remove: values.remove, message });
   } else if (command === "cancel") {
     if (args.length !== 1) throw new Error("cancel requires one task_id.");
     result = await cancel(args[0]);

@@ -269,16 +269,19 @@ function describeProcess(pid: number): string {
 
 test("after supervisor is killed, status reports orphaned, kills leftover processes and writes the terminal state only once", async (t) => {
   const s = sandbox(t);
+  execFileSync("git", ["init"], { cwd: s.cwd });
+  execFileSync("git", ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", "init"], { cwd: s.cwd });
   s.env.FAKE_HANG = "1";
   s.env.FAKE_CHILD_PID_FILE = path.join(s.home, "orphan.pid");
-  const started = await s.run("start", "--target", "codex", "--prompt", "hi");
-  const running = await s.until(started.task_id, (m) => !!m.child_pid && fs.existsSync(s.env.FAKE_CHILD_PID_FILE!));
+  const started = await s.run("start", "--target", "codex", "--prompt", "hi", "--isolate");
+  const running = await s.until(started.task_id, (m) => !!m.child_pid && !!m.session_id && fs.existsSync(s.env.FAKE_CHILD_PID_FILE!));
   process.kill(running.supervisor_pid!, "SIGKILL");
   await sleep(50);
   const recovered = await s.run("status", started.task_id);
   assert.equal(recovered.liveness, "orphaned");
   assert.equal(recovered.status, "failed");
   assert.equal(recovered.summary, "supervisor exited unexpectedly");
+  assert.equal(recovered.failure_reason, "supervisor_exit");
   await assertProcessGone(Number(fs.readFileSync(s.env.FAKE_CHILD_PID_FILE!, "utf8")));
   const count = s.events(started.task_id).length;
   assert.equal((await s.run("status", started.task_id)).status, "failed");
@@ -286,6 +289,23 @@ test("after supervisor is killed, status reports orphaned, kills leftover proces
   assert.equal(s.turn(started.task_id).status, "failed");
   assert.equal(Object.hasOwn(s.turn(started.task_id), "activity"), false);
   assert.equal(Object.hasOwn(s.turn(started.task_id), "usage"), false);
+
+  s.env.FAKE_HANG = "0";
+  delete s.env.FAKE_CHILD_PID_FILE;
+  s.env.FAKE_ARGS_FILE = path.join(s.home, "argv.txt");
+  s.env.FAKE_WRITE = "resumed.txt";
+  fs.writeFileSync(s.fixture, '{"type":"turn.completed"}\n');
+  const next = await s.run("reply", started.task_id, "--prompt", "continue");
+  assert.equal(next.status, "running");
+  assert.equal(next.turn, 2);
+  assert.equal(next.session_id, running.session_id);
+  assert.equal(next.failure_reason, undefined);
+  assert.equal((await s.until(started.task_id)).status, "success");
+  assert.deepEqual(next.worktree, started.worktree);
+  assert.equal(fs.readFileSync(path.join(started.worktree!.path, "resumed.txt"), "utf8"), "x");
+  const args = fs.readFileSync(s.env.FAKE_ARGS_FILE, "utf8").trim().split("\n");
+  assert.deepEqual(args.slice(0, 2), ["exec", "resume"]);
+  assert.equal(args.at(-2), running.session_id);
 });
 
 test("without max_duration, continuous output is not killed; idle timer counts bytes, not whole lines", async (t) => {
@@ -331,6 +351,11 @@ test("alive but long without events is quiet; expired heartbeat is treated as or
   meta.heartbeat_at = new Date(Date.now() - 31_000).toISOString();
   writeMeta(meta);
   assert.equal(status(id).liveness, "orphaned");
+  await assert.rejects(s.run("reply", id, "--prompt", "continue"), (error: unknown) => {
+    assert.equal(JSON.parse((error as { stdout: string }).stdout).summary, "No session_id; cannot resume the session.");
+    return true;
+  });
+  assert.equal(s.meta(id).turn, 1);
 });
 
 test("orphaned task with stop_reason finalizes as that stop, once, and without liveness", async (t) => {
@@ -438,7 +463,23 @@ for (const [status, message] of [
   });
 }
 
-test("reply while running returns busy; failed tasks, missing session and invalid author cannot be continued", async (t) => {
+test("reply rejects a worker failure even with a session and the supervisor exit summary", async (t) => {
+  const s = sandbox(t);
+  fs.writeFileSync(s.fixture, '{"type":"thread.started","thread_id":"thread-fake-1"}\n{"type":"turn.failed","error":{"message":"supervisor exited unexpectedly"}}\n');
+  s.env.FAKE_EXIT = "1";
+  const { task_id: id } = await s.run("start", "--target", "codex", "--prompt", "hi");
+  const done = await s.until(id);
+  assert.equal(done.status, "failed");
+  assert.equal(done.summary, "supervisor exited unexpectedly");
+  assert.equal(done.session_id, "thread-fake-1");
+  await assert.rejects(s.run("reply", id, "--prompt", "continue"), (error: unknown) => {
+    assert.equal(JSON.parse((error as { stdout: string }).stdout).summary, "Cannot continue a task in status failed.");
+    return true;
+  });
+  assert.equal(s.meta(id).turn, 1);
+});
+
+test("reply while running returns busy; cancelled tasks, missing session and invalid author cannot be continued", async (t) => {
   const s = sandbox(t);
   s.env.FAKE_HANG = "1";
   const first = await s.run("start", "--target", "codex", "--prompt", "busy");

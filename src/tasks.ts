@@ -6,7 +6,7 @@ import crossSpawn from "cross-spawn";
 import { once } from "node:events";
 import { adapters, getAdapter } from "./adapters/index.ts";
 import { resolveCursorModelArg } from "./adapters/cursor.ts";
-import { readMeta, writeMeta, writeTurn, readTurn, appendEvent, hasTurnEnded, taskDir, cancelRequestPath, lockTask, listTasks } from "./store.ts";
+import { readMeta, writeMeta, writeTurn, readTurn, readStoredTurn, appendEvent, hasTurnEnded, taskDir, cancelRequestPath, lockTask, listTasks } from "./store.ts";
 import { setTimeout as sleep } from "node:timers/promises";
 import { redact } from "./redact.ts";
 import { isAlive, killGroup } from "./process.ts";
@@ -176,6 +176,7 @@ export async function start(input: StartInput): Promise<StartResult> {
   const source_cwd = cwd;
   let taskCwd = cwd;
   let worktree: TaskMeta["worktree"];
+  let warning: TaskMeta["warning"];
   if (input.isolate) {
     if (!gitRepoRoot(cwd)) throw new Error("--isolate requires a git repository.");
     try {
@@ -186,7 +187,8 @@ export async function start(input: StartInput): Promise<StartResult> {
     const repo = resolveRepoRoot(cwd);
     const short = task_id.replace(/-/g, "").slice(0, 8);
     const name = `task-${short}`;
-    const added = addWorktree(cwd, { name, branch: `baton/${name}`, base: "HEAD" });
+    const added = addWorktree(cwd, { name, branch: `baton/${name}`, base: "HEAD", warnMissingPostCreate: true });
+    warning = added.warning;
     const realCwd = fs.realpathSync.native(cwd);
     const realRepo = fs.realpathSync.native(repo);
     const rel = path.relative(realRepo, realCwd);
@@ -264,6 +266,7 @@ export async function start(input: StartInput): Promise<StartResult> {
     ...(input.allowDirty ? { allow_dirty: true } : {}),
     ...(input.check?.trim() ? { check_command: input.check.trim() } : {}),
     ...(worktree ? { worktree } : {}),
+    ...(warning ? { warning } : {}),
   };
   writeMeta(meta);
   writeTurn(meta.task_id, {
@@ -325,6 +328,7 @@ export function status(id: string): TaskView {
     const decided = reason === "idle" || reason === "max_duration" || reason === "cancelled";
     meta.status = decided ? (reason === "cancelled" ? "cancelled" : "timed_out") : "failed";
     meta.summary = decided ? (reason === "cancelled" ? "Cancelled." : `Timed out: ${reason}.`) : "supervisor exited unexpectedly";
+    if (!decided) meta.failure_reason = "supervisor_exit";
     delete meta.stop_reason;
     meta.updated_at = new Date().toISOString();
     try { const turn = readTurn(id, meta.turn); writeTurn(id, { ...turn, status: meta.status, summary: meta.summary }); } catch (error) {
@@ -402,8 +406,23 @@ export type ApplyResult = {
   commit?: string; files?: string[]; removed: boolean; warning?: string;
 };
 
+function defaultApplyMessage(meta: TaskMeta): string {
+  const id = meta.task_id;
+  let summary: string | undefined;
+  for (let n = meta.turn; n >= 1; n--) {
+    const turn = readStoredTurn(id, n);
+    if (turn?.status === "success") {
+      summary = turn.summary?.split(/\r\n?|\n/, 1)[0]?.trim();
+      break;
+    }
+  }
+  const subject = redact(summary || readStoredTurn(id, 1)?.prompt?.split(/\r\n?|\n/, 1)[0]?.trim()
+    || `apply task ${id.slice(0, 8)}`).slice(0, 72);
+  return `baton(${meta.target}): ${subject}`;
+}
+
 /** One squash commit of the task's net change, cherry-picked onto the source repo's current branch. Never pushes. */
-export function apply(id: string, options: { remove?: boolean } = {}): ApplyResult {
+export function apply(id: string, options: { remove?: boolean; message?: string } = {}): ApplyResult {
   const running = new Error("Task is running; wait for it to finish.");
   if (status(id).status === "running") throw running;
   const release = lockTask(id);
@@ -411,10 +430,11 @@ export function apply(id: string, options: { remove?: boolean } = {}): ApplyResu
   try {
     const meta = readMeta(id)!;
     if (meta.status === "running") throw running;
+    if (options.message !== undefined && !options.message.trim()) throw new Error("Commit message is empty.");
     const { worktree, base, tree } = netChange(meta);
     const repo = resolveRepoRoot(worktree.source_cwd);
-    const subject = redact(meta.summary?.split("\n")[0]?.trim() || `apply task ${id.slice(0, 8)}`).slice(0, 72);
-    const message = `baton(${meta.target}): ${subject}\n\nBaton-Task: ${id}\nBaton-Target: ${meta.target}\n`;
+    const body = options.message?.replace(/(?:\r?\n[ \t]*)+$/, "") ?? defaultApplyMessage(meta);
+    const message = `${body}\n\nBaton-Task: ${id}\nBaton-Target: ${meta.target}\n`;
     const applied = applyTree(repo, base, tree, message);
     const result: ApplyResult = applied
       ? { task_id: id, status: "applied", repo, commit: applied.commit, files: applied.files, removed: false }
@@ -466,13 +486,15 @@ export async function reply(
   try {
     const meta = readMeta(id)!;
     if (meta.status === "running") return busy;
-    if (!["success", "needs_input", "scope_violation", "readonly_violation", "check_failed", "quota_exceeded", "not_authenticated"].includes(meta.status)) throw new Error(`Cannot continue a task in status ${meta.status}.`);
+    const supervisorFailed = meta.status === "failed" && meta.failure_reason === "supervisor_exit";
+    if (!supervisorFailed && !["success", "needs_input", "scope_violation", "readonly_violation", "check_failed", "quota_exceeded", "not_authenticated"].includes(meta.status)) throw new Error(`Cannot continue a task in status ${meta.status}.`);
     if (!meta.session_id) throw new Error("No session_id; cannot resume the session.");
     if (!getAdapter(meta.target)?.resolve(process.env)) throw new Error(`${meta.target} is not on PATH.`);
     const prepared = prepareTurnPrompt(meta.cwd, prompt, files);
     next = { ...meta, status: "running", turn: meta.turn + 1, updated_at: new Date().toISOString(), supervisor_pid: null, child_pid: null, heartbeat_at: null, last_event_at: null };
     delete next.decision;
     delete next.summary;
+    delete next.failure_reason;
     delete next.warning;
     delete next.scope_violations;
     delete next.readonly_violations;

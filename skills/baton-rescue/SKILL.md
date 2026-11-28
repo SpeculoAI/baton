@@ -83,7 +83,7 @@ baton start --target <t> --prompt "<handoff brief>" [--file <path>[:N[-M]]...] [
 - `--model <id>` (Cursor, Codex and Claude): per-task model; kept across `reply`. Codex gets `-m <id>` and still takes `--effort`. Claude takes an id or alias (`sonnet`, `opus`) and still takes `--effort`. Cursor does not accept `--effort` at all (with or without `--model`): choose a tier-specific id from `cursor-agent --list-models` (e.g. `gpt-5.3-codex-high`) instead. Agy errors on `--model`.
 - `--idle-timeout` (default 600) stops the job only after that many seconds with no output at all. There is no total time cap unless you pass `--max-duration`. Raise `--idle-timeout` for models that think silently for a long time.
 - **Write jobs in a git repo: use `--isolate` by default.** It creates a worktree from `HEAD` (so the worker does **not** see uncommitted edits), runs there, and records `worktree.path` / `worktree.branch`. Tell the user which you picked and why. Skip `--isolate` only when the user asked for in-place, or the task is a small, explicitly scoped edit on a clean tree. Manual `baton worktree add` then `start --cwd` still works; prefer `--isolate` for new work.
-- **After an `--isolate` job:** review with `baton diff <task_id> --stat` (full patch without `--stat`), not by running git in the worktree. Bring the change back with `baton apply <task_id> --remove` **only when the user agrees** (or asked up front): it makes one local commit on their current branch, never pushes, and deletes the worktree. Tell them the commit sha and that `git revert <sha>` undoes it. If `apply` refuses, relay the reason and listed paths; do not merge another way.
+- **After an `--isolate` job:** review with `baton diff <task_id> --stat` (full patch without `--stat`), not by running git in the worktree. Bring the change back with `baton apply <task_id> --remove` **only when the user agrees** (or asked up front): it makes one local commit on their current branch, never pushes, and deletes the worktree. Tell them the commit sha and that `git revert <sha>` undoes it. If the user supplies a commit message and your Baton version supports it, pass `--message <msg>` or `--message-file <path>` on the CLI, or `message` to MCP `task_apply`. If `apply` refuses, relay the reason and listed paths; do not merge another way.
 - In-place write on a dirty tree returns `dirty_worktree` with `dirty_paths`. Relay the paths and ask the user to choose `--isolate` or `--allow-dirty`. Do **not** pick `--allow-dirty` on your own.
 - Optional `--scope`: post-check mistake fence (not a sandbox); prefer with `--isolate`.
 - Optional `--check "<cmd>"`: the project's acceptance command (typecheck, unit tests; chain with `&&`). Baton runs it in the task cwd (the worktree under `--isolate`) after each turn that ends in `success`, and records `check` (`status`, `exit_code`, `output_tail`). A `passed` check is an independent result: do **not** re-run that command yourself. Under `--isolate`, dependencies need `.baton.json` `post_create`.
@@ -126,13 +126,14 @@ While `running`, read `liveness`:
   baton reply <task_id> --as human --prompt "<the user's answer>"
   ```
   Answer it yourself (default `--as host`) only when the user's earlier instructions already decide it. Every turn, its author, and its prompt are recorded under `turns/`, so this is visible later. Then wait again.
-- `failed`, `cancelled`: relay `summary`, then stop.
+- `failed` with `failure_reason: "supervisor_exit"` and a session: restore the environment, then use `baton reply <id> --prompt "Continue"`. This resumes the original conversation and, for `--isolate`, the original worktree.
+- Other `failed` tasks and `cancelled` tasks: relay `summary`, then stop.
 - `quota_exceeded`: relay `summary`, including any reset time. Wait for quota to reset, then use `baton reply` when the task has a session. If there is no session, stop. Do not switch vendor on your own.
 - `not_authenticated`: relay `summary` and ask the user to sign in again. Once they confirm, use `baton reply` when the task has a session. If there is no session, stop.
 - `timed_out`: relay `summary` (it says `idle` or `max_duration`). The task is closed; if the user wants another try, `baton start` again with a larger `--idle-timeout`.
 - `not_installed`: say so and stop.
 
-`baton reply` works after `success`, `needs_input`, `scope_violation`, `readonly_violation`, `check_failed`, `quota_exceeded`, or `not_authenticated` when the task has a session. While the job is `running`, `reply` returns `busy`; wait first.
+`baton reply` works after `success`, `needs_input`, `scope_violation`, `readonly_violation`, `check_failed`, `quota_exceeded`, or `not_authenticated` when the task has a session. A task with a session can also resume from `failed` with `failure_reason: "supervisor_exit"`. While the job is `running`, `reply` returns `busy`; wait first.
 
 ## Other commands
 

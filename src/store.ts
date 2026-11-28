@@ -92,6 +92,14 @@ export function readTurn(id: string, turn: number): Turn {
   return JSON.parse(fs.readFileSync(path.join(taskDir(id), "turns", `${turn}.json`), "utf8")) as Turn;
 }
 
+export function readStoredTurn(id: string, turn: number): Turn | undefined {
+  try {
+    return readTurn(id, turn);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+}
+
 export function listTasks(): TaskMeta[] {
   let names: string[];
   try {
