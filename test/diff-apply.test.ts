@@ -271,12 +271,17 @@ test("apply --remove deletes the worktree and branch; nothing_to_apply also remo
   const applied = await s.run<Applied>("apply", done.task_id, "--remove");
   assert.equal(applied.status, "applied");
   assert.equal(applied.removed, true, JSON.stringify(applied));
+  assert.equal(applied.warning, undefined);
   assert.equal(fs.existsSync(done.worktree!.path), false);
   assert.equal(branchExists(s.cwd, done.worktree!.branch), false);
 
   const empty = await isolatedTask(s);
   const head = git(s.cwd, "rev-parse", "HEAD");
+  // pnpm rewrote a main-repo shim from inside the worktree (#107): removal must say so.
+  fs.mkdirSync(path.join(s.cwd, "node_modules", ".bin"), { recursive: true });
+  fs.writeFileSync(path.join(s.cwd, "node_modules", ".bin", "eslint"), `exec node "${empty.worktree!.path}/node_modules/eslint/bin/eslint.js"\n`);
   const nothing = await s.run<Applied>("apply", empty.task_id, "--remove");
+  assert.match(nothing.warning ?? "", /node_modules\/\.bin\/eslint.*pnpm install --force/);
   assert.equal(nothing.status, "nothing_to_apply");
   assert.equal(nothing.removed, true, JSON.stringify(nothing));
   assert.equal(git(s.cwd, "rev-parse", "HEAD"), head);

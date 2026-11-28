@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync, readFileSync, existsSync, lstatSync, realpathSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync, readFileSync, existsSync, lstatSync, realpathSync, symlinkSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import {
@@ -447,6 +447,32 @@ test("CLI worktree rm supports --force / -f and rejects unknown flags across add
     assert.equal(rmByPath.status, "ok");
     assert.equal(rmByPath.name, "cli-path");
     assert.equal(existsSync(byPath.path), false);
+  } finally {
+    cleanup();
+  }
+});
+
+test("removeWorktree warns about main-repo node_modules/.bin entries that point into the removed tree", () => {
+  const { cwd, cleanup } = tempRepo();
+  try {
+    const tree = addWorktree(cwd, { name: "pnpm" });
+    const rootBin = path.join(cwd, "node_modules", ".bin");
+    const pkgBin = path.join(cwd, "packages", "app", "node_modules", ".bin");
+    mkdirSync(rootBin, { recursive: true });
+    mkdirSync(pkgBin, { recursive: true });
+    writeFileSync(path.join(rootBin, "eslint"), `#!/bin/sh\nexec node "${tree.path}/node_modules/eslint/bin/eslint.js" "$@"\n`);
+    writeFileSync(path.join(rootBin, "tsc"), `#!/bin/sh\nexec node "$basedir/../typescript/bin/tsc" "$@"\n`);
+    symlinkSync(path.join(tree.path, "node_modules", "vite"), path.join(pkgBin, "vite"));
+
+    const removed = removeWorktree(cwd, "pnpm");
+    assert.match(removed.warning ?? "", /2 node_modules\/\.bin entries/);
+    assert.match(removed.warning ?? "", /node_modules\/\.bin\/eslint/);
+    assert.match(removed.warning ?? "", /packages\/app\/node_modules\/\.bin\/vite/);
+    assert.doesNotMatch(removed.warning ?? "", /tsc/);
+    assert.match(removed.warning ?? "", /pnpm install --force/);
+
+    addWorktree(cwd, { name: "other" });
+    assert.equal(removeWorktree(cwd, "other").warning, undefined);
   } finally {
     cleanup();
   }

@@ -19,6 +19,8 @@ For splitting into several jobs, dependencies, or fail-over: use `baton-orchestr
 
 Every command prints one JSON object. Call it as `baton <command> ...`. If `baton` is not on PATH, run `/baton:setup` and stop.
 
+This skill expects baton **0.8.2** or newer. Run `baton version` once before the first job. If it prints an older version, or the MCP tools lack `task_diff` / `task_apply`, stop and tell the user to run `npm install -g @speculoai/baton@latest` and start a new session. Do not try flags the old CLI does not know.
+
 The same operations also exist as MCP tools (`delegate_task`, `task_wait`, `task_result`, `task_diff`, `task_apply`, `task_reply`, `task_status`, `task_cancel`, `task_list`, `list_agents`). Use MCP only when the host cannot run shell commands; the behavior is identical.
 
 ## When to delegate
@@ -85,6 +87,7 @@ baton start --target <t> --prompt "<handoff brief>" [--file <path>[:N[-M]]...] [
 - In-place write on a dirty tree returns `dirty_worktree` with `dirty_paths`. Relay the paths and ask the user to choose `--isolate` or `--allow-dirty`. Do **not** pick `--allow-dirty` on your own.
 - Optional `--scope`: post-check mistake fence (not a sandbox); prefer with `--isolate`.
 - Optional `--check "<cmd>"`: the project's acceptance command (typecheck, unit tests; chain with `&&`). Baton runs it in the task cwd (the worktree under `--isolate`) after each turn that ends in `success`, and records `check` (`status`, `exit_code`, `output_tail`). A `passed` check is an independent result: do **not** re-run that command yourself. Under `--isolate`, dependencies need `.baton.json` `post_create`.
+- pnpm workspace under `--isolate`: add `.baton.json` with `"post_create": ["pnpm install --offline --frozen-lockfile"]` so each worktree gets its own `node_modules`; otherwise a worker's pnpm run can rewrite the main repo's `node_modules/.bin` to point into the worktree. If `apply --remove` or `worktree rm` returns a `warning` about `node_modules/.bin`, relay it: the user must run `pnpm install --force` in the main repo.
 - Review / read-only jobs: pass `--mode readonly` (default `write`). Kept across `reply`. Dirty tree after a readonly turn becomes `readonly_violation`. Never combine `--isolate` / `--allow-dirty` with readonly. On macOS, Codex readonly workers using `/usr/bin/git` log `xcrun_db … Operation not permitted`; the git output is still valid — do not treat it as a failure.
 - After `status` / `wait`, if `rules.unseen` is non-empty, `rules.rulesync.status` is `stale`, `target_configured` is `false`, or `gates` is non-empty, tell the user (optionally suggest `--rules pointer` or running `rulesync generate`).
 - It returns at once with `task_id` and `status: "running"`. Keep the `task_id`. Tell the user they can watch live with `baton tail -f <task_id>`.

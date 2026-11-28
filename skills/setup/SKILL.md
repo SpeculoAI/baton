@@ -18,7 +18,9 @@ Baton needs **Node.js >= 20.17**. If Node is older, stop and tell the user to up
 baton version
 ```
 
-If this prints `{"version":"..."}`, show the version and stop. Do not reinstall.
+If this prints `{"version":"..."}` at baton **0.8.2** or newer, show the version and stop. Do not reinstall.
+
+If the version is older, the plugin's skills and MCP expect commands the CLI does not have. Ask once, then run `npm install -g @speculoai/baton@latest` and show the new version.
 
 If the shell reports that `baton` is missing, ask once. Use AskUserQuestion when it exists. Put install first:
 

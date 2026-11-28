@@ -392,6 +392,41 @@ export function listWorktrees(cwd: string): WorktreeListItem[] {
 }
 
 /** Minimal gitignore-style match for basename patterns (`*` / `?`). */
+function readdirOrEmpty(dir: string): string[] {
+  try { return fs.readdirSync(dir); } catch { return []; }
+}
+
+/**
+ * Repo `node_modules/.bin` entries that point into a worktree (pnpm can rewrite the main repo's shims from inside one, #107).
+ * They break once the worktree is deleted; returns the repo-relative paths with a fix hint, or null when none.
+ */
+export function staleBinWarning(repo: string, worktreePath: string): string | null {
+  const targets = [worktreePath];
+  try { targets.push(path.join(fs.realpathSync(path.dirname(worktreePath)), path.basename(worktreePath))); } catch { /* root gone */ }
+  const inside = (p: string) => targets.some((t) => p === t || p.startsWith(t + path.sep));
+  // shortcut: scans the repo root and <dir>/<pkg> (packages/*, apps/*), not deeper workspaces; widen if those show up.
+  const dirs = [path.join(repo, "node_modules", ".bin")];
+  for (const top of readdirOrEmpty(repo)) {
+    if (top.startsWith(".") || top === "node_modules") continue;
+    for (const pkg of readdirOrEmpty(path.join(repo, top))) dirs.push(path.join(repo, top, pkg, "node_modules", ".bin"));
+  }
+  const found: string[] = [];
+  for (const dir of dirs) {
+    for (const name of readdirOrEmpty(dir)) {
+      const file = path.join(dir, name);
+      try {
+        const stat = fs.lstatSync(file);
+        const hit = stat.isSymbolicLink()
+          ? inside(path.resolve(dir, fs.readlinkSync(file)))
+          : stat.isFile() && stat.size < 65_536 && targets.some((t) => fs.readFileSync(file, "utf8").includes(t));
+        if (hit) found.push(path.relative(repo, file).split(path.sep).join("/"));
+      } catch { /* unreadable entry */ }
+    }
+  }
+  if (!found.length) return null;
+  return `${found.length} node_modules/.bin entr${found.length === 1 ? "y points" : "ies point"} into the removed worktree (${found.slice(0, 5).join(", ")}${found.length > 5 ? ", ..." : ""}); reinstall with --force in the main repo (pnpm: pnpm install --force).`;
+}
+
 export function matchBasename(name: string, pattern: string): boolean {
   const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".");
   return new RegExp(`^${escaped}$`).test(name);
@@ -488,7 +523,7 @@ function hasUnmergedCommits(repo: string, branch: string, base: string): boolean
   return Number(ran.stdout.trim()) > 0;
 }
 
-export type WorktreeRemoveResult = { status: "ok"; path: string; branch: string; name: string };
+export type WorktreeRemoveResult = { status: "ok"; path: string; branch: string; name: string; warning?: string };
 
 export function removeWorktree(cwd: string, nameOrPath: string, options: { force?: boolean } = {}): WorktreeRemoveResult {
   const { repo, worktreePath, meta } = resolveManagedPath(cwd, nameOrPath);
@@ -513,5 +548,6 @@ export function removeWorktree(cwd: string, nameOrPath: string, options: { force
       throw new Error(`Failed to delete branch: ${(deleted.stderr || deleted.stdout).trim()}`);
     }
   }
-  return { status: "ok", path: worktreePath, branch: meta.branch, name: meta.name };
+  const warning = staleBinWarning(repo, worktreePath);
+  return { status: "ok", path: worktreePath, branch: meta.branch, name: meta.name, ...(warning ? { warning } : {}) };
 }

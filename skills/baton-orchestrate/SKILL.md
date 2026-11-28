@@ -21,6 +21,8 @@ For a single one-shot handoff, use `baton-rescue`. Its sections "The command", "
 
 Call it as `baton <command> ...`. If `baton` is not on PATH, run `/baton:setup` and stop. Every command prints one JSON object. The same operations exist as MCP tools; use MCP only when the host cannot run shell commands.
 
+This skill expects baton **0.8.2** or newer. Run `baton version` once before the first job. If it prints an older version, or the MCP tools lack `task_diff` / `task_apply`, stop and tell the user to run `npm install -g @speculoai/baton@latest` and start a new session. Do not try flags the old CLI does not know.
+
 ## Who orchestrates
 
 - If the host can run a background sub-agent, the orchestrator may run there so the main session stays free. Give it the brief below.
@@ -133,7 +135,7 @@ baton apply <id> --remove          # with the user's consent: one local commit, 
 baton worktree rm <name-or-path> [-f|--force]  # clean/merged by default; --force discards dirty/unmerged (user consent only); does not cascade from task prune
 ```
 
-`--isolate` uses the same `.baton.json` `copy` / `symlink` / `post_create` as `baton worktree add`. Manual `worktree add` then `start --cwd` still works; prefer `--isolate` for new jobs. In-place write on a dirty tree returns `dirty_worktree` — ask the host before `--allow-dirty`. If isolation is unavailable, say so up front: the main session must not modify the shared tree until the run ends or is cancelled. Symlinking `node_modules` can cross-contaminate when branches diverge — prefer `post_create` install when unsure.
+`--isolate` uses the same `.baton.json` `copy` / `symlink` / `post_create` as `baton worktree add`. Manual `worktree add` then `start --cwd` still works; prefer `--isolate` for new jobs. In-place write on a dirty tree returns `dirty_worktree` — ask the host before `--allow-dirty`. If isolation is unavailable, say so up front: the main session must not modify the shared tree until the run ends or is cancelled. Symlinking `node_modules` can cross-contaminate when branches diverge — prefer `post_create` install when unsure. In a pnpm workspace, add `.baton.json` with `"post_create": ["pnpm install --offline --frozen-lockfile"]` so each worktree gets its own `node_modules`; otherwise a worker's pnpm run can rewrite the main repo's `node_modules/.bin` to point into the worktree. If `apply --remove` or `worktree rm` returns a `warning` about `node_modules/.bin`, relay it: the user must run `pnpm install --force` in the main repo.
 
 `--scope` is a **mistake fence** (post-check of net changes vs globs), not a security sandbox. Prefer stacking with `--isolate`: shared cwd without isolation can attribute other writers’ edits to the task.
 

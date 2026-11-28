@@ -23,7 +23,7 @@ import {
   rulesPointer,
   unseenRules,
 } from "./rules.ts";
-import { addWorktree, applyTree, assertNotNestedWorktree, batonWorktreeExemptPaths, diffTrees, forkPoint, headSha, netTree, removeTaskWorktree, resolveRepoRoot } from "./worktree.ts";
+import { addWorktree, applyTree, assertNotNestedWorktree, batonWorktreeExemptPaths, diffTrees, forkPoint, headSha, netTree, removeTaskWorktree, resolveRepoRoot, staleBinWarning } from "./worktree.ts";
 import type { Author, Effort, Enforcement, RulesMode, RulesReport, ScopeOnViolation, TaskMeta, TaskMode, TaskStatus, Turn } from "./types.ts";
 
 export type StartInput = {
@@ -423,6 +423,8 @@ export function apply(id: string, options: { remove?: boolean } = {}): ApplyResu
       const problem = removeTaskWorktree(repo, worktree.path, worktree.branch);
       result.removed = problem === null;
       if (problem) result.warning = `Applied, but could not fully remove ${worktree.path} or branch ${worktree.branch}: ${problem}`;
+      const stale = staleBinWarning(repo, worktree.path);
+      if (stale) result.warning = result.warning ? `${result.warning} ${stale}` : stale;
     }
     return result;
   } finally {
