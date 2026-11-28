@@ -80,8 +80,11 @@ export function createServer(): McpServer {
   }, (args) => respond(() => ({ task_id: args.task_id, diff: diff(args.task_id, { stat: args.stat }) })));
   server.registerTool("task_apply", {
     description: "Bring an --isolate task's net change onto the source repo's current branch as one local commit (three-way cherry-pick; never pushes). Refuses, changing nothing, on staged changes, overlapping dirty or untracked files, an operation in progress, or a conflict. remove=true then deletes the worktree and branch. Only with the user's consent.",
-    inputSchema: { task_id: z.string(), remove: z.boolean().optional() },
-  }, (args) => respond(() => apply(args.task_id, { remove: args.remove })));
+    inputSchema: {
+      task_id: z.string(), remove: z.boolean().optional(),
+      message: z.string().optional().describe("Full commit message. Baton appends its trailers."),
+    },
+  }, (args) => respond(() => apply(args.task_id, { remove: args.remove, message: args.message })));
   server.registerTool("task_reply", {
     description: "Start the next turn when the task has a session and its status is needs_input, success, scope_violation, readonly_violation, check_failed, quota_exceeded, or not_authenticated. Use as=human for the user's words. The default is host. Returns busy while running.",
     inputSchema: {

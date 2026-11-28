@@ -145,7 +145,7 @@ export function applyTree(repo: string, base: string, tree: string, message: str
   const blocker = applyBlocker(repo, files);
   if (blocker) throw new Error(blocker);
   const squash = mustGit(repo, ["commit-tree", tree, "-p", base, "-F", "-"], { input: message }).trim();
-  const picked = git(repo, ["cherry-pick", squash]);
+  const picked = git(repo, ["cherry-pick", "--cleanup=verbatim", squash]);
   if (picked.status !== 0) {
     const conflicts = git(repo, ["diff", "--name-only", "--diff-filter=U", "-z"]).stdout.split("\0").filter(Boolean);
     git(repo, ["cherry-pick", "--abort"]);

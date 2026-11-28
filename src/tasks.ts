@@ -6,7 +6,7 @@ import crossSpawn from "cross-spawn";
 import { once } from "node:events";
 import { adapters, getAdapter } from "./adapters/index.ts";
 import { resolveCursorModelArg } from "./adapters/cursor.ts";
-import { readMeta, writeMeta, writeTurn, readTurn, appendEvent, hasTurnEnded, taskDir, cancelRequestPath, lockTask, listTasks } from "./store.ts";
+import { readMeta, writeMeta, writeTurn, readTurn, readStoredTurn, appendEvent, hasTurnEnded, taskDir, cancelRequestPath, lockTask, listTasks } from "./store.ts";
 import { setTimeout as sleep } from "node:timers/promises";
 import { redact } from "./redact.ts";
 import { isAlive, killGroup } from "./process.ts";
@@ -405,8 +405,23 @@ export type ApplyResult = {
   commit?: string; files?: string[]; removed: boolean; warning?: string;
 };
 
+function defaultApplyMessage(meta: TaskMeta): string {
+  const id = meta.task_id;
+  let summary: string | undefined;
+  for (let n = meta.turn; n >= 1; n--) {
+    const turn = readStoredTurn(id, n);
+    if (turn?.status === "success") {
+      summary = turn.summary?.split(/\r\n?|\n/, 1)[0]?.trim();
+      break;
+    }
+  }
+  const subject = redact(summary || readStoredTurn(id, 1)?.prompt?.split(/\r\n?|\n/, 1)[0]?.trim()
+    || `apply task ${id.slice(0, 8)}`).slice(0, 72);
+  return `baton(${meta.target}): ${subject}`;
+}
+
 /** One squash commit of the task's net change, cherry-picked onto the source repo's current branch. Never pushes. */
-export function apply(id: string, options: { remove?: boolean } = {}): ApplyResult {
+export function apply(id: string, options: { remove?: boolean; message?: string } = {}): ApplyResult {
   const running = new Error("Task is running; wait for it to finish.");
   if (status(id).status === "running") throw running;
   const release = lockTask(id);
@@ -414,10 +429,11 @@ export function apply(id: string, options: { remove?: boolean } = {}): ApplyResu
   try {
     const meta = readMeta(id)!;
     if (meta.status === "running") throw running;
+    if (options.message !== undefined && !options.message.trim()) throw new Error("Commit message is empty.");
     const { worktree, base, tree } = netChange(meta);
     const repo = resolveRepoRoot(worktree.source_cwd);
-    const subject = redact(meta.summary?.split("\n")[0]?.trim() || `apply task ${id.slice(0, 8)}`).slice(0, 72);
-    const message = `baton(${meta.target}): ${subject}\n\nBaton-Task: ${id}\nBaton-Target: ${meta.target}\n`;
+    const body = options.message?.replace(/(?:\r?\n[ \t]*)+$/, "") ?? defaultApplyMessage(meta);
+    const message = `${body}\n\nBaton-Task: ${id}\nBaton-Target: ${meta.target}\n`;
     const applied = applyTree(repo, base, tree, message);
     const result: ApplyResult = applied
       ? { task_id: id, status: "applied", repo, commit: applied.commit, files: applied.files, removed: false }

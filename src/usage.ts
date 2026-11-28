@@ -63,9 +63,13 @@ export const COMMANDS = {
     options: { stat: { type: "boolean", desc: "Print a diffstat instead of the patch" } },
   },
   apply: {
-    usage: "baton apply <task_id> [--remove]",
+    usage: "baton apply <task_id> [--remove] [--message <msg> | --message-file <path>]",
     summary: "Bring an --isolate job's net change onto the current branch as one local commit; never pushes.",
-    options: { remove: { type: "boolean", desc: "Delete the worktree and its branch after a successful apply" } },
+    options: {
+      remove: { type: "boolean", desc: "Delete the worktree and its branch after a successful apply" },
+      message: { type: "string", arg: "msg", desc: "Set the full commit message; Baton appends its trailers" },
+      "message-file": { type: "string", arg: "path", desc: "Read the full commit message from a file; Baton appends its trailers" },
+    },
   },
   tail: {
     usage: "baton tail <task_id> [-f] [--raw]",

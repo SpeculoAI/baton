@@ -315,7 +315,7 @@ baton status <id>
 baton wait <id>... [--for <秒> | --until-done]  # 默认 --for 50；--until-done 阻塞到任一任务离开 running
 baton result <id> [--turn <n>]        # 纯文本：已结束轮次（默认最新）agent 的完整最终回答，不含过程记录
 baton diff <id> [--stat]              # 纯文本：--isolate 任务的净改动（patch 或 diffstat）
-baton apply <id> [--remove]           # 把 --isolate 任务的改动做成源仓库当前分支上的一个本地 commit；不 push
+baton apply <id> [--remove] [--message <msg> | --message-file <path>]           # 把 --isolate 任务的改动做成源仓库当前分支上的一个本地 commit；不 push
 baton tail <id> [-f] [--raw]          # 人读格式的事件；-f 跟到任务停下；--raw 输出 events.jsonl 原行
 baton stats [--target <agent>] [--since <date|Nd>] [--all]  # 按执行者汇总首轮指标和任务结果
 baton reply <id> [--prompt <text> | stdin] [--as host|human] [--file <path>[:N[-M]]]...
@@ -337,10 +337,11 @@ baton mcp                             # 启动 MCP 服务（stdio）
   - **macOS + Codex 只读：** Codex 自带的 Seatbelt 沙箱禁止写 `/tmp`，Apple 的 `/usr/bin/git` shim 会打印 `couldn't create cache file '/tmp/xcrun_db-…' (errno=Operation not permitted)`，且每次调用多花约 2 秒重新解析工具链。git 命令本身仍以 0 退出、输出正确。Baton 改不了 Codex 的沙箱规则；想去掉这些噪音，就让 worker 的 PATH 先找到真实的 git（Homebrew 的 `/opt/homebrew/bin/git`，或 `xcrun -f git` 所在目录）。
 - **`--isolate` / `--allow-dirty`（仅 write）：** `--isolate` 从 `HEAD` 创建名为 `task-<id8>` 的 worktree（分支 `baton/task-<id8>`），在其中运行任务，并把 `worktree.path` / `worktree.branch` / `worktree.source_cwd` 记入任务。`reply` 在同一 worktree 继续；从源目录执行 `ls` 仍能看到该任务；`worktree.base_sha` 记录 worktree 的起点 commit。worker 的改动留在 worktree 里，直到用 `baton apply`（见下）收回；Baton 不会 push，也不开 PR。在脏工作区上原地 write 会返回 `dirty_worktree` 与 `dirty_paths`，除非传入 `--allow-dirty`。两者不能并用，也不能与 `--mode readonly` 并用。手动流程仍可用：先 `baton worktree add`，再 `baton start --cwd <path>`。默认目录 `.worktrees/`（必要时写入 `.gitignore`，见 `worktree.gitignore_updated`）；可选 `.baton.json` 配置 `copy` / `symlink` / `post_create` / `rulesync`（布尔，默认开启）。软链 `node_modules` 在分支依赖不一致时可能互相污染，必要时改用 `post_create` 独立安装。新 worktree 里若有 `.rulesync/` 且能找到 `rulesync`，`worktree add` / `--isolate` 会在其中运行 `rulesync generate`，并报告 `rules.missing` / `rules.dirtied`。建议先在主仓库生成并提交 rulesync 输出，避免 worktree 一开始就脏。
   - 仓库根目录存在 `pnpm-workspace.yaml` 且未配置 `worktree.post_create` 命令时，`start --isolate` 返回 `warning`。在 worktree 中运行 pnpm 可能改写主仓库的 `node_modules/.bin`，可在 `.baton.json` 中用 `"post_create": ["pnpm install --offline --frozen-lockfile"]` 独立安装依赖。
-- **`baton diff <id> [--stat]` / `baton apply <id> [--remove]`（仅 `--isolate` 任务）：** *净改动*指 worktree 自 `base_sha` 以来的全部改动——worker 的提交、未提交的修改和新文件——排除 Baton 自己放入的文件（`.baton-worktree.json`、`.baton.json` 的 `copy` / `symlink` 条目）以及 `.gitignore` 忽略的文件。计算在临时 index 中进行，不碰 worktree 自己的 index、分支和文件。没有 `base_sha` 的旧任务用 `git merge-base <branch> HEAD` 推算。
+- **`baton diff <id> [--stat]` / `baton apply <id> [--remove] [--message <msg> | --message-file <path>]`（仅 `--isolate` 任务）：** *净改动*指 worktree 自 `base_sha` 以来的全部改动——worker 的提交、未提交的修改和新文件——排除 Baton 自己放入的文件（`.baton-worktree.json`、`.baton.json` 的 `copy` / `symlink` 条目）以及 `.gitignore` 忽略的文件。计算在临时 index 中进行，不碰 worktree 自己的 index、分支和文件。没有 `base_sha` 的旧任务用 `git merge-base <branch> HEAD` 推算。
   - `diff` 以纯文本输出净改动（`--stat` 输出 diffstat）；没有改动时输出为空；任务运行中也可查看。
-  - `apply` 把净改动做成**一个 commit**（标题 `baton(<target>): <summary 第一行>`，trailer `Baton-Task: <id>` / `Baton-Target: <target>`，使用你的 git 身份），再 `git cherry-pick` 到源仓库的**当前分支**。这是三方合并：分支往前走了也能收回，只有同一处被改才冲突。只在本地 commit，不 push，不开 PR。撤回用 `git revert <commit>`（未 push 时也可 `git reset --soft HEAD~1`）。返回 `{ task_id, status: "applied", repo, commit, files, removed }`；净改动为空时返回 `status: "nothing_to_apply"`。
+  - `apply` 把净改动做成**一个 commit**（使用你的 git 身份），再 `git cherry-pick` 到源仓库的**当前分支**。这是三方合并：分支往前走了也能收回，只有同一处被改才冲突。只在本地 commit，不 push，不开 PR。撤回用 `git revert <commit>`（未 push 时也可 `git reset --soft HEAD~1`）。返回 `{ task_id, status: "applied", repo, commit, files, removed }`；净改动为空时返回 `status: "nothing_to_apply"`。
   - 以下情况 `apply` 拒绝且不改动任何东西：任务仍在运行；源仓库处于 merge / rebase / cherry-pick / revert 中；暂存区有内容；源仓库里有未提交或未跟踪的文件与任务改动的路径重叠（报错中列出）；cherry-pick 冲突（已 abort，列出冲突文件）。不重叠的未提交或未跟踪文件不受影响，也不会进入 commit。
+  - 用 `--message <msg>` 或 `--message-file <path>` 提供完整提交信息。两者互斥。MCP 的 `task_apply` 支持 `message`。默认标题为 `baton(<target>): <subject>`。依次取最后一个成功轮次的摘要首行、任务原始 prompt 首行、`apply task <id8>`。默认的 `subject` 会脱敏并截断至 72 字符。Baton 在一个空行后追加 `Baton-Task: <id>` 和 `Baton-Target: <target>`。
   - `--remove` 只在 apply 成功或 `nothing_to_apply` 之后删除 worktree 和分支；被拒绝时不删除。删除失败不影响已完成的 apply，返回 `removed: false` 和 `warning`。
   - 删除后，`apply --remove` 与 `baton worktree rm` 会扫描主仓库的 `node_modules/.bin`（根目录和 `<dir>/<pkg>/`），找出仍指向已删 worktree 的条目（pnpm 可能在 worktree 里改写主仓库的 shim），并在 `warning` 中列出；用 `pnpm install --force`（或对应包管理器的等价命令）重建。
 - **`--scope`（可选）：** 可重复，glob 相对任务 `cwd`，按 [picomatch](https://github.com/micromatch/picomatch) 且 `dot: true` 匹配，`dir/**` 也覆盖 `dir/.env.example` 这类点文件；不带通配符的目录路径匹配其下全部文件。每轮结束后对照**自范围基线以来的净变更**（自 baseline HEAD 起的提交 ∪ 工作区 digest 差分）。`--scope-on-violation warn`（默认）保留原终态并写 `scope_violations` + `warning`；`fail` 会把干净的 `success` 升为 `scope_violation`。这是**防失误**，不是沙箱：忽略文件、仓外写入、共享 cwd 并发改动是已知盲区——建议与 `--isolate` 叠用。带 `--scope` 时 cwd 必须是 git 仓库。**兼容性：** 新增终态 `scope_violation` 及可选 `scope_*` 字段。
@@ -488,7 +489,7 @@ MCP 是同一套逻辑的薄壳，进程里不存任何任务状态，重启 MCP
 | `task_wait` | `wait`（参数 `task_ids`、`wait_seconds`，默认 50，上限 55；等待期间每 15 秒发一次进度通知） |
 | `task_result` | `result`（参数 `task_id`、`turn`；返回含 `final_message` 的 JSON） |
 | `task_diff` | `diff`（参数 `task_id`、`stat`；返回 `{ task_id, diff }`） |
-| `task_apply` | `apply`（参数 `task_id`、`remove`） |
+| `task_apply` | `apply`（参数 `task_id`、`remove`、`message`） |
 | `task_reply` | `reply`（参数 `task_id`、`prompt`、`as`、`files`、`scope`、`scope_on_violation`、`check`） |
 | `task_cancel` | `cancel` |
 | `task_list` | `ls`（参数 `all`、`cwd`） |

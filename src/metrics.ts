@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { getAdapter } from "./adapters/index.ts";
-import { listTasks, readTurn, taskDir } from "./store.ts";
+import { listTasks, readStoredTurn, taskDir } from "./store.ts";
 import type { Adapter, EventData, TaskMeta, Turn, TurnActivity, TurnUsage } from "./types.ts";
 
 export function summarizeEvents(events: Iterable<EventData>): { activity: TurnActivity; usage?: TurnUsage } {
@@ -55,14 +55,6 @@ export function turnUsage(
 
   const reasoning = countDelta(current.reasoning, previous.reasoning);
   return { input, cached_input, output, raw: current.raw, ...(reasoning === undefined ? {} : { reasoning }) };
-}
-
-function readStoredTurn(id: string, number: number): Turn | undefined {
-  try {
-    return readTurn(id, number);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-  }
 }
 
 function readFirstTurnStdout(id: string): string | undefined {

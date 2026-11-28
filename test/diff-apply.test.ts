@@ -27,8 +27,8 @@ function repo(s: Sandbox) {
   fs.writeFileSync(path.join(s.cwd, "shared", "x.txt"), "x\n");
 }
 
-async function isolatedTask(s: Sandbox): Promise<TaskMeta> {
-  const started = await s.run("start", "--target", "codex", "--prompt", "hi", "--isolate");
+async function isolatedTask(s: Sandbox, prompt = "hi"): Promise<TaskMeta> {
+  const started = await s.run("start", "--target", "codex", "--prompt", prompt, "--isolate");
   return s.until(started.task_id);
 }
 
@@ -131,6 +131,54 @@ function sourceState(cwd: string) {
 }
 
 const branchExists = (cwd: string, branch: string) => git(cwd, "branch", "--list", branch).trim() !== "";
+
+for (const flag of ["--message", "--message-file"]) {
+  test(`apply ${flag} preserves the commit body and appends trailers`, async (t) => {
+    const s = sandbox(t);
+    repo(s);
+    git(s.cwd, "config", "commit.cleanup", "strip");
+    const done = await isolatedTask(s);
+    fs.writeFileSync(path.join(done.worktree!.path, "new.txt"), "new\n");
+    const message = "fix: use a custom subject\n\nFirst paragraph.\n\n  Second paragraph.\n# Literal message line";
+    const file = path.join(s.home, "message.txt");
+    fs.writeFileSync(file, `${message}\n\n`);
+    assert.match(await refused(s, "apply", done.task_id, "--message", message, "--message-file", file), /cannot be used together/);
+    assert.match(await refused(s, "apply", done.task_id, "--message", " \n"), /Commit message is empty/);
+
+    const applied = await s.run<Applied>("apply", done.task_id, flag, flag === "--message" ? message : file);
+    assert.equal(applied.status, "applied");
+    assert.equal(git(s.cwd, "log", "-1", "--format=%B").trimEnd(),
+      `${message}\n\nBaton-Task: ${done.task_id}\nBaton-Target: codex`);
+  });
+}
+
+for (const hadSuccess of [true, false]) {
+  test(`apply after quota failure uses ${hadSuccess ? "the last successful summary" : "the original prompt"}`, async (t) => {
+    const s = sandbox(t);
+    repo(s);
+    const done = await isolatedTask(s, "Original prompt\nFurther instructions");
+    const id = done.task_id;
+    const failure = { ...s.turn(id), status: "quota_exceeded", summary: "Quota error" };
+    const turns = hadSuccess
+      ? [
+        { ...s.turn(id), summary: "Earlier success" },
+        { ...s.turn(id), turn: 2, prompt: "Follow-up", summary: "Latest success\nMore details" },
+        { ...failure, turn: 3, prompt: "Retry" },
+      ]
+      : [failure, { ...failure, turn: 2, prompt: "Retry" }];
+    for (const turn of turns) {
+      fs.writeFileSync(path.join(s.dir(id), "turns", `${turn.turn}.json`), JSON.stringify(turn));
+    }
+    fs.writeFileSync(path.join(s.dir(id), "meta.json"), JSON.stringify({
+      ...done, status: failure.status, turn: turns.length, summary: failure.summary,
+    }));
+    fs.writeFileSync(path.join(done.worktree!.path, "new.txt"), "new\n");
+
+    const applied = await s.run<Applied>("apply", id);
+    assert.equal(applied.status, "applied");
+    assert.equal(git(s.cwd, "log", "-1", "--format=%s").trim(), `baton(codex): ${hadSuccess ? "Latest success" : "Original prompt"}`);
+  });
+}
 
 test("diff and apply exclude ignored copy and symlink entries and preserve tracked exemptions (#95)", async (t) => {
   const s = sandbox(t);

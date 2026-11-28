@@ -189,12 +189,14 @@ test("MCP task_diff / task_apply match the CLI for an --isolate task", async (t)
   assert.match(stat.diff, /keep\.txt \| 1 \+/);
   const viaCli = execFileSync(process.execPath, [cli, "diff", started.task_id], { cwd: s.cwd, env: s.env, encoding: "utf8" });
   assert.equal(patch.diff, viaCli);
-  const applied = await call(client, "task_apply", { task_id: started.task_id, remove: true });
+  const message = "fix: apply MCP changes\n\nKeep the supplied body.";
+  const applied = await call(client, "task_apply", { task_id: started.task_id, remove: true, message });
   assert.equal(applied.status, "applied");
   assert.deepEqual(applied.files, ["keep.txt"]);
   assert.equal(applied.removed, true);
   assert.equal(fs.readFileSync(path.join(s.cwd, "keep.txt"), "utf8"), "keep\nworker\n");
-  assert.match(execFileSync("git", ["log", "-1", "--format=%B"], { cwd: s.cwd, encoding: "utf8" }), new RegExp(`Baton-Task: ${started.task_id}`));
+  assert.equal(execFileSync("git", ["log", "-1", "--format=%B"], { cwd: s.cwd, encoding: "utf8" }).trimEnd(),
+    `${message}\n\nBaton-Task: ${started.task_id}\nBaton-Target: codex`);
   const again = await call(client, "task_apply", { task_id: started.task_id });
   assert.equal(again.status, "failed");
   assert.match(again.summary, /no longer exists/);
