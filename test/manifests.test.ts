@@ -32,3 +32,14 @@ test("every manifest repeats package.json version and description", () => {
   }
   assert.deepEqual(stale, [], `Stale manifests:\n${stale.join("\n")}`);
 });
+
+test("skills name the package.json version as the minimum baton CLI", () => {
+  const stale: string[] = [];
+  for (const name of fs.readdirSync(path.join(root, "skills"))) {
+    const text = fs.readFileSync(path.join(root, "skills", name, "SKILL.md"), "utf8");
+    for (const [, version] of text.matchAll(/baton \*\*(\d+\.\d+\.\d+)\*\* or newer/g)) {
+      if (version !== pkg.version) stale.push(`skills/${name}/SKILL.md: ${version} != ${pkg.version}`);
+    }
+  }
+  assert.deepEqual(stale, [], `Stale skill versions:\n${stale.join("\n")}`);
+});
