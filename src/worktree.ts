@@ -419,7 +419,7 @@ export function staleBinWarning(repo: string, worktreePath: string): string | nu
         const hit = stat.isSymbolicLink()
           ? inside(path.resolve(dir, fs.readlinkSync(file)))
           : stat.isFile() && stat.size < 65_536 && targets.some((t) => fs.readFileSync(file, "utf8").includes(t));
-        if (hit) found.push(path.relative(repo, file));
+        if (hit) found.push(path.relative(repo, file).split(path.sep).join("/"));
       } catch { /* unreadable entry */ }
     }
   }
