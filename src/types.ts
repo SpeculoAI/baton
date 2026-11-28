@@ -75,6 +75,7 @@ export type TaskMeta = {
   last_event_at: string | null;
   decision?: { question: string; options: string[] };
   summary?: string;
+  failure_reason?: "supervisor_exit";
   warning?: string;
   /** Set when start bypassed the dirty-tree guard via --allow-dirty. */
   allow_dirty?: boolean;

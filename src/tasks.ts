@@ -328,6 +328,7 @@ export function status(id: string): TaskView {
     const decided = reason === "idle" || reason === "max_duration" || reason === "cancelled";
     meta.status = decided ? (reason === "cancelled" ? "cancelled" : "timed_out") : "failed";
     meta.summary = decided ? (reason === "cancelled" ? "Cancelled." : `Timed out: ${reason}.`) : "supervisor exited unexpectedly";
+    if (!decided) meta.failure_reason = "supervisor_exit";
     delete meta.stop_reason;
     meta.updated_at = new Date().toISOString();
     try { const turn = readTurn(id, meta.turn); writeTurn(id, { ...turn, status: meta.status, summary: meta.summary }); } catch (error) {
@@ -485,13 +486,15 @@ export async function reply(
   try {
     const meta = readMeta(id)!;
     if (meta.status === "running") return busy;
-    if (!["success", "needs_input", "scope_violation", "readonly_violation", "check_failed", "quota_exceeded", "not_authenticated"].includes(meta.status)) throw new Error(`Cannot continue a task in status ${meta.status}.`);
+    const supervisorFailed = meta.status === "failed" && meta.failure_reason === "supervisor_exit";
+    if (!supervisorFailed && !["success", "needs_input", "scope_violation", "readonly_violation", "check_failed", "quota_exceeded", "not_authenticated"].includes(meta.status)) throw new Error(`Cannot continue a task in status ${meta.status}.`);
     if (!meta.session_id) throw new Error("No session_id; cannot resume the session.");
     if (!getAdapter(meta.target)?.resolve(process.env)) throw new Error(`${meta.target} is not on PATH.`);
     const prepared = prepareTurnPrompt(meta.cwd, prompt, files);
     next = { ...meta, status: "running", turn: meta.turn + 1, updated_at: new Date().toISOString(), supervisor_pid: null, child_pid: null, heartbeat_at: null, last_event_at: null };
     delete next.decision;
     delete next.summary;
+    delete next.failure_reason;
     delete next.warning;
     delete next.scope_violations;
     delete next.readonly_violations;

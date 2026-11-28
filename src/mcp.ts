@@ -86,7 +86,7 @@ export function createServer(): McpServer {
     },
   }, (args) => respond(() => apply(args.task_id, { remove: args.remove, message: args.message })));
   server.registerTool("task_reply", {
-    description: "Start the next turn when the task has a session and its status is needs_input, success, scope_violation, readonly_violation, check_failed, quota_exceeded, or not_authenticated. Use as=human for the user's words. The default is host. Returns busy while running.",
+    description: "Start the next turn when the task has a session and its status is needs_input, success, scope_violation, readonly_violation, check_failed, quota_exceeded, not_authenticated, or failed with failure_reason=supervisor_exit. Use as=human for the user's words. The default is host. Returns busy while running.",
     inputSchema: {
       task_id: z.string(),
       prompt: z.string(),

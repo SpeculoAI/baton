@@ -97,7 +97,8 @@ Tools hint: If you have codegraph available, prefer it over repeated grep.
    - **Verified pass:** notify the host; mark the node done; start newly unblocked dependents.
    - **Acceptance failed after `success`:** rework in the same conversation with `baton reply <id> --prompt "<focused fix>"`, up to the rework cap (default 1); then wait again.
    - **Cannot verify:** report what remains unverified; do **not** claim accepted; do not unblock dependents that need a verified pass (ask the host if the graph is stuck).
-   - **`failed` / `timed_out`:** the task is closed. Start a new task for the same job, either the same vendor with a larger `--idle-timeout` (for `timed_out`) or the next vendor once (for `failed`). Do not dual-run the same edit without cause.
+   - **`failed` with `failure_reason: "supervisor_exit"` and a session:** restore the environment, then use `baton reply <id> --prompt "Continue"` to resume the original conversation and, for `--isolate`, the original worktree.
+   - **Other `failed` tasks / `timed_out`:** the task is closed. Start a new task for the same job, either the same vendor with a larger `--idle-timeout` (for `timed_out`) or the next vendor once (for `failed`). Do not dual-run the same edit without cause.
    - **`not_installed`:** try the next vendor.
    - **`not_authenticated`:** when the task has a session, ask the host to arrange sign-in and use `baton reply` once authentication is restored. If there is no session, try the next vendor.
    - **`quota_exceeded`:** relay `summary`, including any reset time. Wait for quota to reset, then use `baton reply` when the task has a session. Ask the host before switching vendor.
@@ -176,8 +177,9 @@ Rules:
 - Prefer background `wait <ids...> --until-done` when the host wakes on shell exit; else `wait <ids...> --for 50` repeating; never wait one job after another
 - needs_input: ask the host unless earlier instructions decide it; relay the answer with `reply --as human`
 - quota_exceeded or not_authenticated: wait for quota to reset or have the host arrange sign-in, then `reply` when the task has a session
+- failed with failure_reason=supervisor_exit and a session: restore the environment, then `reply` in the same session and worktree
 - Advance per job: wait → Review → verified pass: notify and start newly ready dependents; acceptance failed or scope_violation or readonly_violation or success+scope_violations: `reply` with a focused fix up to cap (default 1); cannot verify: report unverified items, do not claim accepted, do not unblock acceptance-gated dependents
-- failed / timed_out: start a new task (larger --idle-timeout, or next vendor once); do not treat scope_violation or readonly_violation as vendor failover
+- Other failed tasks / timed_out: start a new task (larger --idle-timeout, or next vendor once); do not treat scope_violation or readonly_violation as vendor failover
 - Notify the host after each job conclusion; ask only for the stop-and-ask cases
 - When all jobs are terminal, return one summary: vendors, statuses, summaries, git_changes, reworks, fail-overs, worktree path/branch
 ```

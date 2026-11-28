@@ -460,7 +460,7 @@ JSON 输出是稳定接口，后续版本只增加字段，已有字段的名称
 | `quiet` | 守护进程活着，但超过 60 秒没有输出（通常是在思考） |
 | `orphaned` | 守护进程没了或心跳超过 30 秒未更新；下一次读会杀掉残留子进程并补写 `failed` |
 
-若已有 `stop_reason` 为 `idle` 或 `max_duration`，这次读取收成 `timed_out`，摘要为 `Timed out: idle.` 或 `Timed out: max_duration.`。`cancelled` 收成 `cancelled` / `Cancelled.`，返回视图不带 `liveness`。没有 `stop_reason` 时仍补写 `failed`。
+若已有 `stop_reason` 为 `idle` 或 `max_duration`，这次读取收成 `timed_out`，摘要为 `Timed out: idle.` 或 `Timed out: max_duration.`。`cancelled` 收成 `cancelled` / `Cancelled.`，返回视图不带 `liveness`。supervisor 意外退出时记录为 `failed`，并写入 `failure_reason: "supervisor_exit"`。
 
 ### 停下提问与续轮 (needs_input / reply)
 
@@ -471,11 +471,13 @@ baton reply <id> --as human --prompt "选 A"
 ```
 
 - 在原会话上开下一轮。`--as human` 表示这是人说的话；主 Agent 依据用户先前指示代答时用默认的 `--as host`。
-- `reply` 需要已有会话。`success`、`scope_violation`、`readonly_violation`、`check_failed`、`quota_exceeded` 或 `not_authenticated` 之后也可续轮。任务 `running` 时，`reply` 返回 `busy`。
+- `reply` 需要已有会话。可续轮的状态包括 `needs_input`、`success`、`scope_violation`、`readonly_violation`、`check_failed`、`quota_exceeded`、`not_authenticated`，以及带有 `failure_reason: "supervisor_exit"` 的 `failed`。任务 `running` 时，`reply` 返回 `busy`。
 - 可重复传入 `--scope <glob>`，替换允许修改的路径，并将新范围加入下一轮提示词。Baton 在该轮开始前从任务的 Git 工作区重新取得范围基线。基线中已有的改动不计入新范围的越界检查。
 - 传入 `--scope-on-violation warn|fail` 可更改越界策略。只改策略时，任务必须已有范围，原基线继续使用。替换范围时若省略策略，则沿用原策略，未设置过时默认为 `warn`。
 - 传入 `--check "<cmd>"` 可替换验收命令。空字符串或纯空白会清除它。范围、策略和验收命令的更新从下一轮起持续生效。
 - 每一轮的作者、输入和结果都记在 `turns/<n>.json`，事后可回看。
+
+遇到 `quota_exceeded` 或 supervisor 意外退出，等额度重置或运行环境恢复后，有会话的任务可运行 `baton reply <id> --prompt "继续"`。Baton 会在原会话继续，`--isolate` 任务也会复用原 worktree。任务成功后，照常用 `baton apply <id>` 收回隔离任务的改动。旧版 Baton 已记录为 `failed` 的任务缺少此流程所需的失败原因标记。
 
 ### MCP 工具
 

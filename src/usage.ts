@@ -81,7 +81,7 @@ export const COMMANDS = {
   },
   reply: {
     usage: "baton reply <task_id> [--prompt <text> | stdin] [--as host|human] [--file <path>[:N[-M]]]... [--scope <glob>]... [--scope-on-violation warn|fail] [--check <cmd>]",
-    summary: "Start the next turn of a stopped job in the same session.",
+    summary: "Start the next turn in the same session, including after an unexpected supervisor exit.",
     options: {
       prompt: { type: "string", arg: "text", desc: "Reply text; read from stdin when omitted" },
       as: { type: "string", arg: "host|human", desc: "Who is speaking (default host)" },
@@ -90,6 +90,9 @@ export const COMMANDS = {
       "scope-on-violation": { type: "string", arg: "warn|fail", desc: "Change the policy for a new or existing scope" },
       check: { type: "string", arg: "cmd", desc: "Replace the check command for future turns; pass an empty string to clear it" },
     },
+    notes: [
+      "Requires an existing session. Eligible states: needs_input, success, scope_violation, readonly_violation, check_failed, quota_exceeded, not_authenticated, and failed with failure_reason=supervisor_exit.",
+    ],
   },
   ls: {
     usage: "baton ls [--all]",

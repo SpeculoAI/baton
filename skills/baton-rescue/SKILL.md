@@ -126,13 +126,14 @@ While `running`, read `liveness`:
   baton reply <task_id> --as human --prompt "<the user's answer>"
   ```
   Answer it yourself (default `--as host`) only when the user's earlier instructions already decide it. Every turn, its author, and its prompt are recorded under `turns/`, so this is visible later. Then wait again.
-- `failed`, `cancelled`: relay `summary`, then stop.
+- `failed` with `failure_reason: "supervisor_exit"` and a session: restore the environment, then use `baton reply <id> --prompt "Continue"`. This resumes the original conversation and, for `--isolate`, the original worktree.
+- Other `failed` tasks and `cancelled` tasks: relay `summary`, then stop.
 - `quota_exceeded`: relay `summary`, including any reset time. Wait for quota to reset, then use `baton reply` when the task has a session. If there is no session, stop. Do not switch vendor on your own.
 - `not_authenticated`: relay `summary` and ask the user to sign in again. Once they confirm, use `baton reply` when the task has a session. If there is no session, stop.
 - `timed_out`: relay `summary` (it says `idle` or `max_duration`). The task is closed; if the user wants another try, `baton start` again with a larger `--idle-timeout`.
 - `not_installed`: say so and stop.
 
-`baton reply` works after `success`, `needs_input`, `scope_violation`, `readonly_violation`, `check_failed`, `quota_exceeded`, or `not_authenticated` when the task has a session. While the job is `running`, `reply` returns `busy`; wait first.
+`baton reply` works after `success`, `needs_input`, `scope_violation`, `readonly_violation`, `check_failed`, `quota_exceeded`, or `not_authenticated` when the task has a session. A task with a session can also resume from `failed` with `failure_reason: "supervisor_exit"`. While the job is `running`, `reply` returns `busy`; wait first.
 
 ## Other commands
 

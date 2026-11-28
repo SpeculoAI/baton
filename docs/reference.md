@@ -460,7 +460,7 @@ Terminal views from `baton status`, `baton wait`, and MCP `task_status` / `task_
 | `quiet` | Supervisor alive but silent for more than 60 seconds (usually thinking) |
 | `orphaned` | Supervisor gone or heartbeat older than 30 seconds; the next read kills leftover processes and records `failed` |
 
-If `stop_reason` is already `idle` or `max_duration`, that read finalizes as `timed_out` with summary `Timed out: idle.` or `Timed out: max_duration.`. `cancelled` finalizes as `cancelled` / `Cancelled.`, and the view has no `liveness`. With no `stop_reason`, it still records `failed`.
+If `stop_reason` is already `idle` or `max_duration`, that read finalizes as `timed_out` with summary `Timed out: idle.` or `Timed out: max_duration.`. `cancelled` finalizes as `cancelled` / `Cancelled.`, and the view has no `liveness`. An unexpected supervisor exit is recorded as `failed` with `failure_reason: "supervisor_exit"`.
 
 ### Questions and follow-up turns (needs_input / reply)
 
@@ -471,11 +471,13 @@ baton reply <id> --as human --prompt "A"
 ```
 
 - Starts the next turn in the same conversation. `--as human` marks the words as the user's; the default `--as host` is for answers the host gives from the user's earlier instructions.
-- `reply` requires an existing session. It also works after `success`, `scope_violation`, `readonly_violation`, `check_failed`, `quota_exceeded`, or `not_authenticated`. While the job is `running`, `reply` returns `busy`.
+- `reply` requires an existing session. Eligible states are `needs_input`, `success`, `scope_violation`, `readonly_violation`, `check_failed`, `quota_exceeded`, `not_authenticated`, and `failed` with `failure_reason: "supervisor_exit"`. While the job is `running`, `reply` returns `busy`.
 - Pass repeatable `--scope <glob>` to replace the allowed paths and add them to the next prompt. Baton takes a fresh scope baseline from the task's Git working tree before that turn. Earlier edits already present in the baseline do not count against the new scope.
 - Pass `--scope-on-violation warn|fail` to set the policy. A policy-only reply requires an existing scope and keeps its baseline. If you replace the scope and omit the policy, Baton keeps the previous policy or defaults to `warn`.
 - Pass `--check "<cmd>"` to replace the acceptance command. An empty or whitespace-only value clears it. Changes to scope, policy, and check apply from the next turn onward.
 - Each turn's author, input, and result are stored in `turns/<n>.json`.
+
+After `quota_exceeded` or an unexpected supervisor exit, wait for quota to reset or restore the environment, then run `baton reply <id> --prompt "继续"` if the task has a session. Baton resumes the original conversation and reuses the original worktree for an `--isolate` task. Once the task finishes successfully, run `baton apply <id>` to bring the work back. A task already recorded as `failed` by an older Baton release lacks the failure reason required for this recovery.
 
 ### MCP tools
 
